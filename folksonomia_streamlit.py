@@ -11,7 +11,7 @@ import re
 
 # ==================== CONFIGURAÇÃO INICIAL ====================
 st.set_page_config(
-    page_title="Folksonomia Digital | Museus",
+    page_title="Folksonomia Digital",
     layout="wide",
     initial_sidebar_state="collapsed",
     page_icon="🎨"
@@ -54,11 +54,11 @@ def save_json_file(filepath, data):
         st.error(f"Erro ao salvar {filepath}: {e}")
         return False
 
-# ==================== CSS ULTRA MODERNO - GLASSMORPHISM ====================
+# ==================== CSS TEMA ESCURO MODERNO ====================
 def load_custom_css():
     st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@400;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
     * {
         margin: 0;
@@ -70,150 +70,114 @@ def load_custom_css():
         font-family: 'Inter', sans-serif;
     }
 
-    /* Background minimalista */
+    /* Background escuro */
     .stApp {
-        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        background: #0f1419;
     }
 
-    /* Esconder sidebar padrão */
+    /* Esconder sidebar */
     [data-testid="stSidebar"] {
         display: none;
     }
 
-    /* Navbar superior com glassmorphism */
-    .navbar {
+    /* Header superior */
+    .top-header {
         position: fixed;
         top: 0;
         left: 0;
         right: 0;
         z-index: 999;
-        background: rgba(255, 255, 255, 0.25);
-        backdrop-filter: blur(20px);
-        -webkit-backdrop-filter: blur(20px);
-        border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+        background: #1a1f2e;
+        border-bottom: 1px solid #2d3748;
         padding: 1rem 2rem;
         display: flex;
         justify-content: space-between;
         align-items: center;
-        box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.1);
     }
 
-    .navbar-logo {
-        font-family: 'Playfair Display', serif;
-        font-size: 1.5rem;
-        font-weight: 700;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
+    .header-title {
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: #e2e8f0;
     }
 
-    .navbar-buttons {
+    .header-buttons {
         display: flex;
-        gap: 1rem;
+        gap: 0.5rem;
     }
 
-    /* Botões liquid glass */
-    .glass-button {
-        background: rgba(255, 255, 255, 0.4);
-        backdrop-filter: blur(10px);
-        -webkit-backdrop-filter: blur(10px);
-        border: 1px solid rgba(255, 255, 255, 0.5);
-        border-radius: 12px;
-        padding: 0.75rem 1.5rem;
-        color: #333;
+    /* Botões estilo moderno */
+    .nav-button {
+        background: #2d3748;
+        color: #cbd5e0;
+        border: 1px solid #4a5568;
+        border-radius: 8px;
+        padding: 0.5rem 1rem;
+        font-size: 0.9rem;
         font-weight: 500;
-        text-decoration: none;
-        transition: all 0.3s ease;
         cursor: pointer;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        transition: all 0.2s ease;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
     }
 
-    .glass-button:hover {
-        background: rgba(255, 255, 255, 0.6);
-        transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+    .nav-button:hover {
+        background: #374151;
+        border-color: #667eea;
+        color: #e2e8f0;
     }
 
-    .glass-button.active {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    .nav-button.active {
+        background: #667eea;
+        border-color: #667eea;
         color: white;
-        border: 1px solid transparent;
     }
 
     /* Container principal */
     .main-content {
-        margin-top: 100px;
+        margin-top: 80px;
         padding: 2rem;
         max-width: 1400px;
         margin-left: auto;
         margin-right: auto;
     }
 
-    /* Cards com glassmorphism */
-    .glass-card {
-        background: rgba(255, 255, 255, 0.7);
-        backdrop-filter: blur(10px);
-        -webkit-backdrop-filter: blur(10px);
-        border-radius: 20px;
-        padding: 2rem;
-        border: 1px solid rgba(255, 255, 255, 0.3);
-        box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.1);
+    /* Cards escuros */
+    .dark-card {
+        background: #1a1f2e;
+        border: 1px solid #2d3748;
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin: 1rem 0;
         transition: all 0.3s ease;
     }
 
-    .glass-card:hover {
-        box-shadow: 0 12px 40px 0 rgba(31, 38, 135, 0.15);
-        transform: translateY(-5px);
-    }
-
-    /* Título principal */
-    .main-title {
-        font-family: 'Playfair Display', serif;
-        font-size: 3rem;
-        font-weight: 700;
-        text-align: center;
-        margin: 2rem 0;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        animation: fadeIn 1s ease;
-    }
-
-    @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(-20px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
-
-    /* Subtítulo */
-    .subtitle {
-        text-align: center;
-        color: #666;
-        font-size: 1.1rem;
-        margin-bottom: 3rem;
-        line-height: 1.6;
+    .dark-card:hover {
+        border-color: #4a5568;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
     }
 
     /* Cards de obras */
     .obra-card {
-        background: rgba(255, 255, 255, 0.9);
-        backdrop-filter: blur(15px);
-        border-radius: 20px;
-        padding: 1.5rem;
-        border: 1px solid rgba(255, 255, 255, 0.4);
-        box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.1);
-        transition: all 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
+        background: #1a1f2e;
+        border: 1px solid #2d3748;
+        border-radius: 12px;
+        padding: 1rem;
+        transition: all 0.3s ease;
         overflow: hidden;
     }
 
     .obra-card:hover {
-        transform: translateY(-10px) scale(1.02);
-        box-shadow: 0 15px 45px 0 rgba(31, 38, 135, 0.2);
+        border-color: #667eea;
+        transform: translateY(-5px);
+        box-shadow: 0 8px 25px rgba(102, 126, 234, 0.2);
     }
 
     .obra-card img {
-        border-radius: 15px;
-        transition: transform 0.4s ease;
+        border-radius: 8px;
         width: 100%;
+        transition: transform 0.3s ease;
     }
 
     .obra-card:hover img {
@@ -221,53 +185,61 @@ def load_custom_css():
     }
 
     .obra-title {
-        font-family: 'Playfair Display', serif;
-        font-size: 1.3rem;
+        color: #e2e8f0;
+        font-size: 1.1rem;
         font-weight: 600;
-        color: #333;
-        margin: 1rem 0 0.5rem 0;
+        margin: 0.75rem 0 0.25rem 0;
     }
 
     .obra-info {
-        color: #666;
-        font-size: 0.95rem;
+        color: #94a3b8;
+        font-size: 0.9rem;
         margin: 0.25rem 0;
     }
 
-    /* Tag badges */
+    /* Títulos */
+    .main-title {
+        color: #e2e8f0;
+        font-size: 2.5rem;
+        font-weight: 700;
+        text-align: center;
+        margin: 2rem 0 1rem 0;
+    }
+
+    .subtitle {
+        color: #94a3b8;
+        font-size: 1rem;
+        text-align: center;
+        margin-bottom: 2rem;
+        line-height: 1.6;
+    }
+
+    /* Tags */
     .tag-badge {
         display: inline-block;
-        background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+        background: rgba(102, 126, 234, 0.15);
         border: 1px solid rgba(102, 126, 234, 0.3);
-        color: #667eea;
-        padding: 0.4rem 0.8rem;
+        color: #a5b4fc;
+        padding: 0.35rem 0.75rem;
         border-radius: 20px;
         margin: 0.25rem;
         font-size: 0.85rem;
         font-weight: 500;
-        transition: all 0.3s ease;
+        transition: all 0.2s ease;
     }
 
     .tag-badge:hover {
-        background: linear-gradient(135deg, rgba(102, 126, 234, 0.2) 0%, rgba(118, 75, 162, 0.2) 100%);
-        transform: scale(1.05);
+        background: rgba(102, 126, 234, 0.25);
+        border-color: rgba(102, 126, 234, 0.5);
     }
 
     /* Métricas */
     .metric-card {
-        background: linear-gradient(135deg, rgba(102, 126, 234, 0.9) 0%, rgba(118, 75, 162, 0.9) 100%);
-        backdrop-filter: blur(10px);
-        border-radius: 15px;
-        padding: 2rem;
-        color: white;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 12px;
+        padding: 1.5rem;
         text-align: center;
-        transition: all 0.3s ease;
-        border: 1px solid rgba(255, 255, 255, 0.2);
-    }
-
-    .metric-card:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+        color: white;
     }
 
     .metric-value {
@@ -277,68 +249,83 @@ def load_custom_css():
     }
 
     .metric-label {
-        font-size: 0.9rem;
+        font-size: 0.85rem;
         opacity: 0.9;
         text-transform: uppercase;
         letter-spacing: 1px;
-        font-weight: 500;
     }
 
-    /* Botões do Streamlit customizados */
+    /* Botões do Streamlit */
     .stButton button {
-        background: linear-gradient(135deg, rgba(102, 126, 234, 0.9) 0%, rgba(118, 75, 162, 0.9) 100%);
-        backdrop-filter: blur(10px);
+        background: #667eea;
         color: white;
-        border-radius: 12px;
-        padding: 0.75rem 2rem;
-        border: 1px solid rgba(255, 255, 255, 0.2);
+        border: none;
+        border-radius: 8px;
+        padding: 0.75rem 1.5rem;
         font-weight: 600;
-        transition: all 0.3s ease;
-        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        transition: all 0.2s ease;
     }
 
     .stButton button:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 6px 25px rgba(102, 126, 234, 0.4);
-        background: linear-gradient(135deg, rgba(102, 126, 234, 1) 0%, rgba(118, 75, 162, 1) 100%);
+        background: #5568d3;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
     }
 
-    /* Inputs modernos */
+    /* Inputs escuros */
     .stTextInput input, .stTextArea textarea, .stSelectbox select {
-        background: rgba(255, 255, 255, 0.9);
-        backdrop-filter: blur(10px);
-        border: 1px solid rgba(0, 0, 0, 0.1);
-        border-radius: 12px;
-        padding: 0.75rem;
-        transition: all 0.3s ease;
+        background: #0f1419 !important;
+        border: 1px solid #2d3748 !important;
+        color: #e2e8f0 !important;
+        border-radius: 8px !important;
+        padding: 0.75rem !important;
     }
 
     .stTextInput input:focus, .stTextArea textarea:focus {
-        border-color: #667eea;
-        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        border-color: #667eea !important;
+        box-shadow: 0 0 0 1px #667eea !important;
     }
 
-    /* Tabs modernos */
+    /* Labels */
+    label {
+        color: #cbd5e0 !important;
+        font-weight: 500 !important;
+    }
+
+    /* Tabs */
     .stTabs [data-baseweb="tab-list"] {
         gap: 0.5rem;
         background: transparent;
-        border-bottom: none;
+        border-bottom: 1px solid #2d3748;
     }
 
     .stTabs [data-baseweb="tab"] {
-        background: rgba(255, 255, 255, 0.5);
-        backdrop-filter: blur(10px);
-        border-radius: 12px 12px 0 0;
+        background: #1a1f2e;
+        border: 1px solid #2d3748;
+        border-radius: 8px 8px 0 0;
+        color: #94a3b8;
         padding: 0.75rem 1.5rem;
-        border: 1px solid rgba(255, 255, 255, 0.3);
-        color: #666;
         font-weight: 500;
     }
 
     .stTabs [aria-selected="true"] {
-        background: linear-gradient(135deg, rgba(102, 126, 234, 0.9) 0%, rgba(118, 75, 162, 0.9) 100%);
+        background: #667eea;
+        border-color: #667eea;
         color: white;
-        border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    /* Alertas */
+    .stAlert {
+        background: #1a1f2e;
+        border: 1px solid #2d3748;
+        border-radius: 8px;
+        color: #e2e8f0;
+    }
+
+    /* Dataframes */
+    .dataframe {
+        background: #1a1f2e !important;
+        color: #e2e8f0 !important;
+        border: 1px solid #2d3748 !important;
     }
 
     /* Remover elementos padrão */
@@ -346,58 +333,43 @@ def load_custom_css():
     footer {visibility: hidden;}
     .stDeployButton {display: none;}
 
+    /* Scrollbar escuro */
+    ::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+    }
+
+    ::-webkit-scrollbar-track {
+        background: #0f1419;
+    }
+
+    ::-webkit-scrollbar-thumb {
+        background: #2d3748;
+        border-radius: 5px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+        background: #4a5568;
+    }
+
     /* Responsivo */
     @media (max-width: 768px) {
         .main-title {
-            font-size: 2rem;
+            font-size: 1.75rem;
         }
 
-        .navbar {
+        .top-header {
             flex-direction: column;
             gap: 1rem;
             padding: 1rem;
         }
 
-        .navbar-buttons {
-            width: 100%;
-            justify-content: center;
-        }
-
         .main-content {
-            margin-top: 150px;
+            margin-top: 120px;
             padding: 1rem;
         }
     }
     </style>
-    """, unsafe_allow_html=True)
-
-# ==================== NAVBAR COMPONENT ====================
-def show_navbar(current_page):
-    """Exibe a navbar superior com glassmorphism"""
-    navbar_html = f"""
-    <div class='navbar'>
-        <div class='navbar-logo'>🎨 Folksonomia Digital</div>
-        <div class='navbar-buttons'>
-            <a class='glass-button {"active" if current_page == "Explorar Obras" else ""}' 
-               onclick='setPage("Explorar Obras")' style='cursor: pointer;'>
-                🖼️ Explorar Obras
-            </a>
-            <a class='glass-button {"active" if current_page == "Área Administrativa" else ""}' 
-               onclick='setPage("Área Administrativa")' style='cursor: pointer;'>
-                📊 Área Admin
-            </a>
-        </div>
-    </div>
-    """
-    st.markdown(navbar_html, unsafe_allow_html=True)
-
-    # JavaScript para navegação
-    st.markdown("""
-    <script>
-    function setPage(page) {
-        window.parent.postMessage({type: 'streamlit:setComponentValue', value: page}, '*');
-    }
-    </script>
     """, unsafe_allow_html=True)
 
 # ==================== FUNÇÕES AUXILIARES ====================
@@ -526,18 +498,40 @@ def get_top_contributors(tags_df, top_n=10):
     contributors.columns = ['user_id', 'total_tags', 'first_contribution']
     return contributors.sort_values('total_tags', ascending=False).head(top_n)
 
-def analyze_tag_patterns(tags_df):
-    """Analisa padrões nas tags"""
-    if tags_df.empty:
-        return None
+# ==================== HEADER DE NAVEGAÇÃO ====================
+def show_header():
+    """Exibe header de navegação"""
+    current_page = st.session_state.get('current_page', 'Explorar Obras')
 
-    return {
-        'avg_tag_length': tags_df['tag'].str.len().mean(),
-        'single_word_tags': sum(tags_df['tag'].str.split().str.len() == 1),
-        'multi_word_tags': sum(tags_df['tag'].str.split().str.len() > 1),
-        'numeric_tags': sum(tags_df['tag'].str.contains(r'\d', regex=True)),
-        'special_char_tags': sum(tags_df['tag'].str.contains(r'[^a-zA-Z0-9\s]', regex=True))
-    }
+    obras_class = "active" if current_page == "Explorar Obras" else ""
+    admin_class = "active" if current_page == "Área Administrativa" else ""
+
+    st.markdown(f"""
+    <div class='top-header'>
+        <div class='header-title'>🎨 Folksonomia Digital</div>
+        <div class='header-buttons'>
+            <button class='nav-button {obras_class}' onclick='return false;'>
+                📚 Explorar Obras
+            </button>
+            <button class='nav-button {admin_class}' onclick='return false;'>
+                ⚙️ Área Administrativa
+            </button>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Botões invisíveis para navegação
+    col1, col2, col3, col4, col5 = st.columns([1, 1, 1, 1, 1])
+
+    with col2:
+        if st.button("📚 Explorar Obras", key="nav_obras", help="Explorar obras"):
+            st.session_state['current_page'] = "Explorar Obras"
+            st.rerun()
+
+    with col4:
+        if st.button("⚙️ Admin", key="nav_admin", help="Área administrativa"):
+            st.session_state['current_page'] = "Área Administrativa"
+            st.rerun()
 
 # ==================== INTERFACE PRINCIPAL ====================
 
@@ -559,46 +553,37 @@ def main():
     if 'current_page' not in st.session_state:
         st.session_state['current_page'] = "Explorar Obras"
 
-    # Verificar se o questionário foi respondido
+    # Verificar se precisa mostrar questionário
     if st.session_state['step'] == 'intro':
+        # QUESTIONÁRIO - SEM NAVEGAÇÃO
         show_intro()
     else:
-        # Mostrar navbar apenas após questionário
-        col1, col2, col3, col4, col5 = st.columns([1, 1, 1, 1, 1])
-        with col2:
-            if st.button("🖼️ Explorar Obras", use_container_width=True, 
-                        type="primary" if st.session_state['current_page'] == "Explorar Obras" else "secondary"):
-                st.session_state['current_page'] = "Explorar Obras"
-                st.rerun()
-        with col4:
-            if st.button("📊 Área Admin", use_container_width=True,
-                        type="primary" if st.session_state['current_page'] == "Área Administrativa" else "secondary"):
-                st.session_state['current_page'] = "Área Administrativa"
-                st.rerun()
+        # APÓS RESPONDER - MOSTRAR NAVEGAÇÃO E CONTEÚDO
+        show_header()
+        st.markdown("<div class='main-content'>", unsafe_allow_html=True)
 
-        st.markdown("<br>", unsafe_allow_html=True)
-
-        # Renderizar página atual
         if st.session_state['current_page'] == "Explorar Obras":
             show_obras()
         elif st.session_state['current_page'] == "Área Administrativa":
             show_admin()
 
-# ==================== PÁGINA INICIAL (QUESTIONÁRIO) ====================
+        st.markdown("</div>", unsafe_allow_html=True)
+
+# ==================== PÁGINA DE QUESTIONÁRIO ====================
 
 def show_intro():
     st.markdown("<div class='main-content'>", unsafe_allow_html=True)
 
-    st.markdown("<h1 class='main-title'>Folksonomia em Museus</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 class='main-title'>Bem-vindo ao Projeto Folksonomia</h1>", unsafe_allow_html=True)
     st.markdown("""
     <p class='subtitle'>
-        Bem-vindo à nossa plataforma de catalogação colaborativa.<br>
-        Contribua com sua percepção para criar uma taxonomia popular de obras de arte.
+        Antes de explorar as obras, por favor responda algumas perguntas<br>
+        para nos ajudar a entender melhor seu perfil e experiência.
     </p>
     """, unsafe_allow_html=True)
 
-    st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-    st.markdown("<h2 style='text-align: center; margin-bottom: 2rem; color: #333;'>📋 Questionário Inicial</h2>", unsafe_allow_html=True)
+    st.markdown("<div class='dark-card'>", unsafe_allow_html=True)
+    st.markdown("<h2 style='color: #e2e8f0; margin-bottom: 1.5rem;'>📋 Questionário Inicial</h2>", unsafe_allow_html=True)
 
     with st.form("intro_form"):
         col1, col2 = st.columns([1, 1])
@@ -619,23 +604,23 @@ def show_intro():
                 "O que você entende por 'tags' ou etiquetas digitais aplicadas a acervo?",
                 max_chars=500,
                 height=200,
-                placeholder="Digite sua resposta aqui..."
+                placeholder="Descreva sua compreensão..."
             )
 
         st.markdown("<br>", unsafe_allow_html=True)
 
         col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 1])
         with col_btn2:
-            submit = st.form_submit_button("✨ Começar", use_container_width=True)
+            submit = st.form_submit_button("🚀 Começar", use_container_width=True)
 
         if submit:
             if not q3.strip():
-                st.error("Por favor, responda todas as perguntas!")
+                st.error("❌ Por favor, responda todas as perguntas!")
             else:
                 st.session_state['answers'] = {"q1": q1, "q2": q2, "q3": q3}
                 save_user_answers(st.session_state['user_id'], st.session_state['answers'])
                 st.session_state['step'] = 'completed'
-                st.success("✅ Obrigado! Redirecionando...")
+                st.success("✅ Questionário completo! Redirecionando...")
                 st.balloons()
                 st.rerun()
 
@@ -645,12 +630,10 @@ def show_intro():
 # ==================== PÁGINA DE OBRAS ====================
 
 def show_obras():
-    st.markdown("<div class='main-content'>", unsafe_allow_html=True)
-
     st.markdown("<h1 class='main-title'>Galeria de Obras</h1>", unsafe_allow_html=True)
     st.markdown("""
     <p class='subtitle'>
-        Explore as obras e contribua com suas próprias tags para enriquecer nossa base de conhecimento colaborativo.
+        Explore as obras e contribua com suas próprias tags
     </p>
     """, unsafe_allow_html=True)
 
@@ -660,22 +643,22 @@ def show_obras():
         st.info("Nenhuma obra cadastrada.")
         return
 
-    # Filtros em glass card
-    st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+    # Filtros
+    st.markdown("<div class='dark-card'>", unsafe_allow_html=True)
     col_filter1, col_filter2, col_filter3 = st.columns([2, 1, 1])
 
     with col_filter1:
-        search_term = st.text_input("🔍 Buscar obra", "", placeholder="Digite título ou artista...")
+        search_term = st.text_input("🔍 Buscar", "", placeholder="Título ou artista...")
 
     with col_filter2:
-        sort_by = st.selectbox("Ordenar por:", ["Título", "Artista", "Ano"])
+        sort_by = st.selectbox("Ordenar:", ["Título", "Artista", "Ano"])
 
     with col_filter3:
         view_mode = st.selectbox("Visualização:", ["Grid", "Lista"])
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # Filtrar e ordenar obras
+    # Filtrar e ordenar
     filtered_obras = obras
     if search_term:
         filtered_obras = [
@@ -692,8 +675,8 @@ def show_obras():
         filtered_obras = sorted(filtered_obras, key=lambda x: x['ano'])
 
     st.markdown(f"""
-    <div style='text-align: center; color: #666; margin: 2rem 0;'>
-        <h3>Mostrando {len(filtered_obras)} obra(s)</h3>
+    <div style='text-align: center; color: #94a3b8; margin: 1.5rem 0;'>
+        Mostrando <strong>{len(filtered_obras)}</strong> obra(s)
     </div>
     """, unsafe_allow_html=True)
 
@@ -727,7 +710,7 @@ def show_obras():
 
                         if submitted and tag:
                             save_tag(st.session_state['user_id'], obra['id'], tag)
-                            st.success(f"Tag '{tag}' adicionada! 🎉")
+                            st.success(f"✅ Tag '{tag}' adicionada!")
                             del st.session_state['selected_obra']
                             st.rerun()
 
@@ -738,7 +721,7 @@ def show_obras():
                     # Tags populares
                     tags = get_tags_for_obra(obra['id'])
                     if not tags.empty:
-                        st.markdown("**🏆 Tags Populares:**")
+                        st.markdown("**🏆 Tags:**")
                         tag_html = ""
                         for _, row in tags.head(5).iterrows():
                             tag_html += f"<span class='tag-badge'>{row['tag']} ({row['count']})</span>"
@@ -748,7 +731,7 @@ def show_obras():
 
     else:  # Lista
         for obra in filtered_obras:
-            st.markdown("<div class='glass-card' style='margin-bottom: 1.5rem;'>", unsafe_allow_html=True)
+            st.markdown("<div class='dark-card'>", unsafe_allow_html=True)
             col_img, col_info = st.columns([1, 2])
 
             with col_img:
@@ -773,13 +756,9 @@ def show_obras():
 
             st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("</div>", unsafe_allow_html=True)
-
 # ==================== ÁREA ADMINISTRATIVA ====================
 
 def show_admin():
-    st.markdown("<div class='main-content'>", unsafe_allow_html=True)
-
     if 'admin_logged_in' not in st.session_state:
         st.session_state['admin_logged_in'] = False
 
@@ -788,8 +767,8 @@ def show_admin():
 
         col1, col2, col3 = st.columns([1, 1, 1])
         with col2:
-            st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-            st.markdown("<h2 style='text-align: center; margin-bottom: 2rem;'>🔐 Login</h2>", unsafe_allow_html=True)
+            st.markdown("<div class='dark-card'>", unsafe_allow_html=True)
+            st.markdown("<h2 style='color: #e2e8f0; text-align: center; margin-bottom: 1.5rem;'>🔐 Login</h2>", unsafe_allow_html=True)
 
             with st.form("login_form"):
                 username = st.text_input("👤 Usuário:", placeholder="Digite seu usuário")
@@ -802,7 +781,7 @@ def show_admin():
                     if check_admin_credentials(username, password):
                         st.session_state['admin_logged_in'] = True
                         st.session_state['admin_username'] = username
-                        st.success("Login realizado! 🎉")
+                        st.success("✅ Login realizado!")
                         st.rerun()
                     else:
                         st.error("❌ Credenciais inválidas.")
@@ -814,7 +793,7 @@ def show_admin():
 
     else:
         st.markdown(f"""
-        <h1 class='main-title'>Dashboard Administrativo</h1>
+        <h1 class='main-title'>Dashboard</h1>
         <p class='subtitle'>Bem-vindo, <strong>{st.session_state.get('admin_username', 'Admin')}</strong>! 👋</p>
         """, unsafe_allow_html=True)
 
@@ -838,11 +817,8 @@ def show_admin():
                     del st.session_state['admin_username']
                 st.rerun()
 
-    st.markdown("</div>", unsafe_allow_html=True)
-
 def show_analytics_dashboard():
-    """Dashboard com visualizações nativas"""
-
+    """Dashboard Analytics"""
     tags_df = load_all_tags()
     users_df = load_all_users()
     obras = load_obras()
@@ -891,10 +867,10 @@ def show_analytics_dashboard():
         st.info("📭 Aguardando dados...")
         return
 
-    st.markdown("<br><br>", unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
 
     # Análises
-    st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+    st.markdown("<div class='dark-card'>", unsafe_allow_html=True)
     st.markdown("### 📊 Tags Mais Frequentes")
     tag_counts = tags_df['tag'].value_counts().head(20)
     st.bar_chart(tag_counts)
@@ -905,7 +881,7 @@ def show_analytics_dashboard():
     col_chart1, col_chart2 = st.columns(2)
 
     with col_chart1:
-        st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+        st.markdown("<div class='dark-card'>", unsafe_allow_html=True)
         st.markdown("### 🎨 Por Obra")
         obra_tags = tags_df.groupby('obra_id').size().reset_index(name='count')
         obra_info = pd.DataFrame(obras)
@@ -916,7 +892,7 @@ def show_analytics_dashboard():
         st.markdown("</div>", unsafe_allow_html=True)
 
     with col_chart2:
-        st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+        st.markdown("<div class='dark-card'>", unsafe_allow_html=True)
         st.markdown("### 📈 Evolução")
         if 'timestamp' in tags_df.columns:
             tags_df['date'] = pd.to_datetime(tags_df['timestamp']).dt.date
@@ -925,9 +901,9 @@ def show_analytics_dashboard():
             st.line_chart(timeline_display)
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # Dados brutos
+    # Dados completos
     st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+    st.markdown("<div class='dark-card'>", unsafe_allow_html=True)
     st.markdown("### 📋 Dados Completos")
     all_tags = tags_df['tag'].value_counts().reset_index()
     all_tags.columns = ['Tag', 'Frequência']
@@ -953,7 +929,7 @@ def show_manage_obras():
     obras = load_obras()
 
     if obras:
-        st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+        st.markdown("<div class='dark-card'>", unsafe_allow_html=True)
         st.markdown("### 📚 Obras Cadastradas")
         obras_df = pd.DataFrame(obras)
         st.dataframe(obras_df[["id", "titulo", "artista", "ano"]], use_container_width=True)
@@ -961,7 +937,7 @@ def show_manage_obras():
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+    st.markdown("<div class='dark-card'>", unsafe_allow_html=True)
     st.markdown("### ➕ Nova Obra")
 
     with st.form("adicionar_obra"):
@@ -992,7 +968,7 @@ def show_manage_obras():
 
 def show_manage_admins():
     """Gerenciar admins"""
-    st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+    st.markdown("<div class='dark-card'>", unsafe_allow_html=True)
     st.markdown("### 👥 Administradores")
 
     admins = load_json_file(ADMIN_FILE, [])
@@ -1004,7 +980,7 @@ def show_manage_admins():
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+    st.markdown("<div class='dark-card'>", unsafe_allow_html=True)
     st.markdown("### ➕ Novo Admin")
 
     with st.form("add_admin"):
@@ -1024,7 +1000,7 @@ def show_manage_admins():
                 else:
                     st.error("❌ Usuário já existe!")
             else:
-                st.error("❌ Senhas não coincidem ou muito curtas!")
+                st.error("❌ Senha inválida!")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
