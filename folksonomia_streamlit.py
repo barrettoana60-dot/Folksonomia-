@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 import plotly.express as px
 import plotly.graph_objects as go
 from wordcloud import WordCloud
@@ -12,6 +11,8 @@ import base64
 import json
 from collections import Counter
 import re
+from io import BytesIO
+import base64
 
 # ==================== CONFIGURAÇÃO INICIAL ====================
 st.set_page_config(
@@ -333,20 +334,6 @@ def calculate_tag_diversity(tags_df):
     shannon_index = -sum(proportions * np.log(proportions))
     return shannon_index
 
-def get_tag_growth_rate(tags_df):
-    """Calcula taxa de crescimento de tags"""
-    if tags_df.empty or 'timestamp' not in tags_df.columns:
-        return None
-
-    tags_df['date'] = pd.to_datetime(tags_df['timestamp']).dt.date
-    daily_counts = tags_df.groupby('date').size().reset_index(name='count')
-
-    if len(daily_counts) < 2:
-        return None
-
-    daily_counts['growth_rate'] = daily_counts['count'].pct_change() * 100
-    return daily_counts
-
 def analyze_user_engagement(users_df, tags_df):
     """Análise de engajamento dos usuários"""
     if users_df.empty or tags_df.empty:
@@ -394,7 +381,7 @@ def analyze_tag_patterns(tags_df):
 
     return patterns
 
-# ==================== VISUALIZAÇÕES AVANÇADAS ====================
+# ==================== VISUALIZAÇÕES COM PLOTLY ====================
 
 def create_interactive_tag_frequency(tags_df):
     """Gráfico interativo de frequência de tags"""
@@ -410,7 +397,7 @@ def create_interactive_tag_frequency(tags_df):
         x='count',
         y='tag',
         orientation='h',
-        title='Top 20 Tags Mais Frequentes',
+        title='🏆 Top 20 Tags Mais Frequentes',
         labels={'count': 'Frequência', 'tag': 'Tag'},
         color='count',
         color_continuous_scale='Viridis',
@@ -448,7 +435,9 @@ def create_tag_timeline(tags_df):
         mode='lines+markers',
         name='Tags por Dia',
         line=dict(color='#667eea', width=3),
-        marker=dict(size=8, color='#764ba2')
+        marker=dict(size=8, color='#764ba2'),
+        fill='tozeroy',
+        fillcolor='rgba(102, 126, 234, 0.2)'
     ))
 
     fig.add_trace(go.Scatter(
@@ -460,7 +449,7 @@ def create_tag_timeline(tags_df):
     ))
 
     fig.update_layout(
-        title='Evolução Temporal das Tags',
+        title='📈 Evolução Temporal das Tags',
         xaxis_title='Data',
         yaxis_title='Número de Tags',
         hovermode='x unified',
@@ -487,7 +476,7 @@ def create_heatmap_tags_by_obra(tags_df, obras):
         merged,
         x='titulo',
         y='count',
-        title='Distribuição de Tags por Obra',
+        title='🎨 Distribuição de Tags por Obra',
         labels={'titulo': 'Obra', 'count': 'Número de Tags'},
         color='count',
         color_continuous_scale='Plasma',
@@ -520,7 +509,7 @@ def create_sunburst_chart(tags_df, obras):
         sunburst_data,
         path=['titulo', 'tag'],
         values='count',
-        title='Hierarquia de Tags por Obra',
+        title='🌅 Hierarquia de Tags por Obra',
         color='count',
         color_continuous_scale='Viridis'
     )
@@ -532,25 +521,53 @@ def create_sunburst_chart(tags_df, obras):
 
     return fig
 
-def create_wordcloud_plotly(tags_df):
-    """Nuvem de palavras interativa"""
+def create_wordcloud_plotly_alternative(tags_df):
+    """Nuvem de palavras usando Plotly (alternativa sem matplotlib)"""
     if tags_df.empty:
         return None
 
-    tag_counts = tags_df["tag"].value_counts().to_dict()
-    wc = WordCloud(
-        width=1200,
-        height=600,
-        background_color="white",
-        colormap='viridis',
-        relative_scaling=0.5,
-        min_font_size=10
-    ).generate_from_frequencies(tag_counts)
+    tag_counts = tags_df['tag'].value_counts().head(50)
 
-    fig, ax = plt.subplots(figsize=(15, 8))
-    ax.imshow(wc, interpolation='bilinear')
-    ax.axis("off")
-    plt.tight_layout(pad=0)
+    # Criar um gráfico de dispersão simulando uma nuvem
+    import random
+
+    words_data = []
+    for tag, count in tag_counts.items():
+        words_data.append({
+            'tag': tag,
+            'count': count,
+            'x': random.uniform(0, 100),
+            'y': random.uniform(0, 100),
+            'size': count
+        })
+
+    words_df = pd.DataFrame(words_data)
+
+    fig = px.scatter(
+        words_df,
+        x='x',
+        y='y',
+        size='size',
+        text='tag',
+        title='☁️ Nuvem de Palavras (Tags Mais Populares)',
+        size_max=60,
+        color='count',
+        color_continuous_scale='Viridis'
+    )
+
+    fig.update_traces(
+        textposition='middle center',
+        textfont=dict(size=12, family="Poppins, sans-serif")
+    )
+
+    fig.update_layout(
+        height=600,
+        showlegend=False,
+        xaxis=dict(showgrid=False, showticklabels=False, zeroline=False),
+        yaxis=dict(showgrid=False, showticklabels=False, zeroline=False),
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+    )
 
     return fig
 
@@ -574,87 +591,31 @@ def create_engagement_funnel(users_df, tags_df):
     ))
 
     fig.update_layout(
-        title='Funil de Engajamento de Usuários',
+        title='🔄 Funil de Engajamento de Usuários',
         height=500,
         font=dict(family="Poppins, sans-serif"),
     )
 
     return fig
 
-def create_tag_network(tags_df):
-    """Rede de co-ocorrência simplificada"""
+def create_tag_pie_chart(tags_df):
+    """Gráfico de pizza das tags mais populares"""
     if tags_df.empty:
         return None
 
-    from itertools import combinations
+    top_tags = tags_df['tag'].value_counts().head(10)
 
-    user_tags = tags_df.groupby('user_id')['tag'].apply(list).values
-    cooccurrence = Counter()
-
-    for tags in user_tags:
-        if len(tags) > 1:
-            for pair in combinations(sorted(set(tags)), 2):
-                cooccurrence[pair] += 1
-
-    if not cooccurrence:
-        return None
-
-    edges = [(pair[0], pair[1], count) for pair, count in cooccurrence.most_common(15)]
-
-    nodes = set()
-    for edge in edges:
-        nodes.add(edge[0])
-        nodes.add(edge[1])
-
-    import math
-    node_list = list(nodes)
-    n = len(node_list)
-    positions = {}
-
-    for i, node in enumerate(node_list):
-        angle = 2 * math.pi * i / n
-        positions[node] = (math.cos(angle), math.sin(angle))
-
-    edge_traces = []
-    for edge in edges:
-        x0, y0 = positions[edge[0]]
-        x1, y1 = positions[edge[1]]
-
-        edge_traces.append(go.Scatter(
-            x=[x0, x1, None],
-            y=[y0, y1, None],
-            mode='lines',
-            line=dict(width=edge[2]/max([e[2] for e in edges])*10, color='rgba(125,125,125,0.3)'),
-            hoverinfo='none',
-            showlegend=False
-        ))
-
-    node_x = [positions[node][0] for node in node_list]
-    node_y = [positions[node][1] for node in node_list]
-
-    node_trace = go.Scatter(
-        x=node_x,
-        y=node_y,
-        mode='markers+text',
-        marker=dict(size=20, color='#667eea', line=dict(width=2, color='white')),
-        text=node_list,
-        textposition="top center",
-        textfont=dict(size=10, family="Poppins"),
-        hoverinfo='text',
-        showlegend=False
+    fig = px.pie(
+        values=top_tags.values,
+        names=top_tags.index,
+        title='🥧 Top 10 Tags - Distribuição',
+        color_discrete_sequence=px.colors.qualitative.Set3
     )
 
-    fig = go.Figure(data=edge_traces + [node_trace])
-
+    fig.update_traces(textposition='inside', textinfo='percent+label')
     fig.update_layout(
-        title='Rede de Co-ocorrência de Tags',
-        showlegend=False,
-        hovermode='closest',
-        height=600,
-        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-        plot_bgcolor='rgba(0,0,0,0)',
-        paper_bgcolor='rgba(0,0,0,0)',
+        height=500,
+        font=dict(family="Poppins, sans-serif")
     )
 
     return fig
@@ -719,7 +680,7 @@ def main():
     elif st.session_state['current_page'] == "Área Administrativa":
         show_admin()
 
-# ==================== PÁGINA INICIAL ====================
+# ==================== PÁGINAS ====================
 
 def show_intro():
     st.markdown("<div class='gradient-title'>Projeto de Folksonomia em Museus</div>", unsafe_allow_html=True)
@@ -814,8 +775,6 @@ def show_intro():
             if st.button("🎨 Começar a Explorar", use_container_width=True):
                 st.session_state['current_page'] = "Explorar Obras"
                 st.rerun()
-
-# ==================== PÁGINA DE OBRAS ====================
 
 def show_obras():
     st.markdown("<div class='gradient-title'>Galeria de Obras Interativa</div>", unsafe_allow_html=True)
@@ -919,40 +878,6 @@ def show_obras():
                             """, unsafe_allow_html=True)
                     else:
                         st.info("Seja o primeiro! 🌟")
-
-    else:
-        for obra in filtered_obras:
-            with st.container():
-                col_img, col_info = st.columns([1, 2])
-
-                with col_img:
-                    st.image(obra['imagem'], use_container_width=True)
-
-                with col_info:
-                    st.markdown(f"### {obra['titulo']}")
-                    st.markdown(f"**Artista:** {obra['artista']}")
-                    st.markdown(f"**Ano:** {obra['ano']}")
-
-                    if st.button(f"🏷️ Adicionar Tag", key=f"btn_list_{obra['id']}"):
-                        st.session_state['selected_obra'] = obra
-                        st.rerun()
-
-                    tags = get_tags_for_obra(obra['id'])
-                    if not tags.empty:
-                        st.markdown("**Tags Populares:**")
-                        tag_html = ""
-                        for _, row in tags.head(10).iterrows():
-                            tag_html += f"""
-                            <span style='display: inline-block; background: #667eea; color: white; 
-                                         padding: 3px 10px; border-radius: 15px; margin: 2px; font-size: 0.8rem;'>
-                                {row['tag']} ({row['count']})
-                            </span>
-                            """
-                        st.markdown(tag_html, unsafe_allow_html=True)
-
-                st.markdown("---")
-
-# ==================== ÁREA ADMINISTRATIVA ====================
 
 def show_admin():
     st.markdown("<div class='gradient-title'>Área Administrativa</div>", unsafe_allow_html=True)
@@ -1124,19 +1049,19 @@ def show_analytics_dashboard():
     with viz_tabs[1]:
         st.markdown("### 🏷️ Análise Detalhada de Tags")
 
-        col_wc, col_net = st.columns([1, 1])
+        col_wc, col_pie = st.columns([1, 1])
 
         with col_wc:
             st.markdown("#### ☁️ Nuvem de Palavras")
-            fig_wc = create_wordcloud_plotly(tags_df)
+            fig_wc = create_wordcloud_plotly_alternative(tags_df)
             if fig_wc:
-                st.pyplot(fig_wc)
+                st.plotly_chart(fig_wc, use_container_width=True)
 
-        with col_net:
-            st.markdown("#### 🕸️ Rede de Co-ocorrência")
-            fig_network = create_tag_network(tags_df)
-            if fig_network:
-                st.plotly_chart(fig_network, use_container_width=True)
+        with col_pie:
+            st.markdown("#### 🥧 Top 10 Tags")
+            fig_pie = create_tag_pie_chart(tags_df)
+            if fig_pie:
+                st.plotly_chart(fig_pie, use_container_width=True)
 
         st.markdown("---")
 
@@ -1270,12 +1195,11 @@ def show_manage_obras():
         if obra_para_excluir and st.button("Excluir Obra"):
             obra_id = int(obra_para_excluir.split(":")[0])
 
-            # Verificar tags
             tags = load_json_file(TAGS_FILE, [])
             has_tags = any(tag['obra_id'] == obra_id for tag in tags)
 
             if has_tags:
-                st.warning("Esta obra possui tags. Exclua as tags primeiro.")
+                st.warning("Esta obra possui tags. Exclua as.")
             else:
                 obras = [o for o in obras if o['id'] != obra_id]
                 save_json_file(OBRAS_FILE, obras)
@@ -1338,8 +1262,6 @@ def show_manage_admins():
                     st.rerun()
     else:
         st.warning("Nenhum administrador encontrado.")
-
-# ==================== EXECUTAR APLICAÇÃO ====================
 
 if __name__ == "__main__":
     main()
