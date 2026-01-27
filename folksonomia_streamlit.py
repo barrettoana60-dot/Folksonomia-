@@ -593,7 +593,7 @@ def load_obras():
         },
         {
             "id": 2,
-            "titulo": "A Noite Estrelada",
+            "titulo": "A No Estrelada",
             "artista": "Vincent van Gogh",
             "ano": "1889",
             "imagem": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/ea/Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg/1200px-Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg"
@@ -1324,7 +1324,7 @@ def show_admin():
                 st.rerun()
 
 def show_overview_dashboard():
-    """Visão geral com métricas principais""
+    """Visão geral com métricas principais"""
     tags_df = load_all_tags()
     users_df = load_all_users()
     obras = load_obras()
@@ -1345,4 +1345,50 @@ def show_overview_dashboard():
             <div class='metric-label'>👥 Usuários</div>
             <div class='metric-value'>{total_users}</div>
         </div>
+        """, unsafe_allow_html=True)
+
+    with col2:
+        st.markdown(f"""
+        <div class='metric-card'>
+            <div class='metric-label'>🏷️ Total Tags</div>
+            <div class='metric-value'>{total_tags}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col3:
+        st.markdown(f"""
+        <div class='metric-card'>
+            <div class='metric-label'>✨ Tags Únicas</div>
+            <div class='metric-value'>{unique_tags}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col4:
+        st.markdown(f"""
+        <div class='metric-card'>
+            <div class='metric-label'>🎨 Obras</div>
+            <div class='metric-value'>{total_obras}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("<br><br>", unsafe_allow_html=True)
+
+    # Estatísticas detalhadas
+    if not tags_df.empty:
+        st.markdown("### 📊 Estatísticas Detalhadas")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.markdown("<div class='dark-blue-card'>", unsafe_allow_html=True)
+            st.markdown("#### 🔝 Top 10 Tags Mais Usadas")
+            top_tags = tags_df['tag'].value_counts().head(10).reset_index()
+            top_tags.columns = ['Tag', 'Quantidade']
+            st.dataframe(top_tags, use_container_width=True, hide_index=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        with col2:
+            st.markdown("<div class='dark-blue-card'>", unsafe_allow_html=True)
+            st.markdown("#### 🎨 Obras Mais Tagueadas")
+            obras_tags = tags_df.groupby('
 
