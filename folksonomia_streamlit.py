@@ -2,27 +2,38 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 import hashlib
 import base64
 import json
 from collections import Counter
 import re
+from scipy import stats
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from sklearn.cluster import KMeans, DBSCAN
+from sklearn.metrics import silhouette_score
+import warnings
+warnings.filterwarnings('ignore')
 
 # ==================== CONFIGURAÇÃO INICIAL ====================
 st.set_page_config(
-    page_title="Folksonomia Digital",
+    page_title="Folksonomia Digital | Sistema Avançado",
     layout="wide",
     initial_sidebar_state="collapsed",
     page_icon="🎨"
 )
 
-# ==================== PATHS DOS ARQUIVOS JSON ====================
+# ==================== CONFIGURAÇÕES ====================
 DATA_DIR = "data"
 OBRAS_FILE = os.path.join(DATA_DIR, "obras.json")
 TAGS_FILE = os.path.join(DATA_DIR, "tags.json")
 USERS_FILE = os.path.join(DATA_DIR, "users.json")
 ADMIN_FILE = os.path.join(DATA_DIR, "admin.json")
+
+# Credenciais do Admin (OCULTAS)
+ADMIN_USERNAME = "nugep"
+ADMIN_PASSWORD = "nugep123"
 
 # ==================== FUNÇÕES DE ARMAZENAMENTO ====================
 
@@ -54,11 +65,11 @@ def save_json_file(filepath, data):
         st.error(f"Erro ao salvar {filepath}: {e}")
         return False
 
-# ==================== CSS TEMA ESCURO MODERNO ====================
+# ==================== CSS ULTRA MODERNO - TEMA AZUL ESCURO ====================
 def load_custom_css():
     st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
     * {
         margin: 0;
@@ -70,9 +81,10 @@ def load_custom_css():
         font-family: 'Inter', sans-serif;
     }
 
-    /* Background escuro */
+    /* Background azul escuro profundo */
     .stApp {
-        background: #0f1419;
+        background: linear-gradient(135deg, #0a1628 0%, #0f1e3a 50%, #0a1628 100%);
+        background-attachment: fixed;
     }
 
     /* Esconder sidebar */
@@ -80,115 +92,161 @@ def load_custom_css():
         display: none;
     }
 
-    /* Header superior */
-    .top-header {
+    /* Header superior fixo */
+    .top-navbar {
         position: fixed;
         top: 0;
         left: 0;
         right: 0;
         z-index: 999;
-        background: #1a1f2e;
-        border-bottom: 1px solid #2d3748;
+        background: rgba(10, 22, 40, 0.95);
+        backdrop-filter: blur(20px);
+        border-bottom: 1px solid rgba(59, 130, 246, 0.2);
         padding: 1rem 2rem;
         display: flex;
         justify-content: space-between;
         align-items: center;
+        box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
     }
 
-    .header-title {
-        font-size: 1.25rem;
-        font-weight: 600;
-        color: #e2e8f0;
+    .navbar-logo {
+        font-size: 1.5rem;
+        font-weight: 800;
+        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        letter-spacing: -0.5px;
     }
 
-    .header-buttons {
+    .navbar-buttons {
         display: flex;
-        gap: 0.5rem;
+        gap: 1rem;
     }
 
-    /* Botões estilo moderno */
-    .nav-button {
-        background: #2d3748;
-        color: #cbd5e0;
-        border: 1px solid #4a5568;
-        border-radius: 8px;
-        padding: 0.5rem 1rem;
-        font-size: 0.9rem;
-        font-weight: 500;
+    /* Botões com animação 3D de "sair da tela" */
+    .nav-btn {
+        background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 100%);
+        color: #e0e7ff;
+        border: 2px solid #3b82f6;
+        border-radius: 12px;
+        padding: 0.75rem 1.5rem;
+        font-size: 0.95rem;
+        font-weight: 600;
         cursor: pointer;
-        transition: all 0.2s ease;
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
+        transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        position: relative;
+        overflow: hidden;
+        box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
     }
 
-    .nav-button:hover {
-        background: #374151;
-        border-color: #667eea;
-        color: #e2e8f0;
+    .nav-btn::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+        transition: left 0.5s;
     }
 
-    .nav-button.active {
-        background: #667eea;
-        border-color: #667eea;
-        color: white;
+    .nav-btn:hover::before {
+        left: 100%;
+    }
+
+    .nav-btn:hover {
+        transform: translateY(-5px) scale(1.05);
+        box-shadow: 0 10px 30px rgba(59, 130, 246, 0.5);
+        border-color: #60a5fa;
+    }
+
+    .nav-btn:active {
+        transform: translateY(-20px) scale(1.1) rotateX(10deg);
+        box-shadow: 0 20px 50px rgba(59, 130, 246, 0.8);
+    }
+
+    .nav-btn.active {
+        background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+        border-color: #60a5fa;
+        box-shadow: 0 6px 25px rgba(59, 130, 246, 0.6);
     }
 
     /* Container principal */
     .main-content {
-        margin-top: 80px;
+        margin-top: 100px;
         padding: 2rem;
-        max-width: 1400px;
+        max-width: 1600px;
         margin-left: auto;
         margin-right: auto;
     }
 
-    /* Cards escuros */
-    .dark-card {
-        background: #1a1f2e;
-        border: 1px solid #2d3748;
-        border-radius: 12px;
+    /* Cards azul escuro */
+    .dark-blue-card {
+        background: rgba(15, 30, 58, 0.8);
+        backdrop-filter: blur(15px);
+        border: 1px solid rgba(59, 130, 246, 0.3);
+        border-radius: 16px;
         padding: 1.5rem;
         margin: 1rem 0;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
         transition: all 0.3s ease;
     }
 
-    .dark-card:hover {
-        border-color: #4a5568;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    .dark-blue-card:hover {
+        border-color: rgba(59, 130, 246, 0.6);
+        box-shadow: 0 12px 40px rgba(59, 130, 246, 0.3);
+        transform: translateY(-3px);
     }
 
-    /* Cards de obras */
+    /* Cards de obras com efeito 3D */
     .obra-card {
-        background: #1a1f2e;
-        border: 1px solid #2d3748;
-        border-radius: 12px;
+        background: rgba(15, 30, 58, 0.9);
+        border: 1px solid rgba(59, 130, 246, 0.3);
+        border-radius: 16px;
         padding: 1rem;
-        transition: all 0.3s ease;
+        transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        position: relative;
         overflow: hidden;
+        cursor: pointer;
+    }
+
+    .obra-card::before {
+        content: '';
+        position: absolute;
+        top: -50%;
+        right: -50%;
+        width: 200%;
+        height: 200%;
+        background: radial-gradient(circle, rgba(59, 130, 246, 0.1) 0%, transparent 70%);
+        transform: scale(0);
+        transition: transform 0.6s ease;
+    }
+
+    .obra-card:hover::before {
+        transform: scale(1);
     }
 
     .obra-card:hover {
-        border-color: #667eea;
-        transform: translateY(-5px);
-        box-shadow: 0 8px 25px rgba(102, 126, 234, 0.2);
+        border-color: rgba(96, 165, 250, 0.8);
+        transform: translateY(-10px) scale(1.02);
+        box-shadow: 0 20px 60px rgba(59, 130, 246, 0.4);
     }
 
     .obra-card img {
-        border-radius: 8px;
+        border-radius: 12px;
         width: 100%;
-        transition: transform 0.3s ease;
+        transition: transform 0.5s ease;
     }
 
     .obra-card:hover img {
-        transform: scale(1.05);
+        transform: scale(1.08) rotate(1deg);
     }
 
     .obra-title {
-        color: #e2e8f0;
-        font-size: 1.1rem;
-        font-weight: 600;
-        margin: 0.75rem 0 0.25rem 0;
+        color: #e0e7ff;
+        font-size: 1.15rem;
+        font-weight: 700;
+        margin: 0.75rem 0 0.5rem 0;
     }
 
     .obra-info {
@@ -197,135 +255,286 @@ def load_custom_css():
         margin: 0.25rem 0;
     }
 
-    /* Títulos */
+    /* Títulos principais */
     .main-title {
-        color: #e2e8f0;
-        font-size: 2.5rem;
-        font-weight: 700;
+        color: #e0e7ff;
+        font-size: 3rem;
+        font-weight: 800;
         text-align: center;
         margin: 2rem 0 1rem 0;
+        background: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        text-shadow: 0 0 30px rgba(59, 130, 246, 0.5);
     }
 
     .subtitle {
         color: #94a3b8;
-        font-size: 1rem;
+        font-size: 1.1rem;
         text-align: center;
-        margin-bottom: 2rem;
-        line-height: 1.6;
+        margin-bottom: 2.5rem;
+        line-height: 1.7;
     }
 
-    /* Tags */
+    /* Tags badges */
     .tag-badge {
         display: inline-block;
-        background: rgba(102, 126, 234, 0.15);
-        border: 1px solid rgba(102, 126, 234, 0.3);
-        color: #a5b4fc;
-        padding: 0.35rem 0.75rem;
+        background: rgba(59, 130, 246, 0.2);
+        border: 1px solid rgba(59, 130, 246, 0.4);
+        color: #93c5fd;
+        padding: 0.4rem 0.9rem;
         border-radius: 20px;
-        margin: 0.25rem;
+        margin: 0.3rem;
         font-size: 0.85rem;
-        font-weight: 500;
-        transition: all 0.2s ease;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        cursor: pointer;
     }
 
     .tag-badge:hover {
-        background: rgba(102, 126, 234, 0.25);
-        border-color: rgba(102, 126, 234, 0.5);
+        background: rgba(59, 130, 246, 0.3);
+        border-color: rgba(96, 165, 250, 0.6);
+        transform: scale(1.1);
+        box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
     }
 
-    /* Métricas */
+    /* Métricas do dashboard */
     .metric-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        border-radius: 12px;
-        padding: 1.5rem;
+        background: linear-gradient(135deg, #1e40af 0%, #2563eb 100%);
+        border: 1px solid rgba(96, 165, 250, 0.3);
+        border-radius: 16px;
+        padding: 2rem;
         text-align: center;
         color: white;
+        box-shadow: 0 8px 30px rgba(37, 99, 235, 0.4);
+        transition: all 0.3s ease;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .metric-card::before {
+        content: '';
+        position: absolute;
+        top: -50%;
+        left: -50%;
+        width: 200%;
+        height: 200%;
+        background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+        animation: rotate 20s linear infinite;
+    }
+
+    @keyframes rotate {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
+    .metric-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 12px 40px rgba(37, 99, 235, 0.6);
     }
 
     .metric-value {
-        font-size: 2.5rem;
-        font-weight: 700;
+        font-size: 2.75rem;
+        font-weight: 800;
         margin: 0.5rem 0;
+        position: relative;
+        z-index: 1;
     }
 
     .metric-label {
-        font-size: 0.85rem;
-        opacity: 0.9;
+        font-size: 0.9rem;
+        opacity: 0.95;
         text-transform: uppercase;
-        letter-spacing: 1px;
+        letter-spacing: 1.5px;
+        font-weight: 600;
+        position: relative;
+        z-index: 1;
     }
 
-    /* Botões do Streamlit */
+    /* Botões do Streamlit customizados */
     .stButton button {
-        background: #667eea;
+        background: linear-gradient(135deg, #1e40af 0%, #2563eb 100%);
         color: white;
-        border: none;
-        border-radius: 8px;
-        padding: 0.75rem 1.5rem;
-        font-weight: 600;
-        transition: all 0.2s ease;
+        border: 2px solid #3b82f6;
+        border-radius: 12px;
+        padding: 0.75rem 2rem;
+        font-weight: 700;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
     }
 
     .stButton button:hover {
-        background: #5568d3;
-        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        transform: translateY(-3px);
+        box-shadow: 0 8px 25px rgba(59, 130, 246, 0.5);
+        border-color: #60a5fa;
     }
 
-    /* Inputs escuros */
+    .stButton button:active {
+        transform: translateY(-10px) scale(1.05);
+        box-shadow: 0 15px 40px rgba(59, 130, 246, 0.7);
+    }
+
+    /* Inputs azul escuro */
     .stTextInput input, .stTextArea textarea, .stSelectbox select {
-        background: #0f1419 !important;
-        border: 1px solid #2d3748 !important;
-        color: #e2e8f0 !important;
-        border-radius: 8px !important;
+        background: rgba(10, 22, 40, 0.9) !important;
+        border: 1px solid rgba(59, 130, 246, 0.3) !important;
+        color: #e0e7ff !important;
+        border-radius: 10px !important;
         padding: 0.75rem !important;
+        transition: all 0.3s ease !important;
     }
 
     .stTextInput input:focus, .stTextArea textarea:focus {
-        border-color: #667eea !important;
-        box-shadow: 0 0 0 1px #667eea !important;
+        border-color: #3b82f6 !important;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2) !important;
     }
 
     /* Labels */
     label {
         color: #cbd5e0 !important;
-        font-weight: 500 !important;
+        font-weight: 600 !important;
+        font-size: 0.95rem !important;
     }
 
-    /* Tabs */
+    /* Tabs modernos */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 0.5rem;
+        gap: 0.75rem;
         background: transparent;
-        border-bottom: 1px solid #2d3748;
+        border-bottom: 2px solid rgba(59, 130, 246, 0.2);
     }
 
     .stTabs [data-baseweb="tab"] {
-        background: #1a1f2e;
-        border: 1px solid #2d3748;
-        border-radius: 8px 8px 0 0;
+        background: rgba(15, 30, 58, 0.6);
+        border: 1px solid rgba(59, 130, 246, 0.3);
+        border-radius: 12px 12px 0 0;
         color: #94a3b8;
-        padding: 0.75rem 1.5rem;
-        font-weight: 500;
+        padding: 0.85rem 1.75rem;
+        font-weight: 600;
+        transition: all 0.3s ease;
+    }
+
+    .stTabs [data-baseweb="tab"]:hover {
+        background: rgba(30, 64, 175, 0.4);
+        color: #e0e7ff;
     }
 
     .stTabs [aria-selected="true"] {
-        background: #667eea;
-        border-color: #667eea;
+        background: linear-gradient(135deg, #1e40af 0%, #2563eb 100%);
+        border-color: #3b82f6;
         color: white;
+        box-shadow: 0 4px 20px rgba(59, 130, 246, 0.4);
     }
 
     /* Alertas */
     .stAlert {
-        background: #1a1f2e;
-        border: 1px solid #2d3748;
-        border-radius: 8px;
-        color: #e2e8f0;
+        background: rgba(15, 30, 58, 0.9);
+        border: 1px solid rgba(59, 130, 246, 0.4);
+        border-radius: 12px;
+        color: #e0e7ff;
+    }
+
+    /* Progress bars */
+    .stProgress > div > div {
+        background: linear-gradient(90deg, #1e40af 0%, #3b82f6 50%, #60a5fa 100%);
     }
 
     /* Dataframes */
     .dataframe {
-        background: #1a1f2e !important;
-        color: #e2e8f0 !important;
-        border: 1px solid #2d3748 !important;
+        background: rgba(15, 30, 58, 0.9) !important;
+        color: #e0e7ff !important;
+        border: 1px solid rgba(59, 130, 246, 0.3) !important;
+        border-radius: 12px !important;
+    }
+
+    /* Gráficos */
+    .js-plotly-plot {
+        border-radius: 12px;
+        overflow: hidden;
+    }
+
+    /* Scrollbar personalizado */
+    ::-webkit-scrollbar {
+        width: 12px;
+        height: 12px;
+    }
+
+    ::-webkit-scrollbar-track {
+        background: #0a1628;
+    }
+
+    ::-webkit-scrollbar-thumb {
+        background: linear-gradient(135deg, #1e40af 0%, #2563eb 100%);
+        border-radius: 6px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+        background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+    }
+
+    /* Animação de loading */
+    .stSpinner > div {
+        border-color: #3b82f6 !important;
+        border-top-color: transparent !important;
+    }
+
+    /* Cards de análise avançada */
+    .analysis-card {
+        background: rgba(15, 30, 58, 0.95);
+        border: 2px solid rgba(59, 130, 246, 0.4);
+        border-radius: 16px;
+        padding: 2rem;
+        margin: 1.5rem 0;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    }
+
+    .analysis-title {
+        color: #60a5fa;
+        font-size: 1.4rem;
+        font-weight: 700;
+        margin-bottom: 1rem;
+        border-bottom: 2px solid rgba(59, 130, 246, 0.3);
+        padding-bottom: 0.5rem;
+    }
+
+    /* Estatísticas inline */
+    .stat-inline {
+        display: inline-block;
+        background: rgba(59, 130, 246, 0.15);
+        border: 1px solid rgba(59, 130, 246, 0.3);
+        border-radius: 8px;
+        padding: 0.5rem 1rem;
+        margin: 0.5rem;
+        color: #93c5fd;
+        font-weight: 600;
+    }
+
+    /* Badges de status */
+    .status-badge {
+        display: inline-block;
+        padding: 0.35rem 0.85rem;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .status-high {
+        background: rgba(34, 197, 94, 0.2);
+        border: 1px solid rgba(34, 197, 94, 0.4);
+        color: #86efac;
+    }
+
+    .status-medium {
+        background: rgba(251, 191, 36, 0.2);
+        border: 1px solid rgba(251, 191, 36, 0.4);
+        color: #fcd34d;
+    }
+
+    .status-low {
+        background: rgba(239, 68, 68, 0.2);
+        border: 1px solid rgba(239, 68, 68, 0.4);
+        color: #fca5a5;
     }
 
     /* Remover elementos padrão */
@@ -333,40 +542,25 @@ def load_custom_css():
     footer {visibility: hidden;}
     .stDeployButton {display: none;}
 
-    /* Scrollbar escuro */
-    ::-webkit-scrollbar {
-        width: 10px;
-        height: 10px;
-    }
-
-    ::-webkit-scrollbar-track {
-        background: #0f1419;
-    }
-
-    ::-webkit-scrollbar-thumb {
-        background: #2d3748;
-        border-radius: 5px;
-    }
-
-    ::-webkit-scrollbar-thumb:hover {
-        background: #4a5568;
-    }
-
     /* Responsivo */
     @media (max-width: 768px) {
         .main-title {
-            font-size: 1.75rem;
+            font-size: 2rem;
         }
 
-        .top-header {
+        .top-navbar {
             flex-direction: column;
             gap: 1rem;
             padding: 1rem;
         }
 
         .main-content {
-            margin-top: 120px;
+            margin-top: 140px;
             padding: 1rem;
+        }
+
+        .metric-value {
+            font-size: 2rem;
         }
     }
     </style>
@@ -375,11 +569,11 @@ def load_custom_css():
 # ==================== FUNÇÕES AUXILIARES ====================
 
 def check_and_init_admin():
-    """Inicializa administrador padrão"""
+    """Inicializa admin com credenciais ocultas"""
     admins = load_json_file(ADMIN_FILE, [])
     if not admins:
-        hashed_password = hashlib.sha256("admin123".encode()).hexdigest()
-        admins.append({"id": 1, "username": "admin", "password": hashed_password})
+        hashed_password = hashlib.sha256(ADMIN_PASSWORD.encode()).hexdigest()
+        admins.append({"id": 1, "username": ADMIN_USERNAME, "password": hashed_password})
         save_json_file(ADMIN_FILE, admins)
 
 def generate_user_id():
@@ -389,13 +583,29 @@ def generate_user_id():
 @st.cache_data(ttl=5, show_spinner=False)
 def load_obras():
     """Carrega obras do arquivo JSON"""
-    default_obras = [{
-        "id": 1,
-        "titulo": "Guernica",
-        "artista": "Pablo Picasso",
-        "ano": "1937",
-        "imagem": "https://upload.wikimedia.org/wikipedia/en/7/74/PicassoGuernica.jpg"
-    }]
+    default_obras = [
+        {
+            "id": 1,
+            "titulo": "Guernica",
+            "artista": "Pablo Picasso",
+            "ano": "1937",
+            "imagem": "https://upload.wikimedia.org/wikipedia/en/7/74/PicassoGuernica.jpg"
+        },
+        {
+            "id": 2,
+            "titulo": "A Noite Estrelada",
+            "artista": "Vincent van Gogh",
+            "ano": "1889",
+            "imagem": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/ea/Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg/1200px-Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg"
+        },
+        {
+            "id": 3,
+            "titulo": "Mona Lisa",
+            "artista": "Leonardo da Vinci",
+            "ano": "1503",
+            "imagem": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/ec/Mona_Lisa%2C_by_Leonardo_da_Vinci%2C_from_C2RMF_retouched.jpg/800px-Mona_Lisa%2C_by_Leonardo_da_Vinci%2C_from_C2RMF_retouched.jpg"
+        }
+    ]
     obras = load_json_file(OBRAS_FILE, default_obras)
     if not obras:
         save_json_file(OBRAS_FILE, default_obras)
@@ -443,13 +653,10 @@ def get_tags_for_obra(obra_id):
 
 def check_admin_credentials(username, password):
     """Verifica credenciais do administrador"""
-    admins = load_json_file(ADMIN_FILE, [])
     hashed_password = hashlib.sha256(password.encode()).hexdigest()
+    expected_hash = hashlib.sha256(ADMIN_PASSWORD.encode()).hexdigest()
 
-    for admin in admins:
-        if admin['username'] == username and admin['password'] == hashed_password:
-            return True
-    return False
+    return username == ADMIN_USERNAME and hashed_password == expected_hash
 
 def load_all_tags():
     """Carrega todas as tags"""
@@ -461,60 +668,331 @@ def load_all_users():
     users = load_json_file(USERS_FILE, [])
     return pd.DataFrame(users) if users else pd.DataFrame()
 
+# ==================== ANÁLISES AVANÇADAS ====================
+
 def calculate_tag_diversity(tags_df):
-    """Calcula diversidade de tags"""
+    """Calcula diversidade de tags usando índice de Shannon"""
     if tags_df.empty:
         return 0
     tag_counts = tags_df['tag'].value_counts()
     proportions = tag_counts / tag_counts.sum()
-    shannon_index = -sum(proportions * np.log(proportions))
+    shannon_index = -sum(proportions * np.log(proportions + 1e-10))
     return shannon_index
 
+def calculate_simpson_index(tags_df):
+    """Calcula índice de Simpson para diversidade"""
+    if tags_df.empty:
+        return 0
+    tag_counts = tags_df['tag'].value_counts()
+    proportions = tag_counts / tag_counts.sum()
+    simpson_index = 1 - sum(proportions ** 2)
+    return simpson_index
+
 def analyze_user_engagement(users_df, tags_df):
-    """Análise de engajamento"""
+    """Análise detalhada de engajamento"""
     if users_df.empty or tags_df.empty:
         return None
 
     tags_per_user = tags_df.groupby('user_id').size().reset_index(name='tag_count')
 
-    return {
+    engagement_stats = {
         'avg_tags_per_user': tags_per_user['tag_count'].mean(),
         'median_tags_per_user': tags_per_user['tag_count'].median(),
+        'std_tags_per_user': tags_per_user['tag_count'].std(),
         'max_tags_per_user': tags_per_user['tag_count'].max(),
+        'min_tags_per_user': tags_per_user['tag_count'].min(),
         'total_active_users': len(tags_per_user),
-        'total_registered_users': len(users_df)
+        'total_registered_users': len(users_df),
+        'engagement_rate': (len(tags_per_user) / len(users_df) * 100) if len(users_df) > 0 else 0
     }
 
+    # Percentis
+    engagement_stats['p25'] = tags_per_user['tag_count'].quantile(0.25)
+    engagement_stats['p75'] = tags_per_user['tag_count'].quantile(0.75)
+    engagement_stats['p90'] = tags_per_user['tag_count'].quantile(0.90)
+
+    return engagement_stats
+
 def get_top_contributors(tags_df, top_n=10):
-    """Identifica principais contribuidores"""
+    """Identifica principais contribuidores com análise temporal"""
     if tags_df.empty:
         return pd.DataFrame()
 
     contributors = tags_df.groupby('user_id').agg({
         'tag': 'count',
-        'timestamp': 'min'
+        'timestamp': ['min', 'max']
     }).reset_index()
 
-    contributors.columns = ['user_id', 'total_tags', 'first_contribution']
-    return contributors.sort_values('total_tags', ascending=False).head(top_n)
+    contributors.columns = ['user_id', 'total_tags', 'first_contribution', 'last_contribution']
 
-# ==================== HEADER DE NAVEGAÇÃO ====================
+    # Calcular dias ativos
+    contributors['first_contribution'] = pd.to_datetime(contributors['first_contribution'])
+    contributors['last_contribution'] = pd.to_datetime(contributors['last_contribution'])
+    contributors['days_active'] = (contributors['last_contribution'] - contributors['first_contribution']).dt.days + 1
+    contributors['tags_per_day'] = contributors['total_tags'] / contributors['days_active']
+
+    contributors = contributors.sort_values('total_tags', ascending=False).head(top_n)
+
+    return contributors
+
+def analyze_tag_patterns(tags_df):
+    """Análise profunda de padrões de tags"""
+    if tags_df.empty:
+        return None
+
+    patterns = {
+        'total_tags': len(tags_df),
+        'unique_tags': len(tags_df['tag'].unique()),
+        'avg_tag_length': tags_df['tag'].str.len().mean(),
+        'median_tag_length': tags_df['tag'].str.len().median(),
+        'max_tag_length': tags_df['tag'].str.len().max(),
+        'min_tag_length': tags_df['tag'].str.len().min(),
+        'single_word_tags': sum(tags_df['tag'].str.split().str.len() == 1),
+        'multi_word_tags': sum(tags_df['tag'].str.split().str.len() > 1),
+        'numeric_tags': sum(tags_df['tag'].str.contains(r'\d', regex=True)),
+        'special_char_tags': sum(tags_df['tag'].str.contains(r'[^a-zA-Z0-9\s]', regex=True)),
+        'uppercase_tags': sum(tags_df['tag'].str.contains(r'[A-Z]', regex=True))
+    }
+
+    # Percentual de tags únicas
+    patterns['uniqueness_ratio'] = (patterns['unique_tags'] / patterns['total_tags'] * 100) if patterns['total_tags'] > 0 else 0
+
+    # Tags mais reusadas
+    tag_counts = tags_df['tag'].value_counts()
+    patterns['most_reused_tag'] = tag_counts.index[0] if len(tag_counts) > 0 else None
+    patterns['most_reused_count'] = tag_counts.values[0] if len(tag_counts) > 0 else 0
+    patterns['reuse_rate'] = ((patterns['total_tags'] - patterns['unique_tags']) / patterns['total_tags'] * 100) if patterns['total_tags'] > 0 else 0
+
+    return patterns
+
+def analyze_temporal_patterns(tags_df):
+    """Análise temporal avançada"""
+    if tags_df.empty or 'timestamp' not in tags_df.columns:
+        return None
+
+    tags_df['timestamp'] = pd.to_datetime(tags_df['timestamp'])
+    tags_df['date'] = tags_df['timestamp'].dt.date
+    tags_df['hour'] = tags_df['timestamp'].dt.hour
+    tags_df['day_of_week'] = tags_df['timestamp'].dt.day_name()
+    tags_df['week'] = tags_df['timestamp'].dt.isocalendar().week
+    tags_df['month'] = tags_df['timestamp'].dt.month
+
+    temporal_stats = {
+        'total_days': (tags_df['date'].max() - tags_df['date'].min()).days + 1,
+        'tags_per_day_avg': len(tags_df) / ((tags_df['date'].max() - tags_df['date'].min()).days + 1),
+        'most_active_hour': tags_df['hour'].mode()[0] if not tags_df['hour'].mode().empty else None,
+        'most_active_day': tags_df['day_of_week'].mode()[0] if not tags_df['day_of_week'].mode().empty else None,
+        'peak_activity_date': tags_df.groupby('date').size().idxmax() if len(tags_df) > 0 else None,
+        'peak_activity_count': tags_df.groupby('date').size().max() if len(tags_df) > 0 else 0
+    }
+
+    # Análise de crescimento
+    daily_tags = tags_df.groupby('date').size().reset_index(name='count')
+    if len(daily_tags) > 1:
+        daily_tags['cumulative'] = daily_tags['count'].cumsum()
+        daily_tags['growth_rate'] = daily_tags['count'].pct_change() * 100
+        temporal_stats['avg_growth_rate'] = daily_tags['growth_rate'].mean()
+        temporal_stats['max_growth_day'] = daily_tags.loc[daily_tags['growth_rate'].idxmax(), 'date'] if not daily_tags['growth_rate'].isna().all() else None
+
+    return temporal_stats
+
+def perform_clustering_analysis(tags_df, obras):
+    """Análise de clustering de obras baseado em tags"""
+    if tags_df.empty or not obras:
+        return None
+
+    # Criar matriz obra-tag
+    obra_tag_matrix = tags_df.groupby(['obra_id', 'tag']).size().unstack(fill_value=0)
+
+    if len(obra_tag_matrix) < 2:
+        return None
+
+    # Normalizar
+    scaler = StandardScaler()
+    normalized_data = scaler.fit_transform(obra_tag_matrix)
+
+    # K-means
+    n_clusters = min(3, len(obra_tag_matrix))
+    kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+    clusters = kmeans.fit_predict(normalized_data)
+
+    # Silhouette score
+    if len(set(clusters)) > 1:
+        silhouette = silhouette_score(normalized_data, clusters)
+    else:
+        silhouette = 0
+
+    # PCA para visualização
+    if obra_tag_matrix.shape[1] > 1:
+        pca = PCA(n_components=min(2, obra_tag_matrix.shape[1]))
+        pca_result = pca.fit_transform(normalized_data)
+        variance_explained = pca.explained_variance_ratio_.sum()
+    else:
+        pca_result = None
+        variance_explained = 0
+
+    results = {
+        'n_clusters': n_clusters,
+        'silhouette_score': silhouette,
+        'clusters': clusters,
+        'variance_explained': variance_explained,
+        'pca_result': pca_result,
+        'obra_ids': obra_tag_matrix.index.tolist()
+    }
+
+    return results
+
+def calculate_tag_quality_metrics(tags_df):
+    """Métricas de qualidade das tags"""
+    if tags_df.empty:
+        return None
+
+    quality_metrics = {}
+
+    # Especificidade (tags únicas vs totais)
+    quality_metrics['specificity'] = len(tags_df['tag'].unique()) / len(tags_df) * 100
+
+    # Consistência (variação no tamanho das tags)
+    tag_lengths = tags_df['tag'].str.len()
+    quality_metrics['consistency'] = 100 - (tag_lengths.std() / tag_lengths.mean() * 100) if tag_lengths.mean() > 0 else 0
+
+    # Completude (% de obras com pelo menos 3 tags)
+    tags_per_obra = tags_df.groupby('obra_id').size()
+    quality_metrics['completeness'] = (tags_per_obra >= 3).sum() / len(tags_per_obra) * 100 if len(tags_per_obra) > 0 else 0
+
+    # Riqueza vocabular (razão de palavras únicas por tags)
+    all_words = ' '.join(tags_df['tag']).split()
+    quality_metrics['vocabulary_richness'] = len(set(all_words)) / len(all_words) * 100 if len(all_words) > 0 else 0
+
+    # Densidade de informação (média de palavras por tag)
+    quality_metrics['information_density'] = tags_df['tag'].str.split().str.len().mean()
+
+    # Score geral de qualidade (média ponderada)
+    quality_metrics['overall_quality_score'] = (
+        quality_metrics['specificity'] * 0.25 +
+        quality_metrics['consistency'] * 0.20 +
+        quality_metrics['completeness'] * 0.25 +
+        quality_metrics['vocabulary_richness'] * 0.15 +
+        min(quality_metrics['information_density'] * 20, 15)  # max 15 pontos
+    )
+
+    return quality_metrics
+
+def analyze_user_segmentation(tags_df, users_df):
+    """Segmentação de usuários por comportamento"""
+    if tags_df.empty or users_df.empty:
+        return None
+
+    user_behavior = tags_df.groupby('user_id').agg({
+        'tag': ['count', 'nunique'],
+        'timestamp': lambda x: (pd.to_datetime(x.max()) - pd.to_datetime(x.min())).days + 1
+    }).reset_index()
+
+    user_behavior.columns = ['user_id', 'total_tags', 'unique_tags', 'days_active']
+    user_behavior['tags_per_day'] = user_behavior['total_tags'] / user_behavior['days_active']
+    user_behavior['diversity_ratio'] = user_behavior['unique_tags'] / user_behavior['total_tags']
+
+    # Segmentar usuários
+    def categorize_user(row):
+        if row['total_tags'] >= 10 and row['diversity_ratio'] > 0.7:
+            return 'Power User'
+        elif row['total_tags'] >= 5:
+            return 'Active User'
+        elif row['total_tags'] >= 2:
+            return 'Casual User'
+        else:
+            return 'One-time User'
+
+    user_behavior['segment'] = user_behavior.apply(categorize_user, axis=1)
+
+    segmentation = user_behavior['segment'].value_counts().to_dict()
+
+    return {
+        'segmentation': segmentation,
+        'user_behavior_df': user_behavior
+    }
+
+def calculate_correlation_metrics(tags_df, obras):
+    """Análise de correlação entre tags e obras"""
+    if tags_df.empty or len(obras) < 2:
+        return None
+
+    # Matriz de co-ocorrência de tags
+    obra_tags = tags_df.groupby('obra_id')['tag'].apply(list).to_dict()
+
+    # Encontrar tags que aparecem em múltiplas obras
+    tag_obra_count = {}
+    for obra_id, tags in obra_tags.items():
+        for tag in set(tags):
+            if tag not in tag_obra_count:
+                tag_obra_count[tag] = set()
+            tag_obra_count[tag].add(obra_id)
+
+    # Tags compartilhadas entre obras
+    shared_tags = {tag: len(obras) for tag, obras in tag_obra_count.items() if len(obras) > 1}
+
+    correlation_metrics = {
+        'total_shared_tags': len(shared_tags),
+        'most_shared_tag': max(shared_tags, key=shared_tags.get) if shared_tags else None,
+        'max_share_count': max(shared_tags.values()) if shared_tags else 0,
+        'avg_tags_per_obra': tags_df.groupby('obra_id').size().mean()
+    }
+
+    return correlation_metrics
+
+def predict_future_tags(tags_df, days_ahead=7):
+    """Predição simples de tags futuras baseado em tendências"""
+    if tags_df.empty or 'timestamp' not in tags_df.columns:
+        return None
+
+    tags_df['date'] = pd.to_datetime(tags_df['timestamp']).dt.date
+    daily_counts = tags_df.groupby('date').size().reset_index(name='count')
+
+    if len(daily_counts) < 3:
+        return None
+
+    # Calcular tendência linear simples
+    daily_counts['day_num'] = range(len(daily_counts))
+
+    # Usar numpy para regressão linear
+    coefficients = np.polyfit(daily_counts['day_num'], daily_counts['count'], 1)
+    slope, intercept = coefficients
+
+    # Prever próximos dias
+    last_day = daily_counts['day_num'].max()
+    future_days = list(range(last_day + 1, last_day + days_ahead + 1))
+    predictions = [slope * day + intercept for day in future_days]
+
+    # Datas futuras
+    last_date = daily_counts['date'].max()
+    future_dates = [last_date + timedelta(days=i+1) for i in range(days_ahead)]
+
+    prediction_data = {
+        'dates': future_dates,
+        'predicted_tags': [max(0, int(pred)) for pred in predictions],
+        'trend': 'crescente' if slope > 0 else 'decrescente' if slope < 0 else 'estável',
+        'slope': slope
+    }
+
+    return prediction_data
+
+# ==================== HEADER COM BOTÕES 3D ====================
 def show_header():
-    """Exibe header de navegação"""
+    """Header com botões que saem da tela ao clicar"""
     current_page = st.session_state.get('current_page', 'Explorar Obras')
 
     obras_class = "active" if current_page == "Explorar Obras" else ""
     admin_class = "active" if current_page == "Área Administrativa" else ""
 
     st.markdown(f"""
-    <div class='top-header'>
-        <div class='header-title'>🎨 Folksonomia Digital</div>
-        <div class='header-buttons'>
-            <button class='nav-button {obras_class}' onclick='return false;'>
+    <div class='top-navbar'>
+        <div class='navbar-logo'>🎨 Folksonomia Digital</div>
+        <div class='navbar-buttons'>
+            <button class='nav-btn {obras_class}' id='btn-obras'>
                 📚 Explorar Obras
             </button>
-            <button class='nav-button {admin_class}' onclick='return false;'>
-                ⚙️ Área Administrativa
+            <button class='nav-btn {admin_class}' id='btn-admin'>
+                ⚙️ Área Admin
             </button>
         </div>
     </div>
@@ -524,12 +1002,12 @@ def show_header():
     col1, col2, col3, col4, col5 = st.columns([1, 1, 1, 1, 1])
 
     with col2:
-        if st.button("📚 Explorar Obras", key="nav_obras", help="Explorar obras"):
+        if st.button("📚 Obras", key="nav_obras", help="Explorar Obras"):
             st.session_state['current_page'] = "Explorar Obras"
             st.rerun()
 
     with col4:
-        if st.button("⚙️ Admin", key="nav_admin", help="Área administrativa"):
+        if st.button("⚙️ Admin", key="nav_admin", help="Área Administrativa"):
             st.session_state['current_page'] = "Área Administrativa"
             st.rerun()
 
@@ -553,12 +1031,12 @@ def main():
     if 'current_page' not in st.session_state:
         st.session_state['current_page'] = "Explorar Obras"
 
-    # Verificar se precisa mostrar questionário
-    if st.session_state['step'] == 'intro':
-        # QUESTIONÁRIO - SEM NAVEGAÇÃO
+    # VERIFICAÇÃO CRÍTICA: Só mostra conteúdo após responder questionário
+    if st.session_state['step'] != 'completed':
+        # BLOQUEIO TOTAL - APENAS QUESTIONÁRIO
         show_intro()
     else:
-        # APÓS RESPONDER - MOSTRAR NAVEGAÇÃO E CONTEÚDO
+        # LIBERADO - MOSTRAR NAVEGAÇÃO E CONTEÚDO
         show_header()
         st.markdown("<div class='main-content'>", unsafe_allow_html=True)
 
@@ -572,55 +1050,56 @@ def main():
 # ==================== PÁGINA DE QUESTIONÁRIO ====================
 
 def show_intro():
+    """Questionário inicial - BLOQUEIO TOTAL"""
     st.markdown("<div class='main-content'>", unsafe_allow_html=True)
 
-    st.markdown("<h1 class='main-title'>Bem-vindo ao Projeto Folksonomia</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 class='main-title'>🎨 Bem-vindo ao Projeto Folksonomia Digital</h1>", unsafe_allow_html=True)
     st.markdown("""
     <p class='subtitle'>
-        Antes de explorar as obras, por favor responda algumas perguntas<br>
-        para nos ajudar a entender melhor seu perfil e experiência.
+        Sistema avançado de catalogação colaborativa de obras de arte.<br>
+        Complete o questionário abaixo para acessar a plataforma.
     </p>
     """, unsafe_allow_html=True)
 
-    st.markdown("<div class='dark-card'>", unsafe_allow_html=True)
-    st.markdown("<h2 style='color: #e2e8f0; margin-bottom: 1.5rem;'>📋 Questionário Inicial</h2>", unsafe_allow_html=True)
+    st.markdown("<div class='dark-blue-card'>", unsafe_allow_html=True)
+    st.markdown("<h2 style='color: #60a5fa; margin-bottom: 2rem; text-align: center;'>📋 Questionário de Acesso</h2>", unsafe_allow_html=True)
 
     with st.form("intro_form"):
         col1, col2 = st.columns([1, 1])
 
         with col1:
             q1 = st.selectbox(
-                "Qual é o seu nível de familiaridade com museus?",
+                "1️⃣ Qual é o seu nível de familiaridade com museus?",
                 ["Nunca visito museus", "Visito raramente", "Visito ocasionalmente", "Visito frequentemente"]
             )
 
             q2 = st.selectbox(
-                "Você já ouviu falar sobre documentação museológica?",
+                "2️⃣ Você já ouviu falar sobre documentação museológica?",
                 ["Nunca ouvi falar", "Já ouvi, mas não sei o que é", "Tenho uma ideia básica", "Conheço bem o tema"]
             )
 
         with col2:
             q3 = st.text_area(
-                "O que você entende por 'tags' ou etiquetas digitais aplicadas a acervo?",
+                "3️⃣ O que você entende por 'tags' ou etiquetas digitais aplicadas a acervo?",
                 max_chars=500,
                 height=200,
-                placeholder="Descreva sua compreensão..."
+                placeholder="Descreva sua compreensão sobre o conceito..."
             )
 
         st.markdown("<br>", unsafe_allow_html=True)
 
         col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 1])
         with col_btn2:
-            submit = st.form_submit_button("🚀 Começar", use_container_width=True)
+            submit = st.form_submit_button("🚀 Acessar Plataforma", use_container_width=True)
 
         if submit:
             if not q3.strip():
-                st.error("❌ Por favor, responda todas as perguntas!")
+                st.error("❌ Por favor, responda todas as perguntas para continuar!")
             else:
                 st.session_state['answers'] = {"q1": q1, "q2": q2, "q3": q3}
                 save_user_answers(st.session_state['user_id'], st.session_state['answers'])
                 st.session_state['step'] = 'completed'
-                st.success("✅ Questionário completo! Redirecionando...")
+                st.success("✅ Questionário completo! Acesso liberado.")
                 st.balloons()
                 st.rerun()
 
@@ -630,31 +1109,32 @@ def show_intro():
 # ==================== PÁGINA DE OBRAS ====================
 
 def show_obras():
-    st.markdown("<h1 class='main-title'>Galeria de Obras</h1>", unsafe_allow_html=True)
+    """Galeria de obras - ACESSO RESTRITO"""
+    st.markdown("<h1 class='main-title'>📚 Galeria de Obras de Arte</h1>", unsafe_allow_html=True)
     st.markdown("""
     <p class='subtitle'>
-        Explore as obras e contribua com suas próprias tags
+        Explore obras clássicas e contemporâneas. Contribua com suas próprias tags para enriquecer nossa base colaborativa.
     </p>
     """, unsafe_allow_html=True)
 
     obras = load_obras()
 
     if not obras:
-        st.info("Nenhuma obra cadastrada.")
+        st.info("🎨 Nenhuma obra cadastrada no momento.")
         return
 
     # Filtros
-    st.markdown("<div class='dark-card'>", unsafe_allow_html=True)
+    st.markdown("<div class='dark-blue-card'>", unsafe_allow_html=True)
     col_filter1, col_filter2, col_filter3 = st.columns([2, 1, 1])
 
     with col_filter1:
-        search_term = st.text_input("🔍 Buscar", "", placeholder="Título ou artista...")
+        search_term = st.text_input("🔍 Buscar obra", "", placeholder="Digite título ou artista...")
 
     with col_filter2:
-        sort_by = st.selectbox("Ordenar:", ["Título", "Artista", "Ano"])
+        sort_by = st.selectbox("📊 Ordenar por:", ["Título", "Artista", "Ano"])
 
     with col_filter3:
-        view_mode = st.selectbox("Visualização:", ["Grid", "Lista"])
+        view_mode = st.selectbox("👁️ Visualização:", ["Grid", "Lista"])
 
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -675,8 +1155,8 @@ def show_obras():
         filtered_obras = sorted(filtered_obras, key=lambda x: x['ano'])
 
     st.markdown(f"""
-    <div style='text-align: center; color: #94a3b8; margin: 1.5rem 0;'>
-        Mostrando <strong>{len(filtered_obras)}</strong> obra(s)
+    <div style='text-align: center; color: #94a3b8; margin: 2rem 0; font-size: 1.1rem;'>
+        Exibindo <strong style='color: #60a5fa;'>{len(filtered_obras)}</strong> obra(s)
     </div>
     """, unsafe_allow_html=True)
 
@@ -700,7 +1180,7 @@ def show_obras():
 
                 if 'selected_obra' in st.session_state and st.session_state['selected_obra']['id'] == obra['id']:
                     with st.form(f"tag_form_{obra['id']}"):
-                        tag = st.text_input("Sua tag:", key=f"tag_{obra['id']}", placeholder="ex: guerra, cubismo...")
+                        tag = st.text_input("✨ Sua tag:", key=f"tag_{obra['id']}", placeholder="ex: impressionismo, guerra...")
 
                         col1, col2 = st.columns(2)
                         with col1:
@@ -710,7 +1190,7 @@ def show_obras():
 
                         if submitted and tag:
                             save_tag(st.session_state['user_id'], obra['id'], tag)
-                            st.success(f"✅ Tag '{tag}' adicionada!")
+                            st.success(f"✅ Tag '{tag}' adicionada com sucesso!")
                             del st.session_state['selected_obra']
                             st.rerun()
 
@@ -721,17 +1201,17 @@ def show_obras():
                     # Tags populares
                     tags = get_tags_for_obra(obra['id'])
                     if not tags.empty:
-                        st.markdown("**🏆 Tags:**")
+                        st.markdown("**🏆 Tags Populares:**")
                         tag_html = ""
                         for _, row in tags.head(5).iterrows():
                             tag_html += f"<span class='tag-badge'>{row['tag']} ({row['count']})</span>"
                         st.markdown(tag_html, unsafe_allow_html=True)
                     else:
-                        st.info("Seja o primeiro! 🌟")
+                        st.info("🌟 Seja o primeiro a adicionar uma tag!")
 
     else:  # Lista
         for obra in filtered_obras:
-            st.markdown("<div class='dark-card'>", unsafe_allow_html=True)
+            st.markdown("<div class='dark-blue-card'>", unsafe_allow_html=True)
             col_img, col_info = st.columns([1, 2])
 
             with col_img:
@@ -748,7 +1228,7 @@ def show_obras():
 
                 tags = get_tags_for_obra(obra['id'])
                 if not tags.empty:
-                    st.markdown("**Tags:**")
+                    st.markdown("**📌 Tags:**")
                     tag_html = ""
                     for _, row in tags.head(10).iterrows():
                         tag_html += f"<span class='tag-badge'>{row['tag']} ({row['count']})</span>"
@@ -756,74 +1236,102 @@ def show_obras():
 
             st.markdown("</div>", unsafe_allow_html=True)
 
-# ==================== ÁREA ADMINISTRATIVA ====================
+# ==================== ÁREA ADMINISTRATIVA ULTRA AVANÇADA ====================
 
 def show_admin():
+    """Área administrativa com análises profundas"""
     if 'admin_logged_in' not in st.session_state:
         st.session_state['admin_logged_in'] = False
 
     if not st.session_state['admin_logged_in']:
-        st.markdown("<h1 class='main-title'>Área Administrativa</h1>", unsafe_allow_html=True)
+        # TELA DE LOGIN
+        st.markdown("<h1 class='main-title'>⚙️ Área Administrativa</h1>", unsafe_allow_html=True)
+        st.markdown("<p class='subtitle'>Acesso restrito - Credenciais necessárias</p>", unsafe_allow_html=True)
 
         col1, col2, col3 = st.columns([1, 1, 1])
         with col2:
-            st.markdown("<div class='dark-card'>", unsafe_allow_html=True)
-            st.markdown("<h2 style='color: #e2e8f0; text-align: center; margin-bottom: 1.5rem;'>🔐 Login</h2>", unsafe_allow_html=True)
+            st.markdown("<div class='dark-blue-card'>", unsafe_allow_html=True)
+            st.markdown("<h2 style='color: #60a5fa; text-align: center; margin-bottom: 2rem;'>🔐 Login Seguro</h2>", unsafe_allow_html=True)
 
             with st.form("login_form"):
-                username = st.text_input("👤 Usuário:", placeholder="Digite seu usuário")
-                password = st.text_input("🔑 Senha:", type="password", placeholder="Digite sua senha")
+                username = st.text_input("👤 Usuário:", placeholder="Digite o usuário")
+                password = st.text_input("🔑 Senha:", type="password", placeholder="Digite a senha")
 
                 st.markdown("<br>", unsafe_allow_html=True)
-                submitted = st.form_submit_button("🚀 Entrar", use_container_width=True)
+                submitted = st.form_submit_button("🚀 Entrar no Sistema", use_container_width=True)
 
                 if submitted:
                     if check_admin_credentials(username, password):
                         st.session_state['admin_logged_in'] = True
                         st.session_state['admin_username'] = username
-                        st.success("✅ Login realizado!")
+                        st.success("✅ Login realizado com sucesso!")
+                        st.balloons()
                         st.rerun()
                     else:
-                        st.error("❌ Credenciais inválidas.")
+                        st.error("❌ Credenciais inválidas. Acesso negado.")
 
             st.markdown("</div>", unsafe_allow_html=True)
 
-            with st.expander("ℹ️ Acesso padrão"):
-                st.info("**Usuário:** admin\n\n**Senha:** admin123")
-
     else:
+        # DASHBOARD ADMINISTRATIVO COMPLETO
         st.markdown(f"""
-        <h1 class='main-title'>Dashboard</h1>
-        <p class='subtitle'>Bem-vindo, <strong>{st.session_state.get('admin_username', 'Admin')}</strong>! 👋</p>
+        <h1 class='main-title'>📊 Dashboard Analítico Avançado</h1>
+        <p class='subtitle'>Sistema de Análise Profunda | Bem-vindo, <strong style='color: #60a5fa;'>{st.session_state.get('admin_username', 'Admin')}</strong>! 👋</p>
         """, unsafe_allow_html=True)
 
-        admin_tabs = st.tabs(["📊 Analytics", "🖼️ Obras", "👥 Admins"])
+        admin_tabs = st.tabs([
+            "📊 Visão Geral",
+            "🔬 Análises Profundas",
+            "👥 Segmentação de Usuários",
+            "🎯 Qualidade de Dados",
+            "⏰ Análise Temporal",
+            "🔮 Predições",
+            "🖼️ Gestão de Obras",
+            "👤 Administradores"
+        ])
 
         with admin_tabs[0]:
-            show_analytics_dashboard()
+            show_overview_dashboard()
 
         with admin_tabs[1]:
-            show_manage_obras()
+            show_deep_analysis()
 
         with admin_tabs[2]:
+            show_user_segmentation()
+
+        with admin_tabs[3]:
+            show_quality_metrics()
+
+        with admin_tabs[4]:
+            show_temporal_analysis()
+
+        with admin_tabs[5]:
+            show_predictions()
+
+        with admin_tabs[6]:
+            show_manage_obras()
+
+        with admin_tabs[7]:
             show_manage_admins()
 
         st.markdown("<br>", unsafe_allow_html=True)
         col1, col2, col3 = st.columns([1, 1, 1])
         with col2:
-            if st.button("🚪 Sair", use_container_width=True):
+            if st.button("🚪 Sair do Sistema", use_container_width=True):
                 st.session_state['admin_logged_in'] = False
                 if 'admin_username' in st.session_state:
                     del st.session_state['admin_username']
                 st.rerun()
 
-def show_analytics_dashboard():
-    """Dashboard Analytics"""
+def show_overview_dashboard():
+    """Visão geral com métricas principais""
     tags_df = load_all_tags()
     users_df = load_all_users()
     obras = load_obras()
 
-    # Métricas
+    # Métricas principais
+    st.markdown("### 📈 Métricas Principais do Sistema")
+
     col1, col2, col3, col4 = st.columns(4)
 
     total_users = len(users_df['user_id'].unique()) if not users_df.empty else 0
@@ -834,175 +1342,7 @@ def show_analytics_dashboard():
     with col1:
         st.markdown(f"""
         <div class='metric-card'>
-            <div class='metric-label'>Usuários</div>
+            <div class='metric-label'>👥 Usuários</div>
             <div class='metric-value'>{total_users}</div>
         </div>
-        """, unsafe_allow_html=True)
 
-    with col2:
-        st.markdown(f"""
-        <div class='metric-card'>
-            <div class='metric-label'>Tags</div>
-            <div class='metric-value'>{total_tags}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with col3:
-        st.markdown(f"""
-        <div class='metric-card'>
-            <div class='metric-label'>Tags Únicas</div>
-            <div class='metric-value'>{unique_tags}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with col4:
-        st.markdown(f"""
-        <div class='metric-card'>
-            <div class='metric-label'>Obras</div>
-            <div class='metric-value'>{total_obras}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    if tags_df.empty:
-        st.info("📭 Aguardando dados...")
-        return
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # Análises
-    st.markdown("<div class='dark-card'>", unsafe_allow_html=True)
-    st.markdown("### 📊 Tags Mais Frequentes")
-    tag_counts = tags_df['tag'].value_counts().head(20)
-    st.bar_chart(tag_counts)
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    col_chart1, col_chart2 = st.columns(2)
-
-    with col_chart1:
-        st.markdown("<div class='dark-card'>", unsafe_allow_html=True)
-        st.markdown("### 🎨 Por Obra")
-        obra_tags = tags_df.groupby('obra_id').size().reset_index(name='count')
-        obra_info = pd.DataFrame(obras)
-        merged = obra_info.merge(obra_tags, left_on='id', right_on='obra_id', how='left')
-        merged['count'] = merged['count'].fillna(0)
-        merged_display = merged[['titulo', 'count']].set_index('titulo')
-        st.bar_chart(merged_display)
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    with col_chart2:
-        st.markdown("<div class='dark-card'>", unsafe_allow_html=True)
-        st.markdown("### 📈 Evolução")
-        if 'timestamp' in tags_df.columns:
-            tags_df['date'] = pd.to_datetime(tags_df['timestamp']).dt.date
-            timeline = tags_df.groupby('date').size().reset_index(name='count')
-            timeline_display = timeline.set_index('date')
-            st.line_chart(timeline_display)
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    # Dados completos
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown("<div class='dark-card'>", unsafe_allow_html=True)
-    st.markdown("### 📋 Dados Completos")
-    all_tags = tags_df['tag'].value_counts().reset_index()
-    all_tags.columns = ['Tag', 'Frequência']
-    st.dataframe(all_tags, use_container_width=True, height=300)
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    # Download
-    st.markdown("<br>", unsafe_allow_html=True)
-    col_down1, col_down2, col_down3 = st.columns([1, 1, 1])
-    with col_down2:
-        if not tags_df.empty:
-            csv_tags = tags_df.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 Exportar CSV",
-                data=csv_tags,
-                file_name=f'tags_{datetime.now().strftime("%Y%m%d")}.csv',
-                mime='text/csv',
-                use_container_width=True
-            )
-
-def show_manage_obras():
-    """Gerenciar obras"""
-    obras = load_obras()
-
-    if obras:
-        st.markdown("<div class='dark-card'>", unsafe_allow_html=True)
-        st.markdown("### 📚 Obras Cadastradas")
-        obras_df = pd.DataFrame(obras)
-        st.dataframe(obras_df[["id", "titulo", "artista", "ano"]], use_container_width=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    st.markdown("<div class='dark-card'>", unsafe_allow_html=True)
-    st.markdown("### ➕ Nova Obra")
-
-    with st.form("adicionar_obra"):
-        novo_titulo = st.text_input("Título:")
-        novo_artista = st.text_input("Artista:")
-        novo_ano = st.text_input("Ano:")
-        imagem_url = st.text_input("URL da Imagem:")
-
-        if st.form_submit_button("✅ Adicionar", use_container_width=True):
-            if novo_titulo and novo_artista and imagem_url:
-                novo_id = max([obra["id"] for obra in obras]) + 1 if obras else 1
-                nova_obra = {
-                    "id": novo_id,
-                    "titulo": novo_titulo,
-                    "artista": novo_artista,
-                    "ano": novo_ano,
-                    "imagem": imagem_url
-                }
-                obras.append(nova_obra)
-                save_json_file(OBRAS_FILE, obras)
-                st.cache_data.clear()
-                st.success("✅ Obra adicionada!")
-                st.rerun()
-            else:
-                st.error("❌ Preencha todos os campos!")
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-def show_manage_admins():
-    """Gerenciar admins"""
-    st.markdown("<div class='dark-card'>", unsafe_allow_html=True)
-    st.markdown("### 👥 Administradores")
-
-    admins = load_json_file(ADMIN_FILE, [])
-    if admins:
-        admins_df = pd.DataFrame(admins)
-        st.dataframe(admins_df[["id", "username"]], use_container_width=True)
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    st.markdown("<div class='dark-card'>", unsafe_allow_html=True)
-    st.markdown("### ➕ Novo Admin")
-
-    with st.form("add_admin"):
-        new_user = st.text_input("Usuário:")
-        new_pass = st.text_input("Senha:", type="password")
-        confirm_pass = st.text_input("Confirmar:", type="password")
-
-        if st.form_submit_button("✅ Adicionar", use_container_width=True):
-            if new_pass == confirm_pass and len(new_pass) >= 6:
-                if not any(a['username'] == new_user for a in admins):
-                    hashed = hashlib.sha256(new_pass.encode()).hexdigest()
-                    new_id = max([a['id'] for a in admins]) + 1 if admins else 1
-                    admins.append({"id": new_id, "username": new_user, "password": hashed})
-                    save_json_file(ADMIN_FILE, admins)
-                    st.success("✅ Admin adicionado!")
-                    st.rerun()
-                else:
-                    st.error("❌ Usuário já existe!")
-            else:
-                st.error("❌ Senha inválida!")
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-if __name__ == "__main__":
-    main()
