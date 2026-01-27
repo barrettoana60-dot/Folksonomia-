@@ -593,7 +593,7 @@ def load_obras():
         },
         {
             "id": 2,
-            "titulo": "A No Estrelada",
+            "titulo": "A Noite Estrelada",
             "artista": "Vincent van Gogh",
             "ano": "1889",
             "imagem": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/ea/Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg/1200px-Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg"
@@ -1038,9 +1038,7 @@ def main():
     else:
         # LIBERADO - MOSTRAR NAVEGAÇÃO E CONTEÚDO
         show_header()
-        st.markdown("<div class='main-content'>", unsafe_allow_html=True)
-
-        if st.session_state['current_page'] == "Explorar Obras":
+        st.markdown("<div class='main-content'>", unsafe_allow_html=Truestate['current_page'] == "Explorar Obras":
             show_obras()
         elif st.session_state['current_page'] == "Área Administrativa":
             show_admin()
@@ -1390,5 +1388,7 @@ def show_overview_dashboard():
         with col2:
             st.markdown("<div class='dark-blue-card'>", unsafe_allow_html=True)
             st.markdown("#### 🎨 Obras Mais Tagueadas")
-            obras_tags = tags_df.groupby('
-
+            obras_tags = tags_df.groupby('obra_id').size().reset_index(name='Total Tags')
+            obras_dict = {obra['id']: obra['titulo'] for obra in obras}
+            obras_tags['Obra'] = obras_tags['obra_id'].map(obras_dict)
+            obras_tags
