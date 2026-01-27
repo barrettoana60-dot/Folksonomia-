@@ -11,9 +11,9 @@ import re
 
 # ==================== CONFIGURAÇÃO INICIAL ====================
 st.set_page_config(
-    page_title="Folksonomia Digital | Museus Interativos",
+    page_title="Folksonomia Digital | Museus",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
     page_icon="🎨"
 )
 
@@ -54,11 +54,11 @@ def save_json_file(filepath, data):
         st.error(f"Erro ao salvar {filepath}: {e}")
         return False
 
-# ==================== CSS MODERNO E ANIMADO ====================
+# ==================== CSS ULTRA MODERNO - GLASSMORPHISM ====================
 def load_custom_css():
     st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Playfair+Display:wght@400;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@400;600;700&display=swap');
 
     * {
         margin: 0;
@@ -67,184 +67,347 @@ def load_custom_css():
     }
 
     html, body, [class*="css"] {
-        font-family: 'Poppins', sans-serif;
+        font-family: 'Inter', sans-serif;
     }
 
+    /* Background minimalista */
     .stApp {
-        background: linear-gradient(-45deg, #ee7752, #e73c7e, #23a6d5, #23d5ab);
-        background-size: 400% 400%;
-        animation: gradient 15s ease infinite;
+        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
     }
 
-    @keyframes gradient {
-        0% { background-position: 0% 50%; }
-        50% { background-position: 100% 50%; }
-        100% { background-position: 0% 50%; }
-    }
-
-    .main-container {
-        background: rgba(255, 255, 255, 0.95);
-        backdrop-filter: blur(10px);
-        border-radius: 20px;
-        padding: 30px;
-        margin: 20px;
-        box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
-        border: 1px solid rgba(255, 255, 255, 0.18);
-    }
-
+    /* Esconder sidebar padrão */
     [data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #1e3c72 0%, #2a5298 100%);
-        padding-top: 2rem;
+        display: none;
     }
 
-    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] {
+    /* Navbar superior com glassmorphism */
+    .navbar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 999;
+        background: rgba(255, 255, 255, 0.25);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+        padding: 1rem 2rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.1);
+    }
+
+    .navbar-logo {
+        font-family: 'Playfair Display', serif;
+        font-size: 1.5rem;
+        font-weight: 700;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+
+    .navbar-buttons {
+        display: flex;
+        gap: 1rem;
+    }
+
+    /* Botões liquid glass */
+    .glass-button {
+        background: rgba(255, 255, 255, 0.4);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.5);
+        border-radius: 12px;
+        padding: 0.75rem 1.5rem;
+        color: #333;
+        font-weight: 500;
+        text-decoration: none;
+        transition: all 0.3s ease;
+        cursor: pointer;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    }
+
+    .glass-button:hover {
+        background: rgba(255, 255, 255, 0.6);
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+    }
+
+    .glass-button.active {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
+        border: 1px solid transparent;
     }
 
-    .obra-card {
-        background: white;
+    /* Container principal */
+    .main-content {
+        margin-top: 100px;
+        padding: 2rem;
+        max-width: 1400px;
+        margin-left: auto;
+        margin-right: auto;
+    }
+
+    /* Cards com glassmorphism */
+    .glass-card {
+        background: rgba(255, 255, 255, 0.7);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
         border-radius: 20px;
-        padding: 20px;
-        margin: 15px 0;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        padding: 2rem;
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.1);
         transition: all 0.3s ease;
     }
 
-    .obra-card:hover {
+    .glass-card:hover {
+        box-shadow: 0 12px 40px 0 rgba(31, 38, 135, 0.15);
         transform: translateY(-5px);
-        box-shadow: 0 15px 40px rgba(0,0,0,0.2);
+    }
+
+    /* Título principal */
+    .main-title {
+        font-family: 'Playfair Display', serif;
+        font-size: 3rem;
+        font-weight: 700;
+        text-align: center;
+        margin: 2rem 0;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        animation: fadeIn 1s ease;
+    }
+
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(-20px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Subtítulo */
+    .subtitle {
+        text-align: center;
+        color: #666;
+        font-size: 1.1rem;
+        margin-bottom: 3rem;
+        line-height: 1.6;
+    }
+
+    /* Cards de obras */
+    .obra-card {
+        background: rgba(255, 255, 255, 0.9);
+        backdrop-filter: blur(15px);
+        border-radius: 20px;
+        padding: 1.5rem;
+        border: 1px solid rgba(255, 255, 255, 0.4);
+        box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.1);
+        transition: all 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
+        overflow: hidden;
+    }
+
+    .obra-card:hover {
+        transform: translateY(-10px) scale(1.02);
+        box-shadow: 0 15px 45px 0 rgba(31, 38, 135, 0.2);
     }
 
     .obra-card img {
-        transition: transform 0.3s ease;
         border-radius: 15px;
+        transition: transform 0.4s ease;
+        width: 100%;
     }
 
     .obra-card:hover img {
         transform: scale(1.05);
     }
 
-    .gradient-title {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        font-size: 3rem;
-        font-weight: 700;
+    .obra-title {
         font-family: 'Playfair Display', serif;
-        text-align: center;
-        margin: 30px 0;
-        animation: fadeInDown 1s ease;
+        font-size: 1.3rem;
+        font-weight: 600;
+        color: #333;
+        margin: 1rem 0 0.5rem 0;
     }
 
-    @keyframes fadeInDown {
-        from {
-            opacity: 0;
-            transform: translateY(-30px);
-        }
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
+    .obra-info {
+        color: #666;
+        font-size: 0.95rem;
+        margin: 0.25rem 0;
     }
 
+    /* Tag badges */
+    .tag-badge {
+        display: inline-block;
+        background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+        border: 1px solid rgba(102, 126, 234, 0.3);
+        color: #667eea;
+        padding: 0.4rem 0.8rem;
+        border-radius: 20px;
+        margin: 0.25rem;
+        font-size: 0.85rem;
+        font-weight: 500;
+        transition: all 0.3s ease;
+    }
+
+    .tag-badge:hover {
+        background: linear-gradient(135deg, rgba(102, 126, 234, 0.2) 0%, rgba(118, 75, 162, 0.2) 100%);
+        transform: scale(1.05);
+    }
+
+    /* Métricas */
     .metric-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(135deg, rgba(102, 126, 234, 0.9) 0%, rgba(118, 75, 162, 0.9) 100%);
+        backdrop-filter: blur(10px);
         border-radius: 15px;
-        padding: 25px;
+        padding: 2rem;
         color: white;
         text-align: center;
         transition: all 0.3s ease;
-        box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        border: 1px solid rgba(255, 255, 255, 0.2);
     }
 
     .metric-card:hover {
         transform: translateY(-5px);
-        box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+        box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
     }
 
     .metric-value {
         font-size: 2.5rem;
         font-weight: 700;
-        margin: 10px 0;
+        margin: 0.5rem 0;
     }
 
     .metric-label {
-        font-size: 1rem;
+        font-size: 0.9rem;
         opacity: 0.9;
         text-transform: uppercase;
         letter-spacing: 1px;
-    }
-
-    .tag-badge {
-        display: inline-block;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 8px 15px;
-        border-radius: 20px;
-        margin: 5px;
-        font-size: 0.9rem;
         font-weight: 500;
     }
 
+    /* Botões do Streamlit customizados */
     .stButton button {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(135deg, rgba(102, 126, 234, 0.9) 0%, rgba(118, 75, 162, 0.9) 100%);
+        backdrop-filter: blur(10px);
         color: white;
-        border-radius: 25px;
-        padding: 12px 30px;
-        border: none;
+        border-radius: 12px;
+        padding: 0.75rem 2rem;
+        border: 1px solid rgba(255, 255, 255, 0.2);
         font-weight: 600;
         transition: all 0.3s ease;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
     }
 
     .stButton button:hover {
         transform: translateY(-3px);
-        box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+        box-shadow: 0 6px 25px rgba(102, 126, 234, 0.4);
+        background: linear-gradient(135deg, rgba(102, 126, 234, 1) 0%, rgba(118, 75, 162, 1) 100%);
     }
 
+    /* Inputs modernos */
+    .stTextInput input, .stTextArea textarea, .stSelectbox select {
+        background: rgba(255, 255, 255, 0.9);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(0, 0, 0, 0.1);
+        border-radius: 12px;
+        padding: 0.75rem;
+        transition: all 0.3s ease;
+    }
+
+    .stTextInput input:focus, .stTextArea textarea:focus {
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    /* Tabs modernos */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-        background-color: transparent;
+        gap: 0.5rem;
+        background: transparent;
+        border-bottom: none;
     }
 
     .stTabs [data-baseweb="tab"] {
-        background-color: rgba(255, 255, 255, 0.2);
-        border-radius: 10px 10px 0 0;
-        padding: 10px 20px;
-        color: white;
+        background: rgba(255, 255, 255, 0.5);
+        backdrop-filter: blur(10px);
+        border-radius: 12px 12px 0 0;
+        padding: 0.75rem 1.5rem;
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        color: #666;
         font-weight: 500;
     }
 
     .stTabs [aria-selected="true"] {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(135deg, rgba(102, 126, 234, 0.9) 0%, rgba(118, 75, 162, 0.9) 100%);
+        color: white;
+        border: 1px solid rgba(255, 255, 255, 0.2);
     }
 
+    /* Remover elementos padrão */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
+    .stDeployButton {display: none;}
 
+    /* Responsivo */
     @media (max-width: 768px) {
-        .gradient-title {
+        .main-title {
             font-size: 2rem;
         }
-        .metric-value {
-            font-size: 1.8rem;
+
+        .navbar {
+            flex-direction: column;
+            gap: 1rem;
+            padding: 1rem;
+        }
+
+        .navbar-buttons {
+            width: 100%;
+            justify-content: center;
+        }
+
+        .main-content {
+            margin-top: 150px;
+            padding: 1rem;
         }
     }
     </style>
     """, unsafe_allow_html=True)
 
+# ==================== NAVBAR COMPONENT ====================
+def show_navbar(current_page):
+    """Exibe a navbar superior com glassmorphism"""
+    navbar_html = f"""
+    <div class='navbar'>
+        <div class='navbar-logo'>🎨 Folksonomia Digital</div>
+        <div class='navbar-buttons'>
+            <a class='glass-button {"active" if current_page == "Explorar Obras" else ""}' 
+               onclick='setPage("Explorar Obras")' style='cursor: pointer;'>
+                🖼️ Explorar Obras
+            </a>
+            <a class='glass-button {"active" if current_page == "Área Administrativa" else ""}' 
+               onclick='setPage("Área Administrativa")' style='cursor: pointer;'>
+                📊 Área Admin
+            </a>
+        </div>
+    </div>
+    """
+    st.markdown(navbar_html, unsafe_allow_html=True)
+
+    # JavaScript para navegação
+    st.markdown("""
+    <script>
+    function setPage(page) {
+        window.parent.postMessage({type: 'streamlit:setComponentValue', value: page}, '*');
+    }
+    </script>
+    """, unsafe_allow_html=True)
+
 # ==================== FUNÇÕES AUXILIARES ====================
 
 def check_and_init_admin():
-    """Inicializa administrador padrão se não existir"""
+    """Inicializa administrador padrão"""
     admins = load_json_file(ADMIN_FILE, [])
     if not admins:
         hashed_password = hashlib.sha256("admin123".encode()).hexdigest()
-        admins.append({
-            "id": 1,
-            "username": "admin",
-            "password": hashed_password
-        })
+        admins.append({"id": 1, "username": "admin", "password": hashed_password})
         save_json_file(ADMIN_FILE, admins)
 
 def generate_user_id():
@@ -291,7 +454,7 @@ def save_tag(user_id, obra_id, tag):
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
     tags.append(new_tag)
-    st.cache_data.clear()  # Limpa cache quando nova tag é adicionada
+    st.cache_data.clear()
     return save_json_file(TAGS_FILE, tags)
 
 def get_tags_for_obra(obra_id):
@@ -326,34 +489,29 @@ def load_all_users():
     users = load_json_file(USERS_FILE, [])
     return pd.DataFrame(users) if users else pd.DataFrame()
 
-# ==================== ANÁLISES ====================
-
 def calculate_tag_diversity(tags_df):
     """Calcula diversidade de tags"""
     if tags_df.empty:
         return 0
-
     tag_counts = tags_df['tag'].value_counts()
     proportions = tag_counts / tag_counts.sum()
     shannon_index = -sum(proportions * np.log(proportions))
     return shannon_index
 
 def analyze_user_engagement(users_df, tags_df):
-    """Análise de engajamento dos usuários"""
+    """Análise de engajamento"""
     if users_df.empty or tags_df.empty:
         return None
 
     tags_per_user = tags_df.groupby('user_id').size().reset_index(name='tag_count')
 
-    engagement_stats = {
+    return {
         'avg_tags_per_user': tags_per_user['tag_count'].mean(),
         'median_tags_per_user': tags_per_user['tag_count'].median(),
         'max_tags_per_user': tags_per_user['tag_count'].max(),
         'total_active_users': len(tags_per_user),
         'total_registered_users': len(users_df)
     }
-
-    return engagement_stats
 
 def get_top_contributors(tags_df, top_n=10):
     """Identifica principais contribuidores"""
@@ -366,24 +524,20 @@ def get_top_contributors(tags_df, top_n=10):
     }).reset_index()
 
     contributors.columns = ['user_id', 'total_tags', 'first_contribution']
-    contributors = contributors.sort_values('total_tags', ascending=False).head(top_n)
-
-    return contributors
+    return contributors.sort_values('total_tags', ascending=False).head(top_n)
 
 def analyze_tag_patterns(tags_df):
     """Analisa padrões nas tags"""
     if tags_df.empty:
         return None
 
-    patterns = {
+    return {
         'avg_tag_length': tags_df['tag'].str.len().mean(),
         'single_word_tags': sum(tags_df['tag'].str.split().str.len() == 1),
         'multi_word_tags': sum(tags_df['tag'].str.split().str.len() > 1),
         'numeric_tags': sum(tags_df['tag'].str.contains(r'\d', regex=True)),
         'special_char_tags': sum(tags_df['tag'].str.contains(r'[^a-zA-Z0-9\s]', regex=True))
     }
-
-    return patterns
 
 # ==================== INTERFACE PRINCIPAL ====================
 
@@ -393,8 +547,9 @@ def main():
     try:
         check_and_init_admin()
     except Exception as e:
-        st.error(f"Erro ao verificar admin: {e}")
+        st.error(f"Erro: {e}")
 
+    # Inicializar estado da sessão
     if 'user_id' not in st.session_state:
         st.session_state['user_id'] = generate_user_id()
     if 'step' not in st.session_state:
@@ -402,152 +557,102 @@ def main():
     if 'answers' not in st.session_state:
         st.session_state['answers'] = {}
     if 'current_page' not in st.session_state:
-        st.session_state['current_page'] = "Início"
+        st.session_state['current_page'] = "Explorar Obras"
 
-    with st.sidebar:
-        st.markdown("""
-        <div style='text-align: center; padding: 20px;'>
-            <h1 style='color: white; font-family: Playfair Display;'>🎨 Folksonomia</h1>
-            <p style='color: rgba(255,255,255,0.8); font-size: 0.9rem;'>Museus Interativos</p>
-        </div>
-        """, unsafe_allow_html=True)
-
-        st.markdown("---")
-
-        pages = ["🏠 Início", "🖼️ Explorar Obras", "📊 Área Administrativa"]
-        page_mapping = {
-            "🏠 Início": "Início",
-            "🖼️ Explorar Obras": "Explorar Obras",
-            "📊 Área Administrativa": "Área Administrativa"
-        }
-
-        selected_page = st.radio("Navegação", pages, label_visibility="collapsed")
-
-        page = page_mapping[selected_page]
-
-        if page != st.session_state.get('current_page'):
-            st.session_state['current_page'] = page
-            st.rerun()
-
-        st.markdown("---")
-
-        st.markdown(f"""
-        <div style='background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px; margin-top: 20px;'>
-            <p style='color: white; margin: 0; font-size: 0.8rem;'>ID do Usuário:</p>
-            <p style='color: rgba(255,255,255,0.7); margin: 5px 0 0 0; font-size: 0.7rem; word-break: break-all;'>{st.session_state['user_id'][:12]}...</p>
-        </div>
-        """, unsafe_allow_html=True)
-
-    if st.session_state['current_page'] == "Início":
+    # Verificar se o questionário foi respondido
+    if st.session_state['step'] == 'intro':
         show_intro()
-    elif st.session_state['current_page'] == "Explorar Obras":
-        show_obras()
-    elif st.session_state['current_page'] == "Área Administrativa":
-        show_admin()
+    else:
+        # Mostrar navbar apenas após questionário
+        col1, col2, col3, col4, col5 = st.columns([1, 1, 1, 1, 1])
+        with col2:
+            if st.button("🖼️ Explorar Obras", use_container_width=True, 
+                        type="primary" if st.session_state['current_page'] == "Explorar Obras" else "secondary"):
+                st.session_state['current_page'] = "Explorar Obras"
+                st.rerun()
+        with col4:
+            if st.button("📊 Área Admin", use_container_width=True,
+                        type="primary" if st.session_state['current_page'] == "Área Administrativa" else "secondary"):
+                st.session_state['current_page'] = "Área Administrativa"
+                st.rerun()
 
-# ==================== PÁGINAS ====================
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # Renderizar página atual
+        if st.session_state['current_page'] == "Explorar Obras":
+            show_obras()
+        elif st.session_state['current_page'] == "Área Administrativa":
+            show_admin()
+
+# ==================== PÁGINA INICIAL (QUESTIONÁRIO) ====================
 
 def show_intro():
-    st.markdown("<div class='gradient-title'>Projeto de Folksonomia em Museus</div>", unsafe_allow_html=True)
+    st.markdown("<div class='main-content'>", unsafe_allow_html=True)
 
+    st.markdown("<h1 class='main-title'>Folksonomia em Museus</h1>", unsafe_allow_html=True)
     st.markdown("""
-    <div style='text-align: center; max-width: 800px; margin: 0 auto 40px auto; color: white; font-size: 1.1rem; line-height: 1.8;'>
-        Bem-vindo à nossa plataforma interativa de catalogação colaborativa! 
-        Explore obras de arte e contribua com suas próprias tags para criar uma taxonomia popular.
-    </div>
+    <p class='subtitle'>
+        Bem-vindo à nossa plataforma de catalogação colaborativa.<br>
+        Contribua com sua percepção para criar uma taxonomia popular de obras de arte.
+    </p>
     """, unsafe_allow_html=True)
 
-    if st.session_state['step'] == 'intro':
-        st.markdown("<div class='main-container'>", unsafe_allow_html=True)
+    st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center; margin-bottom: 2rem; color: #333;'>📋 Questionário Inicial</h2>", unsafe_allow_html=True)
 
-        st.markdown("<h2 style='text-align: center; margin-bottom: 30px;'>📋 Questionário Inicial</h2>", unsafe_allow_html=True)
-
-        with st.form("intro_form"):
-            col1, col2 = st.columns([1, 1])
-
-            with col1:
-                q1 = st.selectbox(
-                    "Qual é o seu nível de familiaridade com museus?",
-                    ["Nunca visito museus", "Visito raramente", "Visito ocasionalmente", "Visito frequentemente"]
-                )
-
-                q2 = st.selectbox(
-                    "Você já ouviu falar sobre documentação museológica?",
-                    ["Nunca ouvi falar", "Já ouvi, mas não sei o que é", "Tenho uma ideia básica", "Conheço bem o tema"]
-                )
-
-            with col2:
-                q3 = st.text_area(
-                    "O que você entende por 'tags' ou etiquetas digitais aplicadas a acervo?",
-                    max_chars=500,
-                    height=200
-                )
-
-            st.markdown("<br>", unsafe_allow_html=True)
-
-            col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 1])
-            with col_btn2:
-                submit = st.form_submit_button("✨ Enviar Respostas", use_container_width=True)
-
-            if submit:
-                if not q3.strip():
-                    st.error("Por favor, responda todas as perguntas!")
-                else:
-                    st.session_state['answers'] = {"q1": q1, "q2": q2, "q3": q3}
-                    save_user_answers(st.session_state['user_id'], st.session_state['answers'])
-                    st.session_state['step'] = 'completed'
-                    st.success("✅ Respostas enviadas com sucesso!")
-                    st.balloons()
-                    st.rerun()
-
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    else:
-        st.success("✅ Questionário concluído com sucesso!")
-
-        col1, col2, col3 = st.columns(3)
+    with st.form("intro_form"):
+        col1, col2 = st.columns([1, 1])
 
         with col1:
-            st.markdown("""
-            <div class='obra-card' style='text-align: center;'>
-                <h3 style='color: #667eea;'>🖼️ Explorar</h3>
-                <p>Descubra obras incríveis e contribua com suas tags</p>
-            </div>
-            """, unsafe_allow_html=True)
+            q1 = st.selectbox(
+                "Qual é o seu nível de familiaridade com museus?",
+                ["Nunca visito museus", "Visito raramente", "Visito ocasionalmente", "Visito frequentemente"]
+            )
+
+            q2 = st.selectbox(
+                "Você já ouviu falar sobre documentação museológica?",
+                ["Nunca ouvi falar", "Já ouvi, mas não sei o que é", "Tenho uma ideia básica", "Conheço bem o tema"]
+            )
 
         with col2:
-            st.markdown("""
-            <div class='obra-card' style='text-align: center;'>
-                <h3 style='color: #764ba2;'>🏷️ Contribuir</h3>
-                <p>Ajude a criar uma taxonomia colaborativa</p>
-            </div>
-            """, unsafe_allow_html=True)
+            q3 = st.text_area(
+                "O que você entende por 'tags' ou etiquetas digitais aplicadas a acervo?",
+                max_chars=500,
+                height=200,
+                placeholder="Digite sua resposta aqui..."
+            )
 
-        with col3:
-            st.markdown("""
-            <div class='obra-card' style='text-align: center;'>
-                <h3 style='color: #e73c7e;'>📊 Analisar</h3>
-                <p>Veja estatísticas e insights fascinantes</p>
-            </div>
-            """, unsafe_allow_html=True)
-
-        st.markdown("<br><br>", unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
 
         col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 1])
         with col_btn2:
-            if st.button("🎨 Começar a Explorar", use_container_width=True):
-                st.session_state['current_page'] = "Explorar Obras"
+            submit = st.form_submit_button("✨ Começar", use_container_width=True)
+
+        if submit:
+            if not q3.strip():
+                st.error("Por favor, responda todas as perguntas!")
+            else:
+                st.session_state['answers'] = {"q1": q1, "q2": q2, "q3": q3}
+                save_user_answers(st.session_state['user_id'], st.session_state['answers'])
+                st.session_state['step'] = 'completed'
+                st.success("✅ Obrigado! Redirecionando...")
+                st.balloons()
                 st.rerun()
 
-def show_obras():
-    st.markdown("<div class='gradient-title'>Galeria de Obras Interativa</div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    if st.session_state['step'] == 'intro':
-        st.warning("⚠️ Complete o questionário inicial antes de explorar as obras.")
-        if st.button("📋 Ir para o Questionário"):
-            st.session_state['current_page'] = "Início"
-            st.rerun()
-        return
+# ==================== PÁGINA DE OBRAS ====================
+
+def show_obras():
+    st.markdown("<div class='main-content'>", unsafe_allow_html=True)
+
+    st.markdown("<h1 class='main-title'>Galeria de Obras</h1>", unsafe_allow_html=True)
+    st.markdown("""
+    <p class='subtitle'>
+        Explore as obras e contribua com suas próprias tags para enriquecer nossa base de conhecimento colaborativo.
+    </p>
+    """, unsafe_allow_html=True)
 
     obras = load_obras()
 
@@ -555,11 +660,12 @@ def show_obras():
         st.info("Nenhuma obra cadastrada.")
         return
 
-    # Filtros
-    col_filter1, col_filter2, col_filter3 = st.columns([2, 2, 1])
+    # Filtros em glass card
+    st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+    col_filter1, col_filter2, col_filter3 = st.columns([2, 1, 1])
 
     with col_filter1:
-        search_term = st.text_input("🔍 Buscar obra por título ou artista", "")
+        search_term = st.text_input("🔍 Buscar obra", "", placeholder="Digite título ou artista...")
 
     with col_filter2:
         sort_by = st.selectbox("Ordenar por:", ["Título", "Artista", "Ano"])
@@ -567,7 +673,9 @@ def show_obras():
     with col_filter3:
         view_mode = st.selectbox("Visualização:", ["Grid", "Lista"])
 
-    # Filtrar obras
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # Filtrar e ordenar obras
     filtered_obras = obras
     if search_term:
         filtered_obras = [
@@ -576,7 +684,6 @@ def show_obras():
                search_term.lower() in obra['artista'].lower()
         ]
 
-    # Ordenar obras
     if sort_by == "Título":
         filtered_obras = sorted(filtered_obras, key=lambda x: x['titulo'])
     elif sort_by == "Artista":
@@ -585,8 +692,8 @@ def show_obras():
         filtered_obras = sorted(filtered_obras, key=lambda x: x['ano'])
 
     st.markdown(f"""
-    <div style='text-align: center; color: white; margin: 20px 0;'>
-        <h3>🎨 Mostrando {len(filtered_obras)} obra(s)</h3>
+    <div style='text-align: center; color: #666; margin: 2rem 0;'>
+        <h3>Mostrando {len(filtered_obras)} obra(s)</h3>
     </div>
     """, unsafe_allow_html=True)
 
@@ -597,10 +704,10 @@ def show_obras():
             with cols[i % 3]:
                 st.markdown(f"""
                 <div class='obra-card'>
-                    <img src='{obra['imagem']}' style='width: 100%; border-radius: 15px; margin-bottom: 15px;' />
-                    <h3 style='color: #667eea; margin: 10px 0;'>{obra['titulo']}</h3>
-                    <p style='color: #666; margin: 5px 0;'><strong>{obra['artista']}</strong></p>
-                    <p style='color: #999; margin: 5px 0;'>📅 {obra['ano']}</p>
+                    <img src='{obra['imagem']}' alt='{obra['titulo']}' />
+                    <h3 class='obra-title'>{obra['titulo']}</h3>
+                    <p class='obra-info'>👨‍🎨 {obra['artista']}</p>
+                    <p class='obra-info'>📅 {obra['ano']}</p>
                 </div>
                 """, unsafe_allow_html=True)
 
@@ -610,18 +717,17 @@ def show_obras():
 
                 if 'selected_obra' in st.session_state and st.session_state['selected_obra']['id'] == obra['id']:
                     with st.form(f"tag_form_{obra['id']}"):
-                        tag = st.text_input("Digite sua tag:", key=f"tag_input_{obra['id']}", placeholder="ex: guerra, cubismo, história...")
+                        tag = st.text_input("Sua tag:", key=f"tag_{obra['id']}", placeholder="ex: guerra, cubismo...")
 
-                        col_submit1, col_submit2 = st.columns(2)
-                        with col_submit1:
+                        col1, col2 = st.columns(2)
+                        with col1:
                             submitted = st.form_submit_button("✅ Enviar", use_container_width=True)
-                        with col_submit2:
+                        with col2:
                             cancel = st.form_submit_button("❌ Cancelar", use_container_width=True)
 
                         if submitted and tag:
                             save_tag(st.session_state['user_id'], obra['id'], tag)
-                            st.success(f"Tag '{tag}' adicionada com sucesso! 🎉")
-                            st.balloons()
+                            st.success(f"Tag '{tag}' adicionada! 🎉")
                             del st.session_state['selected_obra']
                             st.rerun()
 
@@ -629,97 +735,90 @@ def show_obras():
                             del st.session_state['selected_obra']
                             st.rerun()
 
-                    # Mostrar tags populares
-                    tags = get_tags_for_obra(obra['id'])
-                    if not tags.empty:
-                        st.markdown("**🏆 Tags Populares:**")
-                        for _, row in tags.head(5).iterrows():
-                            st.markdown(f"""
-                            <span class='tag-badge'>{row['tag']} ({row['count']})</span>
-                            """, unsafe_allow_html=True)
-                    else:
-                        st.info("Seja o primeiro a adicionar uma tag! 🌟")
-
-    else:  # Modo Lista
-        for obra in filtered_obras:
-            with st.container():
-                st.markdown("<div class='obra-card'>", unsafe_allow_html=True)
-                col_img, col_info = st.columns([1, 2])
-
-                with col_img:
-                    st.image(obra['imagem'], use_container_width=True)
-
-                with col_info:
-                    st.markdown(f"### {obra['titulo']}")
-                    st.markdown(f"**👨‍🎨 Artista:** {obra['artista']}")
-                    st.markdown(f"**📅 Ano:** {obra['ano']}")
-
-                    if st.button(f"🏷️ Adicionar Tag", key=f"btn_list_{obra['id']}"):
-                        st.session_state['selected_obra'] = obra
-                        st.rerun()
-
                     # Tags populares
                     tags = get_tags_for_obra(obra['id'])
                     if not tags.empty:
-                        st.markdown("**Tags Populares:**")
-                        for _, row in tags.head(10).iterrows():
-                            st.markdown(f"""<span class='tag-badge'>{row['tag']} ({row['count']})</span>""", unsafe_allow_html=True)
+                        st.markdown("**🏆 Tags Populares:**")
+                        tag_html = ""
+                        for _, row in tags.head(5).iterrows():
+                            tag_html += f"<span class='tag-badge'>{row['tag']} ({row['count']})</span>"
+                        st.markdown(tag_html, unsafe_allow_html=True)
+                    else:
+                        st.info("Seja o primeiro! 🌟")
 
-                st.markdown("</div>", unsafe_allow_html=True)
-                st.markdown("---")
+    else:  # Lista
+        for obra in filtered_obras:
+            st.markdown("<div class='glass-card' style='margin-bottom: 1.5rem;'>", unsafe_allow_html=True)
+            col_img, col_info = st.columns([1, 2])
+
+            with col_img:
+                st.image(obra['imagem'], use_container_width=True)
+
+            with col_info:
+                st.markdown(f"### {obra['titulo']}")
+                st.markdown(f"**👨‍🎨 Artista:** {obra['artista']}")
+                st.markdown(f"**📅 Ano:** {obra['ano']}")
+
+                if st.button(f"🏷️ Adicionar Tag", key=f"btn_list_{obra['id']}"):
+                    st.session_state['selected_obra'] = obra
+                    st.rerun()
+
+                tags = get_tags_for_obra(obra['id'])
+                if not tags.empty:
+                    st.markdown("**Tags:**")
+                    tag_html = ""
+                    for _, row in tags.head(10).iterrows():
+                        tag_html += f"<span class='tag-badge'>{row['tag']} ({row['count']})</span>"
+                    st.markdown(tag_html, unsafe_allow_html=True)
+
+            st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+# ==================== ÁREA ADMINISTRATIVA ====================
 
 def show_admin():
-    st.markdown("<div class='gradient-title'>Área Administrativa</div>", unsafe_allow_html=True)
+    st.markdown("<div class='main-content'>", unsafe_allow_html=True)
 
     if 'admin_logged_in' not in st.session_state:
         st.session_state['admin_logged_in'] = False
 
     if not st.session_state['admin_logged_in']:
-        st.markdown("<div class='main-container' style='max-width: 500px; margin: 50px auto;'>", unsafe_allow_html=True)
+        st.markdown("<h1 class='main-title'>Área Administrativa</h1>", unsafe_allow_html=True)
 
-        st.markdown("<h2 style='text-align: center; margin-bottom: 30px;'>🔐 Login Administrativo</h2>", unsafe_allow_html=True)
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col2:
+            st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+            st.markdown("<h2 style='text-align: center; margin-bottom: 2rem;'>🔐 Login</h2>", unsafe_allow_html=True)
 
-        with st.form("login_form"):
-            username = st.text_input("👤 Usuário:", placeholder="Digite seu usuário")
-            password = st.text_input("🔑 Senha:", type="password", placeholder="Digite sua senha")
+            with st.form("login_form"):
+                username = st.text_input("👤 Usuário:", placeholder="Digite seu usuário")
+                password = st.text_input("🔑 Senha:", type="password", placeholder="Digite sua senha")
 
-            st.markdown("<br>", unsafe_allow_html=True)
+                st.markdown("<br>", unsafe_allow_html=True)
+                submitted = st.form_submit_button("🚀 Entrar", use_container_width=True)
 
-            submitted = st.form_submit_button("🚀 Entrar", use_container_width=True)
+                if submitted:
+                    if check_admin_credentials(username, password):
+                        st.session_state['admin_logged_in'] = True
+                        st.session_state['admin_username'] = username
+                        st.success("Login realizado! 🎉")
+                        st.rerun()
+                    else:
+                        st.error("❌ Credenciais inválidas.")
 
-            if submitted:
-                if check_admin_credentials(username, password):
-                    st.session_state['admin_logged_in'] = True
-                    st.session_state['admin_username'] = username
-                    st.success("Login realizado com sucesso! 🎉")
-                    st.balloons()
-                    st.rerun()
-                else:
-                    st.error("❌ Credenciais inválidas. Tente novamente.")
+            st.markdown("</div>", unsafe_allow_html=True)
 
-        st.markdown("</div>", unsafe_allow_html=True)
-
-        with st.expander("ℹ️ Informações de Acesso"):
-            st.info("""
-            **Credenciais padrão:**
-            - Usuário: `admin`
-            - Senha: `admin123`
-
-            Por favor, altere a senha após o primeiro login por segurança.
-            """)
+            with st.expander("ℹ️ Acesso padrão"):
+                st.info("**Usuário:** admin\n\n**Senha:** admin123")
 
     else:
         st.markdown(f"""
-        <div style='text-align: right; color: white; margin-bottom: 20px;'>
-            Bem-vindo, <strong>{st.session_state.get('admin_username', 'Admin')}</strong>! 👋
-        </div>
+        <h1 class='main-title'>Dashboard Administrativo</h1>
+        <p class='subtitle'>Bem-vindo, <strong>{st.session_state.get('admin_username', 'Admin')}</strong>! 👋</p>
         """, unsafe_allow_html=True)
 
-        admin_tabs = st.tabs([
-            "📊 Dashboard",
-            "🖼️ Gerenciar Obras",
-            "👥 Administradores"
-        ])
+        admin_tabs = st.tabs(["📊 Analytics", "🖼️ Obras", "👥 Admins"])
 
         with admin_tabs[0]:
             show_analytics_dashboard()
@@ -730,27 +829,25 @@ def show_admin():
         with admin_tabs[2]:
             show_manage_admins()
 
-        st.markdown("---")
-        col_logout1, col_logout2, col_logout3 = st.columns([1, 1, 1])
-        with col_logout2:
-            if st.button("🚪 Sair do Sistema", use_container_width=True):
+        st.markdown("<br>", unsafe_allow_html=True)
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col2:
+            if st.button("🚪 Sair", use_container_width=True):
                 st.session_state['admin_logged_in'] = False
                 if 'admin_username' in st.session_state:
                     del st.session_state['admin_username']
                 st.rerun()
 
-def show_analytics_dashboard():
-    """Dashboard de analytics usando apenas recursos nativos do Streamlit"""
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("<h2 style='color: white; margin-bottom: 30px;'>📊 Dashboard de Análise de Dados</h2>", unsafe_allow_html=True)
+def show_analytics_dashboard():
+    """Dashboard com visualizações nativas"""
 
     tags_df = load_all_tags()
     users_df = load_all_users()
     obras = load_obras()
 
-    # Métricas principais
-    st.markdown("### 📈 Métricas Principais")
-
+    # Métricas
     col1, col2, col3, col4 = st.columns(4)
 
     total_users = len(users_df['user_id'].unique()) if not users_df.empty else 0
@@ -769,7 +866,7 @@ def show_analytics_dashboard():
     with col2:
         st.markdown(f"""
         <div class='metric-card'>
-            <div class='metric-label'>Total de Tags</div>
+            <div class='metric-label'>Tags</div>
             <div class='metric-value'>{total_tags}</div>
         </div>
         """, unsafe_allow_html=True)
@@ -790,157 +887,92 @@ def show_analytics_dashboard():
         </div>
         """, unsafe_allow_html=True)
 
-    st.markdown("<br><br>", unsafe_allow_html=True)
-
     if tags_df.empty:
-        st.info("📭 Ainda não há dados suficientes para análise. Aguarde as primeiras contribuições!")
+        st.info("📭 Aguardando dados...")
         return
 
-    # Análises detalhadas
-    viz_tabs = st.tabs([
-        "📊 Análise de Tags",
-        "👥 Engajamento",
-        "📥 Exportar Dados"
-    ])
+    st.markdown("<br><br>", unsafe_allow_html=True)
 
-    with viz_tabs[0]:
-        st.markdown("### 🏷️ Tags Mais Frequentes")
+    # Análises
+    st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+    st.markdown("### 📊 Tags Mais Frequentes")
+    tag_counts = tags_df['tag'].value_counts().head(20)
+    st.bar_chart(tag_counts)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-        tag_counts = tags_df['tag'].value_counts().head(20)
+    st.markdown("<br>", unsafe_allow_html=True)
 
-        # Usar bar_chart nativo do Streamlit
-        st.bar_chart(tag_counts)
+    col_chart1, col_chart2 = st.columns(2)
 
-        st.markdown("---")
-        st.markdown("### 📋 Lista Completa de Tags")
-
-        all_tags = tags_df['tag'].value_counts().reset_index()
-        all_tags.columns = ['Tag', 'Frequência']
-        st.dataframe(all_tags, use_container_width=True, height=400)
-
-        st.markdown("---")
-        st.markdown("### 🎨 Distribuição por Obra")
-
+    with col_chart1:
+        st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+        st.markdown("### 🎨 Por Obra")
         obra_tags = tags_df.groupby('obra_id').size().reset_index(name='count')
         obra_info = pd.DataFrame(obras)
         merged = obra_info.merge(obra_tags, left_on='id', right_on='obra_id', how='left')
         merged['count'] = merged['count'].fillna(0)
         merged_display = merged[['titulo', 'count']].set_index('titulo')
-
         st.bar_chart(merged_display)
+        st.markdown("</div>", unsafe_allow_html=True)
 
-        st.markdown("---")
-        st.markdown("### 📊 Padrões de Tags")
-
-        patterns = analyze_tag_patterns(tags_df)
-        if patterns:
-            col_p1, col_p2, col_p3, col_p4 = st.columns(4)
-
-            with col_p1:
-                st.metric("Comprimento Médio", f"{patterns['avg_tag_length']:.1f} caracteres")
-            with col_p2:
-                st.metric("Tags Simples", patterns['single_word_tags'])
-            with col_p3:
-                st.metric("Tags Compostas", patterns['multi_word_tags'])
-            with col_p4:
-                diversity = calculate_tag_diversity(tags_df)
-                st.metric("Índice de Diversidade", f"{diversity:.2f}")
-
-    with viz_tabs[1]:
-        st.markdown("### 👥 Análise de Engajamento")
-
-        engagement = analyze_user_engagement(users_df, tags_df)
-
-        if engagement:
-            col_e1, col_e2, col_e3, col_e4 = st.columns(4)
-
-            with col_e1:
-                st.metric("Média Tags/Usuário", f"{engagement['avg_tags_per_user']:.1f}")
-            with col_e2:
-                st.metric("Mediana Tags/Usuário", f"{engagement['median_tags_per_user']:.1f}")
-            with col_e3:
-                st.metric("Máx Tags/Usuário", engagement['max_tags_per_user'])
-            with col_e4:
-                st.metric("Usuários Ativos", engagement['total_active_users'])
-
-        st.markdown("---")
-        st.markdown("### 🏆 Top 10 Contribuidores")
-
-        contributors = get_top_contributors(tags_df, 10)
-        if not contributors.empty:
-            st.dataframe(contributors, use_container_width=True)
-        else:
-            st.info("Nenhum contribuidor ainda.")
-
-        st.markdown("---")
-        st.markdown("### 📈 Evolução Temporal")
-
+    with col_chart2:
+        st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+        st.markdown("### 📈 Evolução")
         if 'timestamp' in tags_df.columns:
             tags_df['date'] = pd.to_datetime(tags_df['timestamp']).dt.date
             timeline = tags_df.groupby('date').size().reset_index(name='count')
             timeline_display = timeline.set_index('date')
             st.line_chart(timeline_display)
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    with viz_tabs[2]:
-        st.markdown("### 📥 Exportar Dados")
+    # Dados brutos
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+    st.markdown("### 📋 Dados Completos")
+    all_tags = tags_df['tag'].value_counts().reset_index()
+    all_tags.columns = ['Tag', 'Frequência']
+    st.dataframe(all_tags, use_container_width=True, height=300)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-        col_exp1, col_exp2 = st.columns(2)
-
-        with col_exp1:
-            if not tags_df.empty:
-                csv_tags = tags_df.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="📄 Download Tags (CSV)",
-                    data=csv_tags,
-                    file_name=f'tags_data_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv',
-                    mime='text/csv',
-                    use_container_width=True
-                )
-
-        with col_exp2:
-            if not users_df.empty:
-                csv_users = users_df.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="📄 Download Usuários (CSV)",
-                    data=csv_users,
-                    file_name=f'users_data_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv',
-                    mime='text/csv',
-                    use_container_width=True
-                )
+    # Download
+    st.markdown("<br>", unsafe_allow_html=True)
+    col_down1, col_down2, col_down3 = st.columns([1, 1, 1])
+    with col_down2:
+        if not tags_df.empty:
+            csv_tags = tags_df.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Exportar CSV",
+                data=csv_tags,
+                file_name=f'tags_{datetime.now().strftime("%Y%m%d")}.csv',
+                mime='text/csv',
+                use_container_width=True
+            )
 
 def show_manage_obras():
-    """Gerenciamento de obras"""
-    st.markdown("### 🖼️ Gerenciar Obras")
-
+    """Gerenciar obras"""
     obras = load_obras()
 
     if obras:
+        st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+        st.markdown("### 📚 Obras Cadastradas")
         obras_df = pd.DataFrame(obras)
-        st.subheader("📚 Obras Cadastradas")
         st.dataframe(obras_df[["id", "titulo", "artista", "ano"]], use_container_width=True)
-    else:
-        st.write("Nenhuma obra cadastrada.")
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("---")
-    st.subheader("➕ Adicionar Nova Obra")
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+    st.markdown("### ➕ Nova Obra")
 
     with st.form("adicionar_obra"):
-        novo_titulo = st.text_input("Título da Obra:")
+        novo_titulo = st.text_input("Título:")
         novo_artista = st.text_input("Artista:")
         novo_ano = st.text_input("Ano:")
         imagem_url = st.text_input("URL da Imagem:")
 
-        submit_obra = st.form_submit_button("✅ Adicionar Obra")
-
-        if submit_obra:
-            if not novo_titulo or not novo_artista or not imagem_url:
-                st.error("❌ Preencha todos os campos obrigatórios!")
-            else:
-                novo_id = 1
-                if obras:
-                    ids = [obra["id"] for obra in obras]
-                    novo_id = max(ids) + 1
-
+        if st.form_submit_button("✅ Adicionar", use_container_width=True):
+            if novo_titulo and novo_artista and imagem_url:
+                novo_id = max([obra["id"] for obra in obras]) + 1 if obras else 1
                 nova_obra = {
                     "id": novo_id,
                     "titulo": novo_titulo,
@@ -951,91 +983,50 @@ def show_manage_obras():
                 obras.append(nova_obra)
                 save_json_file(OBRAS_FILE, obras)
                 st.cache_data.clear()
-                st.success(f"✅ Obra '{novo_titulo}' adicionada com sucesso!")
+                st.success("✅ Obra adicionada!")
                 st.rerun()
-
-    st.markdown("---")
-    st.subheader("❌ Excluir Obra")
-
-    if obras:
-        obra_para_excluir = st.selectbox(
-            "Selecione a obra para excluir:",
-            [""] + [f"{obra['id']}: {obra['titulo']} - {obra['artista']}" for obra in obras]
-        )
-
-        if obra_para_excluir and st.button("🗑️ Excluir Obra Selecionada"):
-            obra_id = int(obra_para_excluir.split(":")[0])
-
-            # Verificar se há tags associadas
-            tags = load_json_file(TAGS_FILE, [])
-            has_tags = any(tag['obra_id'] == obra_id for tag in tags)
-
-            if has_tags:
-                st.warning("⚠️ Esta obra possui tags associadas. Exclua as tags primeiro na aba de dados.")
             else:
-                obras = [o for o in obras if o['id'] != obra_id]
-                save_json_file(OBRAS_FILE, obras)
-                st.cache_data.clear()
-                st.success("✅ Obra excluída com sucesso!")
-                st.rerun()
-    else:
-        st.info("Não há obras para excluir.")
+                st.error("❌ Preencha todos os campos!")
+
+    st.markdown("</div>", unsafe_allow_html=True)
 
 def show_manage_admins():
-    """Gerenciamento de administradores"""
-    st.subheader("👥 Gerenciar Administradores")
-
-    with st.expander("➕ Adicionar Novo Administrador"):
-        with st.form("add_admin_form"):
-            new_username = st.text_input("Nome de usuário:")
-            new_password = st.text_input("Senha:", type="password")
-            confirm_password = st.text_input("Confirmar senha:", type="password")
-            submit_admin = st.form_submit_button("✅ Adicionar")
-
-            if submit_admin:
-                if new_password != confirm_password:
-                    st.error("❌ As senhas não coincidem!")
-                elif len(new_password) < 6:
-                    st.error("❌ A senha deve ter pelo menos 6 caracteres!")
-                else:
-                    admins = load_json_file(ADMIN_FILE, [])
-
-                    if any(admin['username'] == new_username for admin in admins):
-                        st.error(f"❌ O usuário '{new_username}' já existe!")
-                    else:
-                        hashed_password = hashlib.sha256(new_password.encode()).hexdigest()
-                        new_id = max([admin['id'] for admin in admins]) + 1 if admins else 1
-                        admins.append({
-                            "id": new_id,
-                            "username": new_username,
-                            "password": hashed_password
-                        })
-                        save_json_file(ADMIN_FILE, admins)
-                        st.success(f"✅ Administrador '{new_username}' adicionado com sucesso!")
-                        st.rerun()
+    """Gerenciar admins"""
+    st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+    st.markdown("### 👥 Administradores")
 
     admins = load_json_file(ADMIN_FILE, [])
     if admins:
-        st.markdown("### 📋 Lista de Administradores")
         admins_df = pd.DataFrame(admins)
         st.dataframe(admins_df[["id", "username"]], use_container_width=True)
 
-        with st.expander("❌ Excluir Administrador"):
-            admin_para_excluir = st.selectbox(
-                "Selecione o administrador:",
-                [""] + [admin['username'] for admin in admins]
-            )
+    st.markdown("</div>", unsafe_allow_html=True)
 
-            if admin_para_excluir and st.button("🗑️ Excluir Administrador"):
-                if len(admins) <= 1:
-                    st.error("❌ Não é possível excluir o último administrador do sistema!")
-                else:
-                    admins = [a for a in admins if a['username'] != admin_para_excluir]
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+    st.markdown("### ➕ Novo Admin")
+
+    with st.form("add_admin"):
+        new_user = st.text_input("Usuário:")
+        new_pass = st.text_input("Senha:", type="password")
+        confirm_pass = st.text_input("Confirmar:", type="password")
+
+        if st.form_submit_button("✅ Adicionar", use_container_width=True):
+            if new_pass == confirm_pass and len(new_pass) >= 6:
+                if not any(a['username'] == new_user for a in admins):
+                    hashed = hashlib.sha256(new_pass.encode()).hexdigest()
+                    new_id = max([a['id'] for a in admins]) + 1 if admins else 1
+                    admins.append({"id": new_id, "username": new_user, "password": hashed})
                     save_json_file(ADMIN_FILE, admins)
-                    st.success(f"✅ Administrador '{admin_para_excluir}' excluído com sucesso!")
+                    st.success("✅ Admin adicionado!")
                     st.rerun()
-    else:
-        st.warning("⚠️ Nenhum administrador encontrado no sistema.")
+                else:
+                    st.error("❌ Usuário já existe!")
+            else:
+                st.error("❌ Senhas não coincidem ou muito curtas!")
+
+    st.markdown("</div>", unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
