@@ -1,9 +1,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.express as px
-import plotly.graph_objects as go
-from wordcloud import WordCloud
 import os
 from datetime import datetime
 import hashlib
@@ -11,8 +8,6 @@ import base64
 import json
 from collections import Counter
 import re
-from io import BytesIO
-import base64
 
 # ==================== CONFIGURAÇÃO INICIAL ====================
 st.set_page_config(
@@ -88,7 +83,7 @@ def load_custom_css():
     }
 
     .main-container {
-        background: rgba(255, 255, 255, 0.1);
+        background: rgba(255, 255, 255, 0.95);
         backdrop-filter: blur(10px);
         border-radius: 20px;
         padding: 30px;
@@ -110,26 +105,23 @@ def load_custom_css():
         background: white;
         border-radius: 20px;
         padding: 20px;
-        margin: 15px;
+        margin: 15px 0;
         box-shadow: 0 10px 30px rgba(0,0,0,0.1);
-        transition: all 0.5s cubic-bezier(0.23, 1, 0.320, 1);
-        position: relative;
-        overflow: hidden;
-        cursor: pointer;
+        transition: all 0.3s ease;
     }
 
     .obra-card:hover {
-        transform: translateY(-20px) rotateX(5deg) rotateY(5deg);
-        box-shadow: 0 20px 50px rgba(0,0,0,0.2);
+        transform: translateY(-5px);
+        box-shadow: 0 15px 40px rgba(0,0,0,0.2);
     }
 
     .obra-card img {
-        transition: transform 0.8s ease;
+        transition: transform 0.3s ease;
         border-radius: 15px;
     }
 
     .obra-card:hover img {
-        transform: scale(1.1) rotate(2deg);
+        transform: scale(1.05);
     }
 
     .gradient-title {
@@ -183,6 +175,17 @@ def load_custom_css():
         letter-spacing: 1px;
     }
 
+    .tag-badge {
+        display: inline-block;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 8px 15px;
+        border-radius: 20px;
+        margin: 5px;
+        font-size: 0.9rem;
+        font-weight: 500;
+    }
+
     .stButton button {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
@@ -205,7 +208,7 @@ def load_custom_css():
     }
 
     .stTabs [data-baseweb="tab"] {
-        background-color: rgba(255, 255, 255, 0.1);
+        background-color: rgba(255, 255, 255, 0.2);
         border-radius: 10px 10px 0 0;
         padding: 10px 20px;
         color: white;
@@ -288,6 +291,7 @@ def save_tag(user_id, obra_id, tag):
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
     tags.append(new_tag)
+    st.cache_data.clear()  # Limpa cache quando nova tag é adicionada
     return save_json_file(TAGS_FILE, tags)
 
 def get_tags_for_obra(obra_id):
@@ -322,10 +326,10 @@ def load_all_users():
     users = load_json_file(USERS_FILE, [])
     return pd.DataFrame(users) if users else pd.DataFrame()
 
-# ==================== ANÁLISES AVANÇADAS ====================
+# ==================== ANÁLISES ====================
 
 def calculate_tag_diversity(tags_df):
-    """Calcula diversidade de tags usando índice de Shannon"""
+    """Calcula diversidade de tags"""
     if tags_df.empty:
         return 0
 
@@ -380,245 +384,6 @@ def analyze_tag_patterns(tags_df):
     }
 
     return patterns
-
-# ==================== VISUALIZAÇÕES COM PLOTLY ====================
-
-def create_interactive_tag_frequency(tags_df):
-    """Gráfico interativo de frequência de tags"""
-    if tags_df.empty:
-        return None
-
-    all_tags = tags_df["tag"].value_counts().reset_index()
-    all_tags.columns = ["tag", "count"]
-    top_tags = all_tags.head(20)
-
-    fig = px.bar(
-        top_tags,
-        x='count',
-        y='tag',
-        orientation='h',
-        title='🏆 Top 20 Tags Mais Frequentes',
-        labels={'count': 'Frequência', 'tag': 'Tag'},
-        color='count',
-        color_continuous_scale='Viridis',
-        text='count'
-    )
-
-    fig.update_layout(
-        height=600,
-        showlegend=False,
-        yaxis={'categoryorder': 'total ascending'},
-        font=dict(family="Poppins, sans-serif", size=12),
-        plot_bgcolor='rgba(0,0,0,0)',
-        paper_bgcolor='rgba(0,0,0,0)',
-    )
-
-    fig.update_traces(texttemplate='%{text}', textposition='outside')
-
-    return fig
-
-def create_tag_timeline(tags_df):
-    """Linha do tempo interativa de tags"""
-    if tags_df.empty or 'timestamp' not in tags_df.columns:
-        return None
-
-    tags_df['date'] = pd.to_datetime(tags_df['timestamp']).dt.date
-    timeline = tags_df.groupby('date').size().reset_index(name='count')
-
-    timeline['moving_avg'] = timeline['count'].rolling(window=3, min_periods=1).mean()
-
-    fig = go.Figure()
-
-    fig.add_trace(go.Scatter(
-        x=timeline['date'],
-        y=timeline['count'],
-        mode='lines+markers',
-        name='Tags por Dia',
-        line=dict(color='#667eea', width=3),
-        marker=dict(size=8, color='#764ba2'),
-        fill='tozeroy',
-        fillcolor='rgba(102, 126, 234, 0.2)'
-    ))
-
-    fig.add_trace(go.Scatter(
-        x=timeline['date'],
-        y=timeline['moving_avg'],
-        mode='lines',
-        name='Média Móvel (3 dias)',
-        line=dict(color='#e73c7e', width=2, dash='dash')
-    ))
-
-    fig.update_layout(
-        title='📈 Evolução Temporal das Tags',
-        xaxis_title='Data',
-        yaxis_title='Número de Tags',
-        hovermode='x unified',
-        height=500,
-        font=dict(family="Poppins, sans-serif"),
-        plot_bgcolor='rgba(0,0,0,0)',
-        paper_bgcolor='rgba(0,0,0,0)',
-    )
-
-    return fig
-
-def create_heatmap_tags_by_obra(tags_df, obras):
-    """Mapa de calor: tags por obra"""
-    if tags_df.empty:
-        return None
-
-    obra_tags = tags_df.groupby('obra_id').size().reset_index(name='count')
-
-    obra_info = pd.DataFrame(obras)
-    merged = obra_info.merge(obra_tags, left_on='id', right_on='obra_id', how='left')
-    merged['count'] = merged['count'].fillna(0)
-
-    fig = px.bar(
-        merged,
-        x='titulo',
-        y='count',
-        title='🎨 Distribuição de Tags por Obra',
-        labels={'titulo': 'Obra', 'count': 'Número de Tags'},
-        color='count',
-        color_continuous_scale='Plasma',
-        text='count'
-    )
-
-    fig.update_layout(
-        height=500,
-        xaxis_tickangle=-45,
-        font=dict(family="Poppins, sans-serif"),
-        plot_bgcolor='rgba(0,0,0,0)',
-        paper_bgcolor='rgba(0,0,0,0)',
-    )
-
-    fig.update_traces(texttemplate='%{text}', textposition='outside')
-
-    return fig
-
-def create_sunburst_chart(tags_df, obras):
-    """Gráfico sunburst de tags por obra"""
-    if tags_df.empty:
-        return None
-
-    obra_info = pd.DataFrame(obras)
-    merged = tags_df.merge(obra_info[['id', 'titulo']], left_on='obra_id', right_on='id', how='left')
-
-    sunburst_data = merged.groupby(['titulo', 'tag']).size().reset_index(name='count')
-
-    fig = px.sunburst(
-        sunburst_data,
-        path=['titulo', 'tag'],
-        values='count',
-        title='🌅 Hierarquia de Tags por Obra',
-        color='count',
-        color_continuous_scale='Viridis'
-    )
-
-    fig.update_layout(
-        height=700,
-        font=dict(family="Poppins, sans-serif"),
-    )
-
-    return fig
-
-def create_wordcloud_plotly_alternative(tags_df):
-    """Nuvem de palavras usando Plotly (alternativa sem matplotlib)"""
-    if tags_df.empty:
-        return None
-
-    tag_counts = tags_df['tag'].value_counts().head(50)
-
-    # Criar um gráfico de dispersão simulando uma nuvem
-    import random
-
-    words_data = []
-    for tag, count in tag_counts.items():
-        words_data.append({
-            'tag': tag,
-            'count': count,
-            'x': random.uniform(0, 100),
-            'y': random.uniform(0, 100),
-            'size': count
-        })
-
-    words_df = pd.DataFrame(words_data)
-
-    fig = px.scatter(
-        words_df,
-        x='x',
-        y='y',
-        size='size',
-        text='tag',
-        title='☁️ Nuvem de Palavras (Tags Mais Populares)',
-        size_max=60,
-        color='count',
-        color_continuous_scale='Viridis'
-    )
-
-    fig.update_traces(
-        textposition='middle center',
-        textfont=dict(size=12, family="Poppins, sans-serif")
-    )
-
-    fig.update_layout(
-        height=600,
-        showlegend=False,
-        xaxis=dict(showgrid=False, showticklabels=False, zeroline=False),
-        yaxis=dict(showgrid=False, showticklabels=False, zeroline=False),
-        plot_bgcolor='rgba(0,0,0,0)',
-        paper_bgcolor='rgba(0,0,0,0)',
-    )
-
-    return fig
-
-def create_engagement_funnel(users_df, tags_df):
-    """Funil de engajamento de usuários"""
-    total_registered = len(users_df) if not users_df.empty else 0
-    total_active = len(tags_df['user_id'].unique()) if not tags_df.empty else 0
-    total_tags = len(tags_df) if not tags_df.empty else 0
-
-    if not tags_df.empty:
-        multi_contrib = len(tags_df.groupby('user_id').filter(lambda x: len(x) > 1)['user_id'].unique())
-    else:
-        multi_contrib = 0
-
-    fig = go.Figure(go.Funnel(
-        y=['Usuários Registrados', 'Usuários Ativos', 'Múltiplas Contribuições', 'Total de Tags'],
-        x=[total_registered, total_active, multi_contrib, total_tags],
-        textposition="inside",
-        textinfo="value+percent initial",
-        marker=dict(color=["#667eea", "#764ba2", "#e73c7e", "#23d5ab"]),
-    ))
-
-    fig.update_layout(
-        title='🔄 Funil de Engajamento de Usuários',
-        height=500,
-        font=dict(family="Poppins, sans-serif"),
-    )
-
-    return fig
-
-def create_tag_pie_chart(tags_df):
-    """Gráfico de pizza das tags mais populares"""
-    if tags_df.empty:
-        return None
-
-    top_tags = tags_df['tag'].value_counts().head(10)
-
-    fig = px.pie(
-        values=top_tags.values,
-        names=top_tags.index,
-        title='🥧 Top 10 Tags - Distribuição',
-        color_discrete_sequence=px.colors.qualitative.Set3
-    )
-
-    fig.update_traces(textposition='inside', textinfo='percent+label')
-    fig.update_layout(
-        height=500,
-        font=dict(family="Poppins, sans-serif")
-    )
-
-    return fig
 
 # ==================== INTERFACE PRINCIPAL ====================
 
@@ -688,16 +453,14 @@ def show_intro():
     st.markdown("""
     <div style='text-align: center; max-width: 800px; margin: 0 auto 40px auto; color: white; font-size: 1.1rem; line-height: 1.8;'>
         Bem-vindo à nossa plataforma interativa de catalogação colaborativa! 
-        Explore obras de arte e contribua com suas próprias tags.
+        Explore obras de arte e contribua com suas próprias tags para criar uma taxonomia popular.
     </div>
     """, unsafe_allow_html=True)
 
     if st.session_state['step'] == 'intro':
         st.markdown("<div class='main-container'>", unsafe_allow_html=True)
 
-        st.markdown("""
-        <h2 style='color: white; text-align: center; margin-bottom: 30px;'>📋 Questionário Inicial</h2>
-        """, unsafe_allow_html=True)
+        st.markdown("<h2 style='text-align: center; margin-bottom: 30px;'>📋 Questionário Inicial</h2>", unsafe_allow_html=True)
 
         with st.form("intro_form"):
             col1, col2 = st.columns([1, 1])
@@ -748,7 +511,7 @@ def show_intro():
             st.markdown("""
             <div class='obra-card' style='text-align: center;'>
                 <h3 style='color: #667eea;'>🖼️ Explorar</h3>
-                <p>Descubra obras incríveis</p>
+                <p>Descubra obras incríveis e contribua com suas tags</p>
             </div>
             """, unsafe_allow_html=True)
 
@@ -756,7 +519,7 @@ def show_intro():
             st.markdown("""
             <div class='obra-card' style='text-align: center;'>
                 <h3 style='color: #764ba2;'>🏷️ Contribuir</h3>
-                <p>Adicione suas tags</p>
+                <p>Ajude a criar uma taxonomia colaborativa</p>
             </div>
             """, unsafe_allow_html=True)
 
@@ -764,7 +527,7 @@ def show_intro():
             st.markdown("""
             <div class='obra-card' style='text-align: center;'>
                 <h3 style='color: #e73c7e;'>📊 Analisar</h3>
-                <p>Veja estatísticas</p>
+                <p>Veja estatísticas e insights fascinantes</p>
             </div>
             """, unsafe_allow_html=True)
 
@@ -780,7 +543,7 @@ def show_obras():
     st.markdown("<div class='gradient-title'>Galeria de Obras Interativa</div>", unsafe_allow_html=True)
 
     if st.session_state['step'] == 'intro':
-        st.warning("⚠️ Complete o questionário inicial antes de explorar.")
+        st.warning("⚠️ Complete o questionário inicial antes de explorar as obras.")
         if st.button("📋 Ir para o Questionário"):
             st.session_state['current_page'] = "Início"
             st.rerun()
@@ -792,12 +555,11 @@ def show_obras():
         st.info("Nenhuma obra cadastrada.")
         return
 
-    st.markdown("<div class='main-container'>", unsafe_allow_html=True)
-
+    # Filtros
     col_filter1, col_filter2, col_filter3 = st.columns([2, 2, 1])
 
     with col_filter1:
-        search_term = st.text_input("🔍 Buscar obra", "")
+        search_term = st.text_input("🔍 Buscar obra por título ou artista", "")
 
     with col_filter2:
         sort_by = st.selectbox("Ordenar por:", ["Título", "Artista", "Ano"])
@@ -805,8 +567,7 @@ def show_obras():
     with col_filter3:
         view_mode = st.selectbox("Visualização:", ["Grid", "Lista"])
 
-    st.markdown("</div>", unsafe_allow_html=True)
-
+    # Filtrar obras
     filtered_obras = obras
     if search_term:
         filtered_obras = [
@@ -815,6 +576,7 @@ def show_obras():
                search_term.lower() in obra['artista'].lower()
         ]
 
+    # Ordenar obras
     if sort_by == "Título":
         filtered_obras = sorted(filtered_obras, key=lambda x: x['titulo'])
     elif sort_by == "Artista":
@@ -824,10 +586,11 @@ def show_obras():
 
     st.markdown(f"""
     <div style='text-align: center; color: white; margin: 20px 0;'>
-        <h3>Mostrando {len(filtered_obras)} obra(s)</h3>
+        <h3>🎨 Mostrando {len(filtered_obras)} obra(s)</h3>
     </div>
     """, unsafe_allow_html=True)
 
+    # Exibir obras
     if view_mode == "Grid":
         cols = st.columns(3)
         for i, obra in enumerate(filtered_obras):
@@ -837,7 +600,7 @@ def show_obras():
                     <img src='{obra['imagem']}' style='width: 100%; border-radius: 15px; margin-bottom: 15px;' />
                     <h3 style='color: #667eea; margin: 10px 0;'>{obra['titulo']}</h3>
                     <p style='color: #666; margin: 5px 0;'><strong>{obra['artista']}</strong></p>
-                    <p style='color: #999; margin: 5px 0;'>{obra['ano']}</p>
+                    <p style='color: #999; margin: 5px 0;'>📅 {obra['ano']}</p>
                 </div>
                 """, unsafe_allow_html=True)
 
@@ -847,7 +610,7 @@ def show_obras():
 
                 if 'selected_obra' in st.session_state and st.session_state['selected_obra']['id'] == obra['id']:
                     with st.form(f"tag_form_{obra['id']}"):
-                        tag = st.text_input("Digite sua tag:", key=f"tag_input_{obra['id']}")
+                        tag = st.text_input("Digite sua tag:", key=f"tag_input_{obra['id']}", placeholder="ex: guerra, cubismo, história...")
 
                         col_submit1, col_submit2 = st.columns(2)
                         with col_submit1:
@@ -857,7 +620,7 @@ def show_obras():
 
                         if submitted and tag:
                             save_tag(st.session_state['user_id'], obra['id'], tag)
-                            st.success(f"Tag '{tag}' adicionada! 🎉")
+                            st.success(f"Tag '{tag}' adicionada com sucesso! 🎉")
                             st.balloons()
                             del st.session_state['selected_obra']
                             st.rerun()
@@ -866,18 +629,44 @@ def show_obras():
                             del st.session_state['selected_obra']
                             st.rerun()
 
+                    # Mostrar tags populares
                     tags = get_tags_for_obra(obra['id'])
                     if not tags.empty:
                         st.markdown("**🏆 Tags Populares:**")
                         for _, row in tags.head(5).iterrows():
                             st.markdown(f"""
-                            <div style='display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-                                        color: white; padding: 5px 15px; border-radius: 20px; margin: 3px; font-size: 0.85rem;'>
-                                {row['tag']} ({row['count']})
-                            </div>
+                            <span class='tag-badge'>{row['tag']} ({row['count']})</span>
                             """, unsafe_allow_html=True)
                     else:
-                        st.info("Seja o primeiro! 🌟")
+                        st.info("Seja o primeiro a adicionar uma tag! 🌟")
+
+    else:  # Modo Lista
+        for obra in filtered_obras:
+            with st.container():
+                st.markdown("<div class='obra-card'>", unsafe_allow_html=True)
+                col_img, col_info = st.columns([1, 2])
+
+                with col_img:
+                    st.image(obra['imagem'], use_container_width=True)
+
+                with col_info:
+                    st.markdown(f"### {obra['titulo']}")
+                    st.markdown(f"**👨‍🎨 Artista:** {obra['artista']}")
+                    st.markdown(f"**📅 Ano:** {obra['ano']}")
+
+                    if st.button(f"🏷️ Adicionar Tag", key=f"btn_list_{obra['id']}"):
+                        st.session_state['selected_obra'] = obra
+                        st.rerun()
+
+                    # Tags populares
+                    tags = get_tags_for_obra(obra['id'])
+                    if not tags.empty:
+                        st.markdown("**Tags Populares:**")
+                        for _, row in tags.head(10).iterrows():
+                            st.markdown(f"""<span class='tag-badge'>{row['tag']} ({row['count']})</span>""", unsafe_allow_html=True)
+
+                st.markdown("</div>", unsafe_allow_html=True)
+                st.markdown("---")
 
 def show_admin():
     st.markdown("<div class='gradient-title'>Área Administrativa</div>", unsafe_allow_html=True)
@@ -888,11 +677,7 @@ def show_admin():
     if not st.session_state['admin_logged_in']:
         st.markdown("<div class='main-container' style='max-width: 500px; margin: 50px auto;'>", unsafe_allow_html=True)
 
-        st.markdown("""
-        <h2 style='color: white; text-align: center; margin-bottom: 30px;'>
-            🔐 Login Administrativo
-        </h2>
-        """, unsafe_allow_html=True)
+        st.markdown("<h2 style='text-align: center; margin-bottom: 30px;'>🔐 Login Administrativo</h2>", unsafe_allow_html=True)
 
         with st.form("login_form"):
             username = st.text_input("👤 Usuário:", placeholder="Digite seu usuário")
@@ -906,16 +691,22 @@ def show_admin():
                 if check_admin_credentials(username, password):
                     st.session_state['admin_logged_in'] = True
                     st.session_state['admin_username'] = username
-                    st.success("Login realizado! 🎉")
+                    st.success("Login realizado com sucesso! 🎉")
                     st.balloons()
                     st.rerun()
                 else:
-                    st.error("❌ Credenciais inválidas.")
+                    st.error("❌ Credenciais inválidas. Tente novamente.")
 
         st.markdown("</div>", unsafe_allow_html=True)
 
-        with st.expander("ℹ️ Informações"):
-            st.info("**Credenciais padrão:**\n- Usuário: `admin`\n- Senha: `admin123`")
+        with st.expander("ℹ️ Informações de Acesso"):
+            st.info("""
+            **Credenciais padrão:**
+            - Usuário: `admin`
+            - Senha: `admin123`
+
+            Por favor, altere a senha após o primeiro login por segurança.
+            """)
 
     else:
         st.markdown(f"""
@@ -925,9 +716,9 @@ def show_admin():
         """, unsafe_allow_html=True)
 
         admin_tabs = st.tabs([
-            "📊 Dashboard Analytics",
+            "📊 Dashboard",
             "🖼️ Gerenciar Obras",
-            "👥 Gerenciar Admins"
+            "👥 Administradores"
         ])
 
         with admin_tabs[0]:
@@ -942,25 +733,22 @@ def show_admin():
         st.markdown("---")
         col_logout1, col_logout2, col_logout3 = st.columns([1, 1, 1])
         with col_logout2:
-            if st.button("🚪 Sair", use_container_width=True):
+            if st.button("🚪 Sair do Sistema", use_container_width=True):
                 st.session_state['admin_logged_in'] = False
                 if 'admin_username' in st.session_state:
                     del st.session_state['admin_username']
                 st.rerun()
 
 def show_analytics_dashboard():
-    """Dashboard completo de analytics"""
+    """Dashboard de analytics usando apenas recursos nativos do Streamlit"""
 
-    st.markdown("""
-    <h2 style='color: white; margin-bottom: 30px;'>
-        📊 Dashboard de Análise Avançada
-    </h2>
-    """, unsafe_allow_html=True)
+    st.markdown("<h2 style='color: white; margin-bottom: 30px;'>📊 Dashboard de Análise de Dados</h2>", unsafe_allow_html=True)
 
     tags_df = load_all_tags()
     users_df = load_all_users()
     obras = load_obras()
 
+    # Métricas principais
     st.markdown("### 📈 Métricas Principais")
 
     col1, col2, col3, col4 = st.columns(4)
@@ -973,7 +761,7 @@ def show_analytics_dashboard():
     with col1:
         st.markdown(f"""
         <div class='metric-card'>
-            <div class='metric-label'>Total de Usuários</div>
+            <div class='metric-label'>Usuários</div>
             <div class='metric-value'>{total_users}</div>
         </div>
         """, unsafe_allow_html=True)
@@ -997,7 +785,7 @@ def show_analytics_dashboard():
     with col4:
         st.markdown(f"""
         <div class='metric-card'>
-            <div class='metric-label'>Obras Cadastradas</div>
+            <div class='metric-label'>Obras</div>
             <div class='metric-value'>{total_obras}</div>
         </div>
         """, unsafe_allow_html=True)
@@ -1005,89 +793,60 @@ def show_analytics_dashboard():
     st.markdown("<br><br>", unsafe_allow_html=True)
 
     if tags_df.empty:
-        st.info("📭 Ainda não há dados suficientes para análise.")
+        st.info("📭 Ainda não há dados suficientes para análise. Aguarde as primeiras contribuições!")
         return
 
+    # Análises detalhadas
     viz_tabs = st.tabs([
-        "📊 Visão Geral",
-        "🏷️ Análise de Tags",
+        "📊 Análise de Tags",
         "👥 Engajamento",
         "📥 Exportar Dados"
     ])
 
     with viz_tabs[0]:
-        col_chart1, col_chart2 = st.columns(2)
+        st.markdown("### 🏷️ Tags Mais Frequentes")
 
-        with col_chart1:
-            st.markdown("#### 📊 Top 20 Tags")
-            fig_freq = create_interactive_tag_frequency(tags_df)
-            if fig_freq:
-                st.plotly_chart(fig_freq, use_container_width=True)
+        tag_counts = tags_df['tag'].value_counts().head(20)
 
-        with col_chart2:
-            st.markdown("#### 📈 Evolução Temporal")
-            fig_timeline = create_tag_timeline(tags_df)
-            if fig_timeline:
-                st.plotly_chart(fig_timeline, use_container_width=True)
+        # Usar bar_chart nativo do Streamlit
+        st.bar_chart(tag_counts)
 
         st.markdown("---")
+        st.markdown("### 📋 Lista Completa de Tags")
 
-        col_chart3, col_chart4 = st.columns(2)
-
-        with col_chart3:
-            st.markdown("#### 🎨 Distribuição por Obra")
-            fig_heatmap = create_heatmap_tags_by_obra(tags_df, obras)
-            if fig_heatmap:
-                st.plotly_chart(fig_heatmap, use_container_width=True)
-
-        with col_chart4:
-            st.markdown("#### 🔄 Funil de Engajamento")
-            fig_funnel = create_engagement_funnel(users_df, tags_df)
-            if fig_funnel:
-                st.plotly_chart(fig_funnel, use_container_width=True)
-
-    with viz_tabs[1]:
-        st.markdown("### 🏷️ Análise Detalhada de Tags")
-
-        col_wc, col_pie = st.columns([1, 1])
-
-        with col_wc:
-            st.markdown("#### ☁️ Nuvem de Palavras")
-            fig_wc = create_wordcloud_plotly_alternative(tags_df)
-            if fig_wc:
-                st.plotly_chart(fig_wc, use_container_width=True)
-
-        with col_pie:
-            st.markdown("#### 🥧 Top 10 Tags")
-            fig_pie = create_tag_pie_chart(tags_df)
-            if fig_pie:
-                st.plotly_chart(fig_pie, use_container_width=True)
+        all_tags = tags_df['tag'].value_counts().reset_index()
+        all_tags.columns = ['Tag', 'Frequência']
+        st.dataframe(all_tags, use_container_width=True, height=400)
 
         st.markdown("---")
+        st.markdown("### 🎨 Distribuição por Obra")
 
-        st.markdown("#### 🌅 Hierarquia de Tags")
-        fig_sunburst = create_sunburst_chart(tags_df, obras)
-        if fig_sunburst:
-            st.plotly_chart(fig_sunburst, use_container_width=True)
+        obra_tags = tags_df.groupby('obra_id').size().reset_index(name='count')
+        obra_info = pd.DataFrame(obras)
+        merged = obra_info.merge(obra_tags, left_on='id', right_on='obra_id', how='left')
+        merged['count'] = merged['count'].fillna(0)
+        merged_display = merged[['titulo', 'count']].set_index('titulo')
+
+        st.bar_chart(merged_display)
 
         st.markdown("---")
+        st.markdown("### 📊 Padrões de Tags")
 
-        st.markdown("#### 📋 Padrões de Tags")
         patterns = analyze_tag_patterns(tags_df)
         if patterns:
             col_p1, col_p2, col_p3, col_p4 = st.columns(4)
 
             with col_p1:
-                st.metric("Comprimento Médio", f"{patterns['avg_tag_length']:.1f} chars")
+                st.metric("Comprimento Médio", f"{patterns['avg_tag_length']:.1f} caracteres")
             with col_p2:
                 st.metric("Tags Simples", patterns['single_word_tags'])
             with col_p3:
                 st.metric("Tags Compostas", patterns['multi_word_tags'])
             with col_p4:
                 diversity = calculate_tag_diversity(tags_df)
-                st.metric("Diversidade", f"{diversity:.2f}")
+                st.metric("Índice de Diversidade", f"{diversity:.2f}")
 
-    with viz_tabs[2]:
+    with viz_tabs[1]:
         st.markdown("### 👥 Análise de Engajamento")
 
         engagement = analyze_user_engagement(users_df, tags_df)
@@ -1096,21 +855,33 @@ def show_analytics_dashboard():
             col_e1, col_e2, col_e3, col_e4 = st.columns(4)
 
             with col_e1:
-                st.metric("Média Tags/User", f"{engagement['avg_tags_per_user']:.1f}")
+                st.metric("Média Tags/Usuário", f"{engagement['avg_tags_per_user']:.1f}")
             with col_e2:
-                st.metric("Mediana Tags/User", f"{engagement['median_tags_per_user']:.1f}")
+                st.metric("Mediana Tags/Usuário", f"{engagement['median_tags_per_user']:.1f}")
             with col_e3:
-                st.metric("Máx Tags/User", engagement['max_tags_per_user'])
+                st.metric("Máx Tags/Usuário", engagement['max_tags_per_user'])
             with col_e4:
                 st.metric("Usuários Ativos", engagement['total_active_users'])
 
         st.markdown("---")
-        st.markdown("#### 🏆 Top Contribuidores")
+        st.markdown("### 🏆 Top 10 Contribuidores")
+
         contributors = get_top_contributors(tags_df, 10)
         if not contributors.empty:
             st.dataframe(contributors, use_container_width=True)
+        else:
+            st.info("Nenhum contribuidor ainda.")
 
-    with viz_tabs[3]:
+        st.markdown("---")
+        st.markdown("### 📈 Evolução Temporal")
+
+        if 'timestamp' in tags_df.columns:
+            tags_df['date'] = pd.to_datetime(tags_df['timestamp']).dt.date
+            timeline = tags_df.groupby('date').size().reset_index(name='count')
+            timeline_display = timeline.set_index('date')
+            st.line_chart(timeline_display)
+
+    with viz_tabs[2]:
         st.markdown("### 📥 Exportar Dados")
 
         col_exp1, col_exp2 = st.columns(2)
@@ -1121,7 +892,7 @@ def show_analytics_dashboard():
                 st.download_button(
                     label="📄 Download Tags (CSV)",
                     data=csv_tags,
-                    file_name=f'tags_data_{datetime.now().strftime("%Y%m%d")}.csv',
+                    file_name=f'tags_data_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv',
                     mime='text/csv',
                     use_container_width=True
                 )
@@ -1132,7 +903,7 @@ def show_analytics_dashboard():
                 st.download_button(
                     label="📄 Download Usuários (CSV)",
                     data=csv_users,
-                    file_name=f'users_data_{datetime.now().strftime("%Y%m%d")}.csv',
+                    file_name=f'users_data_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv',
                     mime='text/csv',
                     use_container_width=True
                 )
@@ -1145,7 +916,7 @@ def show_manage_obras():
 
     if obras:
         obras_df = pd.DataFrame(obras)
-        st.subheader("Obras Existentes")
+        st.subheader("📚 Obras Cadastradas")
         st.dataframe(obras_df[["id", "titulo", "artista", "ano"]], use_container_width=True)
     else:
         st.write("Nenhuma obra cadastrada.")
@@ -1159,11 +930,11 @@ def show_manage_obras():
         novo_ano = st.text_input("Ano:")
         imagem_url = st.text_input("URL da Imagem:")
 
-        submit_obra = st.form_submit_button("Adicionar Obra")
+        submit_obra = st.form_submit_button("✅ Adicionar Obra")
 
         if submit_obra:
             if not novo_titulo or not novo_artista or not imagem_url:
-                st.error("Preencha todos os campos!")
+                st.error("❌ Preencha todos os campos obrigatórios!")
             else:
                 novo_id = 1
                 if obras:
@@ -1180,7 +951,7 @@ def show_manage_obras():
                 obras.append(nova_obra)
                 save_json_file(OBRAS_FILE, obras)
                 st.cache_data.clear()
-                st.success(f"Obra '{novo_titulo}' adicionada!")
+                st.success(f"✅ Obra '{novo_titulo}' adicionada com sucesso!")
                 st.rerun()
 
     st.markdown("---")
@@ -1188,46 +959,49 @@ def show_manage_obras():
 
     if obras:
         obra_para_excluir = st.selectbox(
-            "Selecione a obra:",
+            "Selecione a obra para excluir:",
             [""] + [f"{obra['id']}: {obra['titulo']} - {obra['artista']}" for obra in obras]
         )
 
-        if obra_para_excluir and st.button("Excluir Obra"):
+        if obra_para_excluir and st.button("🗑️ Excluir Obra Selecionada"):
             obra_id = int(obra_para_excluir.split(":")[0])
 
+            # Verificar se há tags associadas
             tags = load_json_file(TAGS_FILE, [])
             has_tags = any(tag['obra_id'] == obra_id for tag in tags)
 
             if has_tags:
-                st.warning("Esta obra possui tags. Exclua as.")
+                st.warning("⚠️ Esta obra possui tags associadas. Exclua as tags primeiro na aba de dados.")
             else:
                 obras = [o for o in obras if o['id'] != obra_id]
                 save_json_file(OBRAS_FILE, obras)
                 st.cache_data.clear()
-                st.success("Obra excluída!")
+                st.success("✅ Obra excluída com sucesso!")
                 st.rerun()
     else:
-        st.write("Nenhuma obra para excluir.")
+        st.info("Não há obras para excluir.")
 
 def show_manage_admins():
     """Gerenciamento de administradores"""
     st.subheader("👥 Gerenciar Administradores")
 
-    with st.expander("➕ Adicionar novo administrador"):
+    with st.expander("➕ Adicionar Novo Administrador"):
         with st.form("add_admin_form"):
-            new_username = st.text_input("Novo usuário:")
-            new_password = st.text_input("Nova senha:", type="password")
+            new_username = st.text_input("Nome de usuário:")
+            new_password = st.text_input("Senha:", type="password")
             confirm_password = st.text_input("Confirmar senha:", type="password")
-            submit_admin = st.form_submit_button("Adicionar")
+            submit_admin = st.form_submit_button("✅ Adicionar")
 
             if submit_admin:
                 if new_password != confirm_password:
-                    st.error("As senhas não coincidem!")
+                    st.error("❌ As senhas não coincidem!")
+                elif len(new_password) < 6:
+                    st.error("❌ A senha deve ter pelo menos 6 caracteres!")
                 else:
                     admins = load_json_file(ADMIN_FILE, [])
 
                     if any(admin['username'] == new_username for admin in admins):
-                        st.error(f"O usuário '{new_username}' já existe!")
+                        st.error(f"❌ O usuário '{new_username}' já existe!")
                     else:
                         hashed_password = hashlib.sha256(new_password.encode()).hexdigest()
                         new_id = max([admin['id'] for admin in admins]) + 1 if admins else 1
@@ -1237,31 +1011,31 @@ def show_manage_admins():
                             "password": hashed_password
                         })
                         save_json_file(ADMIN_FILE, admins)
-                        st.success(f"Administrador '{new_username}' adicionado!")
+                        st.success(f"✅ Administrador '{new_username}' adicionado com sucesso!")
                         st.rerun()
 
     admins = load_json_file(ADMIN_FILE, [])
     if admins:
+        st.markdown("### 📋 Lista de Administradores")
         admins_df = pd.DataFrame(admins)
-        st.write("### Administradores existentes:")
-        st.dataframe(admins_df[["username"]], use_container_width=True)
+        st.dataframe(admins_df[["id", "username"]], use_container_width=True)
 
-        with st.expander("❌ Excluir administrador"):
+        with st.expander("❌ Excluir Administrador"):
             admin_para_excluir = st.selectbox(
                 "Selecione o administrador:",
                 [""] + [admin['username'] for admin in admins]
             )
 
-            if admin_para_excluir and st.button("Excluir Administrador"):
+            if admin_para_excluir and st.button("🗑️ Excluir Administrador"):
                 if len(admins) <= 1:
-                    st.error("Não é possível excluir o último administrador!")
+                    st.error("❌ Não é possível excluir o último administrador do sistema!")
                 else:
                     admins = [a for a in admins if a['username'] != admin_para_excluir]
                     save_json_file(ADMIN_FILE, admins)
-                    st.success(f"Administrador '{admin_para_excluir}' excluído!")
+                    st.success(f"✅ Administrador '{admin_para_excluir}' excluído com sucesso!")
                     st.rerun()
     else:
-        st.warning("Nenhum administrador encontrado.")
+        st.warning("⚠️ Nenhum administrador encontrado no sistema.")
 
 if __name__ == "__main__":
     main()
