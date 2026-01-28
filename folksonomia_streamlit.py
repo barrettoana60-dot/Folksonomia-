@@ -6,8 +6,6 @@ from datetime import datetime
 import hashlib
 import base64
 import json
-import plotly.express as px
-import plotly.graph_objects as go
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 import warnings
@@ -61,7 +59,6 @@ def load_premium_css():
 
     * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Poppins', sans-serif !important; }
 
-    /* Background Animado */
     .stApp {
         background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 50%, #0a0e27 100%);
         background-size: 400% 400%;
@@ -73,29 +70,19 @@ def load_premium_css():
         50% { background-position: 100% 50%; }
     }
 
-    /* Navbar Premium */
     .top-navbar {
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        z-index: 9999;
-        background: rgba(10, 14, 39, 0.9);
-        backdrop-filter: blur(30px);
+        position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+        background: rgba(10, 14, 39, 0.9); backdrop-filter: blur(30px);
         border-bottom: 2px solid rgba(59, 130, 246, 0.3);
-        padding: 1.5rem 3rem;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
+        padding: 1.5rem 3rem; display: flex;
+        justify-content: space-between; align-items: center;
         box-shadow: 0 10px 50px rgba(0, 0, 0, 0.7);
     }
 
     .navbar-logo {
-        font-size: 2rem;
-        font-weight: 900;
+        font-size: 2rem; font-weight: 900;
         background: linear-gradient(135deg, #3b82f6, #8b5cf6, #ec4899);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
         animation: logoFloat 3s ease-in-out infinite;
     }
 
@@ -104,23 +91,15 @@ def load_premium_css():
         50% { transform: translateY(-10px); }
     }
 
-    /* Main Content */
     .main-content {
-        margin-top: 120px;
-        padding: 2rem 3rem;
-        max-width: 1800px;
-        margin-left: auto;
-        margin-right: auto;
+        margin-top: 120px; padding: 2rem 3rem;
+        max-width: 1800px; margin-left: auto; margin-right: auto;
     }
 
-    /* Glass Card */
     .glass-card {
-        background: rgba(15, 30, 58, 0.7);
-        backdrop-filter: blur(20px);
-        border: 1px solid rgba(59, 130, 246, 0.3);
-        border-radius: 24px;
-        padding: 2rem;
-        margin: 1.5rem 0;
+        background: rgba(15, 30, 58, 0.7); backdrop-filter: blur(20px);
+        border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 24px;
+        padding: 2rem; margin: 1.5rem 0;
         box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
         transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     }
@@ -131,15 +110,12 @@ def load_premium_css():
         border-color: rgba(96, 165, 250, 0.6);
     }
 
-    /* Obra Card 3D Floating */
     .obra-card-premium {
         background: rgba(15, 30, 58, 0.8);
         border: 2px solid rgba(59, 130, 246, 0.4);
-        border-radius: 20px;
-        overflow: hidden;
+        border-radius: 20px; overflow: hidden;
         transition: all 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-        cursor: pointer;
-        position: relative;
+        cursor: pointer; position: relative;
         animation: float 6s ease-in-out infinite;
     }
 
@@ -151,16 +127,12 @@ def load_premium_css():
     .obra-card-premium:hover {
         transform: translateY(-30px) scale(1.08) rotateY(5deg) !important;
         box-shadow: 0 40px 100px rgba(59, 130, 246, 0.6);
-        border-color: rgba(96, 165, 250, 1);
-        animation: none;
+        border-color: rgba(96, 165, 250, 1); animation: none;
     }
 
     .obra-card-premium img {
-        width: 100%;
-        height: 300px;
-        object-fit: cover;
-        transition: transform 0.6s ease;
-        filter: brightness(0.9);
+        width: 100%; height: 300px; object-fit: cover;
+        transition: transform 0.6s ease; filter: brightness(0.9);
     }
 
     .obra-card-premium:hover img {
@@ -168,16 +140,11 @@ def load_premium_css():
         filter: brightness(1.1) contrast(1.1);
     }
 
-    /* Títulos */
     .main-title {
-        color: #e0e7ff;
-        font-size: 4rem;
-        font-weight: 900;
-        text-align: center;
-        margin: 2rem 0;
+        color: #e0e7ff; font-size: 4rem; font-weight: 900;
+        text-align: center; margin: 2rem 0;
         background: linear-gradient(135deg, #3b82f6, #8b5cf6, #ec4899);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
         animation: titlePulse 3s ease-in-out infinite;
     }
 
@@ -187,81 +154,31 @@ def load_premium_css():
     }
 
     .subtitle {
-        color: #94a3b8;
-        font-size: 1.3rem;
-        text-align: center;
-        margin-bottom: 3rem;
+        color: #94a3b8; font-size: 1.3rem;
+        text-align: center; margin-bottom: 3rem;
     }
 
-    /* Tags Modernas */
     .tag-premium {
         display: inline-block;
         background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(139, 92, 246, 0.2));
-        border: 2px solid rgba(59, 130, 246, 0.5);
-        color: #93c5fd;
-        padding: 0.6rem 1.3rem;
-        border-radius: 30px;
-        margin: 0.4rem;
-        font-size: 0.9rem;
-        font-weight: 700;
-        transition: all 0.3s ease;
-        cursor: pointer;
-        position: relative;
-        overflow: hidden;
-    }
-
-    .tag-premium::before {
-        content: '';
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        width: 0;
-        height: 0;
-        border-radius: 50%;
-        background: rgba(255, 255, 255, 0.3);
-        transform: translate(-50%, -50%);
-        transition: width 0.5s, height 0.5s;
+        border: 2px solid rgba(59, 130, 246, 0.5); color: #93c5fd;
+        padding: 0.6rem 1.3rem; border-radius: 30px; margin: 0.4rem;
+        font-size: 0.9rem; font-weight: 700;
+        transition: all 0.3s ease; cursor: pointer;
     }
 
     .tag-premium:hover {
         transform: scale(1.2) translateY(-5px);
         box-shadow: 0 10px 30px rgba(59, 130, 246, 0.6);
-        border-color: rgba(139, 92, 246, 0.8);
     }
 
-    .tag-premium:hover::before {
-        width: 300px;
-        height: 300px;
-    }
-
-    /* Métricas Premium */
     .metric-premium {
         background: linear-gradient(135deg, #1e40af, #3b82f6, #8b5cf6);
         border: 2px solid rgba(96, 165, 250, 0.5);
-        border-radius: 24px;
-        padding: 2.5rem;
-        text-align: center;
-        color: white;
+        border-radius: 24px; padding: 2.5rem;
+        text-align: center; color: white;
         box-shadow: 0 15px 50px rgba(37, 99, 235, 0.5);
         transition: all 0.4s ease;
-        position: relative;
-        overflow: hidden;
-    }
-
-    .metric-premium::before {
-        content: '';
-        position: absolute;
-        top: -50%;
-        left: -50%;
-        width: 200%;
-        height: 200%;
-        background: radial-gradient(circle, rgba(255,255,255,0.1), transparent);
-        animation: rotate 8s linear infinite;
-    }
-
-    @keyframes rotate {
-        from { transform: rotate(0deg); }
-        to { transform: rotate(360deg); }
     }
 
     .metric-premium:hover {
@@ -270,48 +187,22 @@ def load_premium_css():
     }
 
     .metric-value {
-        font-size: 4rem;
-        font-weight: 900;
-        position: relative;
-        z-index: 1;
+        font-size: 4rem; font-weight: 900;
         text-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
     }
 
     .metric-label {
-        font-size: 1.1rem;
-        text-transform: uppercase;
-        letter-spacing: 2px;
-        font-weight: 700;
-        position: relative;
-        z-index: 1;
+        font-size: 1.1rem; text-transform: uppercase;
+        letter-spacing: 2px; font-weight: 700;
     }
 
-    /* Botões Premium */
     .stButton button {
         background: linear-gradient(135deg, #1e40af, #3b82f6) !important;
-        color: white !important;
-        border: 2px solid #3b82f6 !important;
-        border-radius: 16px !important;
-        padding: 1rem 3rem !important;
-        font-weight: 700 !important;
-        font-size: 1.1rem !important;
-        transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
+        color: white !important; border: 2px solid #3b82f6 !important;
+        border-radius: 16px !important; padding: 1rem 3rem !important;
+        font-weight: 700 !important; font-size: 1.1rem !important;
+        transition: all 0.4s ease !important;
         box-shadow: 0 8px 25px rgba(59, 130, 246, 0.4) !important;
-        position: relative !important;
-        overflow: hidden !important;
-    }
-
-    .stButton button::before {
-        content: '';
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        width: 0;
-        height: 0;
-        border-radius: 50%;
-        background: rgba(255, 255, 255, 0.3);
-        transform: translate(-50%, -50%);
-        transition: width 0.6s, height 0.6s;
     }
 
     .stButton button:hover {
@@ -319,41 +210,23 @@ def load_premium_css():
         box-shadow: 0 20px 50px rgba(59, 130, 246, 0.7) !important;
     }
 
-    .stButton button:hover::before {
-        width: 400px;
-        height: 400px;
-    }
-
-    /* Inputs */
     .stTextInput input, .stTextArea textarea, .stSelectbox select {
         background: rgba(10, 22, 40, 0.9) !important;
         border: 2px solid rgba(59, 130, 246, 0.3) !important;
-        color: #e0e7ff !important;
-        border-radius: 12px !important;
-        padding: 1rem !important;
-        transition: all 0.3s ease !important;
+        color: #e0e7ff !important; border-radius: 12px !important;
+        padding: 1rem !important; transition: all 0.3s ease !important;
     }
 
     .stTextInput input:focus, .stTextArea textarea:focus {
         border-color: #3b82f6 !important;
         box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.2) !important;
-        transform: translateY(-3px);
     }
 
-    /* Tabs */
     .stTabs [data-baseweb="tab"] {
         background: rgba(15, 30, 58, 0.6);
         border: 2px solid rgba(59, 130, 246, 0.3);
-        border-radius: 16px 16px 0 0;
-        color: #94a3b8;
-        padding: 1rem 2rem;
-        font-weight: 700;
-        transition: all 0.3s ease;
-    }
-
-    .stTabs [data-baseweb="tab"]:hover {
-        transform: translateY(-5px);
-        background: rgba(30, 64, 175, 0.5);
+        border-radius: 16px 16px 0 0; color: #94a3b8;
+        padding: 1rem 2rem; font-weight: 700;
     }
 
     .stTabs [aria-selected="true"] {
@@ -362,53 +235,42 @@ def load_premium_css():
         box-shadow: 0 10px 35px rgba(59, 130, 246, 0.5);
     }
 
-    /* Status Badges */
     .status-badge {
-        display: inline-block;
-        padding: 0.6rem 1.2rem;
-        border-radius: 30px;
-        font-size: 0.9rem;
-        font-weight: 800;
-        text-transform: uppercase;
-        letter-spacing: 1px;
+        display: inline-block; padding: 0.6rem 1.2rem;
+        border-radius: 30px; font-size: 0.9rem;
+        font-weight: 800; text-transform: uppercase;
     }
 
     .status-high {
         background: rgba(34, 197, 94, 0.2);
         border: 2px solid rgba(34, 197, 94, 0.6);
         color: #86efac;
-        box-shadow: 0 4px 20px rgba(34, 197, 94, 0.4);
     }
 
     .status-medium {
         background: rgba(251, 191, 36, 0.2);
         border: 2px solid rgba(251, 191, 36, 0.6);
         color: #fcd34d;
-        box-shadow: 0 4px 20px rgba(251, 191, 36, 0.4);
     }
 
     .status-low {
         background: rgba(239, 68, 68, 0.2);
         border: 2px solid rgba(239, 68, 68, 0.6);
         color: #fca5a5;
-        box-shadow: 0 4px 20px rgba(239, 68, 68, 0.4);
     }
 
-    /* Hide Streamlit */
     #MainMenu, footer, header {visibility: hidden;}
     .stDeployButton {display: none;}
     [data-testid="stSidebar"] {display: none;}
 
-    /* Responsivo */
     @media (max-width: 768px) {
         .main-title { font-size: 2.5rem; }
         .main-content { margin-top: 140px; padding: 1rem; }
-        .metric-value { font-size: 2.5rem; }
     }
     </style>
     """, unsafe_allow_html=True)
 
-# ==================== FUNÇÕES AUXILIARES ====================
+# ==================== FUNÇÕES ====================
 def check_and_init_admin():
     admins = load_json_file(ADMIN_FILE, [])
     if not admins:
@@ -479,7 +341,7 @@ def load_all_users():
     users = load_json_file(USERS_FILE, [])
     return pd.DataFrame(users) if users else pd.DataFrame()
 
-# ==================== ANÁLISES AVANÇADAS ====================
+# ==================== ANÁLISES ====================
 def calculate_tag_diversity(tags_df):
     if tags_df.empty:
         return 0
@@ -504,7 +366,6 @@ def calculate_quality_metrics(tags_df):
     return metrics
 
 def perform_clustering(tags_df, n_clusters=3):
-    """Análise de clustering de tags"""
     if tags_df.empty or len(tags_df['tag'].unique()) < n_clusters:
         return None
 
@@ -512,7 +373,6 @@ def perform_clustering(tags_df, n_clusters=3):
     if len(top_tags) < n_clusters:
         return None
 
-    # Simular clustering por frequência
     tags_sorted = top_tags.sort_values(ascending=False)
     chunk_size = len(tags_sorted) // n_clusters
 
@@ -528,135 +388,6 @@ def perform_clustering(tags_df, n_clusters=3):
         }
 
     return clusters
-
-# ==================== GRÁFICOS ====================
-def create_distribution_chart(tags_df):
-    if tags_df.empty:
-        return None
-
-    top = tags_df['tag'].value_counts().head(15)
-
-    fig = go.Figure(data=[
-        go.Bar(
-            x=top.values,
-            y=top.index,
-            orientation='h',
-            marker=dict(
-                color=top.values,
-                colorscale='Viridis',
-                line=dict(color='rgba(59, 130, 246, 0.6)', width=2)
-            ),
-            text=top.values,
-            textposition='outside'
-        )
-    ])
-
-    fig.update_layout(
-        title=dict(text="🏆 Top 15 Tags Mais Utilizadas", font=dict(size=20, color='#e0e7ff')),
-        xaxis_title="Frequência",
-        yaxis_title="Tag",
-        plot_bgcolor='rgba(0,0,0,0)',
-        paper_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='#e0e7ff', size=13),
-        height=500,
-        margin=dict(l=20, r=20, t=60, b=20)
-    )
-
-    return fig
-
-def create_timeline_chart(tags_df):
-    if tags_df.empty or 'timestamp' not in tags_df.columns:
-        return None
-
-    tags_df['timestamp'] = pd.to_datetime(tags_df['timestamp'])
-    tags_df['date'] = tags_df['timestamp'].dt.date
-    daily = tags_df.groupby('date').size().reset_index(name='count')
-
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=daily['date'],
-        y=daily['count'],
-        mode='lines+markers',
-        line=dict(color='#3b82f6', width=3),
-        marker=dict(size=10, color='#60a5fa'),
-        fill='tozeroy',
-        fillcolor='rgba(59, 130, 246, 0.2)'
-    ))
-
-    fig.update_layout(
-        title=dict(text="📈 Evolução Temporal de Tags", font=dict(size=20, color='#e0e7ff')),
-        xaxis_title="Data",
-        yaxis_title="Quantidade",
-        plot_bgcolor='rgba(0,0,0,0)',
-        paper_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='#e0e7ff', size=13),
-        height=400,
-        hovermode='x unified'
-    )
-
-    return fig
-
-def create_clustering_chart(tags_df):
-    """Gráfico de clustering"""
-    clusters = perform_clustering(tags_df, 3)
-    if not clusters:
-        return None
-
-    labels = list(clusters.keys())
-    values = [clusters[k]['total'] for k in labels]
-
-    fig = go.Figure(data=[go.Pie(
-        labels=labels,
-        values=values,
-        hole=.4,
-        marker=dict(colors=['#3b82f6', '#8b5cf6', '#ec4899'])
-    )])
-
-    fig.update_layout(
-        title=dict(text="🔬 Análise de Clustering de Tags", font=dict(size=20, color='#e0e7ff')),
-        plot_bgcolor='rgba(0,0,0,0)',
-        paper_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='#e0e7ff', size=13),
-        height=400
-    )
-
-    return fig
-
-def create_heatmap(tags_df, obras):
-    """Mapa de calor obra x tags"""
-    if tags_df.empty:
-        return None
-
-    matrix = tags_df.groupby(['obra_id', 'tag']).size().unstack(fill_value=0)
-
-    if len(matrix.columns) > 10:
-        top_tags = tags_df['tag'].value_counts().head(10).index
-        matrix = matrix[top_tags]
-
-    obras_dict = {o['id']: o['titulo'] for o in obras}
-    obra_names = [obras_dict.get(oid, f'Obra {oid}') for oid in matrix.index]
-
-    fig = go.Figure(data=go.Heatmap(
-        z=matrix.values,
-        x=matrix.columns,
-        y=obra_names,
-        colorscale='Viridis',
-        text=matrix.values,
-        texttemplate='%{text}',
-        textfont={"size": 11}
-    ))
-
-    fig.update_layout(
-        title=dict(text="🔥 Mapa de Calor: Tags por Obra", font=dict(size=20, color='#e0e7ff')),
-        xaxis_title="Tags",
-        yaxis_title="Obras",
-        plot_bgcolor='rgba(0,0,0,0)',
-        paper_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='#e0e7ff', size=12),
-        height=500
-    )
-
-    return fig
 
 # ==================== INTERFACE ====================
 def show_header():
@@ -782,9 +513,9 @@ def show_obras():
                 <div class='obra-card-premium'>
                     <img src='{obra['imagem']}' alt='{obra['titulo']}' />
                     <div style='padding: 1.5rem;'>
-                        <h3 style='color: #e0e7ff; font-size: 1.3rem; font-weight: 800; margin: 0.5rem 0;'>{obra['titulo']}</h3>
-                        <p style='color: #94a3b8; font-size: 0.95rem; margin: 0.3rem 0;'>👨‍🎨 {obra['artista']}</p>
-                        <p style='color: #94a3b8; font-size: 0.95rem; margin: 0.3rem 0;'>📅 {obra['ano']}</p>
+                        <h3 style='color: #e0e7ff; font-size: 1.3rem; font-weight: 800;'>{obra['titulo']}</h3>
+                        <p style='color: #94a3b8; font-size: 0.95rem;'>👨‍🎨 {obra['artista']}</p>
+                        <p style='color: #94a3b8; font-size: 0.95rem;'>📅 {obra['ano']}</p>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -851,19 +582,17 @@ def show_admin():
 
             st.markdown("</div>", unsafe_allow_html=True)
     else:
-        st.markdown(f"<h1 class='main-title'>📊 Dashboard Analítico Premium</h1><p class='subtitle'>Bem-vindo, <strong style='color: #60a5fa;'>{st.session_state.get('admin_username', 'Admin')}</strong>! 🚀</p>", unsafe_allow_html=True)
+        st.markdown(f"<h1 class='main-title'>📊 Dashboard Premium</h1><p class='subtitle'>Bem-vindo, <strong style='color: #60a5fa;'>{st.session_state.get('admin_username', 'Admin')}</strong>! 🚀</p>", unsafe_allow_html=True)
 
-        tabs = st.tabs(["📊 Visão Geral", "📈 Gráficos Avançados", "🔬 ML & IA", "🎯 Qualidade", "🖼️ Obras"])
+        tabs = st.tabs(["📊 Visão Geral", "🔬 Análises", "🎯 Qualidade", "🖼️ Obras"])
 
         with tabs[0]:
             show_overview()
         with tabs[1]:
-            show_charts()
+            show_analysis()
         with tabs[2]:
-            show_ml_analysis()
-        with tabs[3]:
             show_quality()
-        with tabs[4]:
+        with tabs[3]:
             show_manage_obras()
 
         col1, col2, col3 = st.columns([1, 1, 1])
@@ -877,46 +606,27 @@ def show_overview():
     users_df = load_all_users()
     obras = load_obras()
 
-    st.markdown("### 📈 Métricas em Tempo Real")
+    st.markdown("### 📈 Métricas Principais")
     col1, col2, col3, col4 = st.columns(4)
 
-    with col1:
-        total_users = len(users_df['user_id'].unique()) if not users_df.empty else 0
-        st.markdown(f"""
-        <div class='metric-premium'>
-            <div class='metric-label'>👥 Usuários</div>
-            <div class='metric-value'>{total_users}</div>
-        </div>
-        """, unsafe_allow_html=True)
+    metrics_data = [
+        ("👥 Usuários", len(users_df['user_id'].unique()) if not users_df.empty else 0),
+        ("🏷️ Tags", len(tags_df) if not tags_df.empty else 0),
+        ("✨ Únicas", len(tags_df['tag'].unique()) if not tags_df.empty else 0),
+        ("🎨 Obras", len(obras))
+    ]
 
-    with col2:
-        total_tags = len(tags_df) if not tags_df.empty else 0
-        st.markdown(f"""
-        <div class='metric-premium'>
-            <div class='metric-label'>🏷️ Tags</div>
-            <div class='metric-value'>{total_tags}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with col3:
-        unique = len(tags_df['tag'].unique()) if not tags_df.empty else 0
-        st.markdown(f"""
-        <div class='metric-premium'>
-            <div class='metric-label'>✨ Únicas</div>
-            <div class='metric-value'>{unique}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with col4:
-        st.markdown(f"""
-        <div class='metric-premium'>
-            <div class='metric-label'>🎨 Obras</div>
-            <div class='metric-value'>{len(obras)}</div>
-        </div>
-        """, unsafe_allow_html=True)
+    for col, (label, value) in zip([col1, col2, col3, col4], metrics_data):
+        with col:
+            st.markdown(f"""
+            <div class='metric-premium'>
+                <div class='metric-label'>{label}</div>
+                <div class='metric-value'>{value}</div>
+            </div>
+            """, unsafe_allow_html=True)
 
     if not tags_df.empty:
-        st.markdown("### 📊 Top Statistics")
+        st.markdown("### 📊 Estatísticas")
         col1, col2 = st.columns(2)
 
         with col1:
@@ -937,8 +647,8 @@ def show_overview():
                         use_container_width=True, hide_index=True)
             st.markdown("</div>", unsafe_allow_html=True)
 
-def show_charts():
-    st.markdown("### 📈 Gráficos Interativos Avançados")
+def show_analysis():
+    st.markdown("### 🔬 Análises Avançadas")
     tags_df = load_all_tags()
 
     if tags_df.empty:
@@ -948,41 +658,8 @@ def show_charts():
     col1, col2 = st.columns(2)
 
     with col1:
-        fig1 = create_distribution_chart(tags_df)
-        if fig1:
-            st.plotly_chart(fig1, use_container_width=True)
-
-    with col2:
-        fig2 = create_timeline_chart(tags_df)
-        if fig2:
-            st.plotly_chart(fig2, use_container_width=True)
-
-    col3, col4 = st.columns(2)
-
-    with col3:
-        fig3 = create_clustering_chart(tags_df)
-        if fig3:
-            st.plotly_chart(fig3, use_container_width=True)
-
-    with col4:
-        obras = load_obras()
-        fig4 = create_heatmap(tags_df, obras)
-        if fig4:
-            st.plotly_chart(fig4, use_container_width=True)
-
-def show_ml_analysis():
-    st.markdown("### 🔬 Análises de Machine Learning & IA")
-    tags_df = load_all_tags()
-
-    if tags_df.empty:
-        st.info("📊 Dados insuficientes para análise ML")
-        return
-
-    col1, col2 = st.columns(2)
-
-    with col1:
         st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-        st.markdown("#### 🧠 Clustering Inteligente")
+        st.markdown("#### 🧠 Clustering")
         clusters = perform_clustering(tags_df, 3)
         if clusters:
             for name, data in clusters.items():
@@ -996,14 +673,14 @@ def show_ml_analysis():
         st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
         st.markdown("#### 📊 Diversidade (Shannon)")
         diversity = calculate_tag_diversity(tags_df)
-        st.metric("Índice de Diversidade", f"{diversity:.3f}")
+        st.metric("Índice", f"{diversity:.3f}")
 
         if diversity > 2.5:
-            st.success("✅ Alta diversidade de tags!")
+            st.success("✅ Alta diversidade!")
         elif diversity > 1.5:
-            st.warning("⚠️ Diversidade moderada")
+            st.warning("⚠️ Moderada")
         else:
-            st.error("❌ Baixa diversidade")
+            st.error("❌ Baixa")
         st.markdown("</div>", unsafe_allow_html=True)
 
 def show_quality():
