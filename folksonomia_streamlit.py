@@ -7,12 +7,6 @@ import hashlib
 import base64
 import json
 import warnings
-import io
-from reportlab.lib.pagesizes import letter, A4
-from reportlab.lib import colors
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
-from reportlab.lib.units import inch
 import matplotlib.pyplot as plt
 warnings.filterwarnings('ignore')
 
@@ -415,7 +409,6 @@ def analyze_user_engagement(users_df, tags_df):
 
 # ==================== GRÁFICOS ====================
 def create_tags_chart(tags_df):
-    """Gráfico de barras das top tags"""
     if tags_df.empty:
         return None
 
@@ -441,7 +434,6 @@ def create_tags_chart(tags_df):
     return fig
 
 def create_distribution_chart(tags_df):
-    """Gráfico de distribuição de tags por obra"""
     if tags_df.empty:
         return None
 
@@ -465,160 +457,268 @@ def create_distribution_chart(tags_df):
     plt.tight_layout()
     return fig
 
-# ==================== EXPORTAR PDF ====================
-def generate_pdf_report(tags_df, users_df, obras):
-    """Gera relatório completo em PDF"""
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=0.5*inch)
+# ==================== EXPORTAR HTML ====================
+def generate_html_report(tags_df, users_df, obras):
+    """Gera relatório em HTML que pode ser salvo como PDF"""
 
-    story = []
-    styles = getSampleStyleSheet()
+    quality = calculate_quality_metrics(tags_df) if not tags_df.empty else None
+    engagement = analyze_user_engagement(users_df, tags_df) if not users_df.empty and not tags_df.empty else None
 
-    # Título
-    title_style = ParagraphStyle(
-        'CustomTitle',
-        parent=styles['Heading1'],
-        fontSize=24,
-        textColor=colors.HexColor('#1e3a8a'),
-        spaceAfter=30,
-        alignment=1
-    )
-    story.append(Paragraph("📊 Relatório de Análise - Folksonomia", title_style))
-    story.append(Spacer(1, 0.3*inch))
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Relatório Folksonomia</title>
+        <style>
+            * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+            body {{ 
+                font-family: 'Arial', sans-serif; 
+                background: linear-gradient(135deg, #0a1929, #1a2942);
+                color: #e0e7ff;
+                padding: 40px;
+            }}
+            .container {{ 
+                max-width: 1200px; 
+                margin: 0 auto; 
+                background: white;
+                padding: 40px;
+                border-radius: 10px;
+                box-shadow: 0 10px 50px rgba(0,0,0,0.3);
+            }}
+            h1 {{ 
+                color: #1e3a8a; 
+                text-align: center; 
+                margin-bottom: 30px;
+                font-size: 2.5rem;
+                border-bottom: 3px solid #2563eb;
+                padding-bottom: 20px;
+            }}
+            h2 {{ 
+                color: #1e40af; 
+                margin-top: 30px; 
+                margin-bottom: 15px;
+                font-size: 1.8rem;
+            }}
+            .metrics {{ 
+                display: grid; 
+                grid-template-columns: repeat(4, 1fr); 
+                gap: 20px; 
+                margin: 30px 0;
+            }}
+            .metric-box {{ 
+                background: linear-gradient(135deg, #1e3a8a, #2563eb);
+                color: white;
+                padding: 25px;
+                border-radius: 10px;
+                text-align: center;
+                box-shadow: 0 5px 15px rgba(30, 58, 138, 0.4);
+            }}
+            .metric-value {{ 
+                font-size: 3rem; 
+                font-weight: bold; 
+                margin: 10px 0;
+            }}
+            .metric-label {{ 
+                font-size: 0.9rem; 
+                text-transform: uppercase;
+                letter-spacing: 1px;
+            }}
+            table {{ 
+                width: 100%; 
+                border-collapse: collapse; 
+                margin: 20px 0;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            }}
+            th, td {{ 
+                padding: 15px; 
+                text-align: left; 
+                border-bottom: 1px solid #ddd;
+            }}
+            th {{ 
+                background: #1e3a8a; 
+                color: white;
+                font-weight: bold;
+                text-transform: uppercase;
+            }}
+            tr:nth-child(even) {{ background: #f0f9ff; }}
+            tr:hover {{ background: #dbeafe; }}
+            .quality-score {{ 
+                text-align: center; 
+                padding: 40px;
+                background: linear-gradient(135deg, #1e3a8a, #2563eb);
+                color: white;
+                border-radius: 10px;
+                margin: 30px 0;
+            }}
+            .quality-score .score {{ 
+                font-size: 5rem; 
+                font-weight: bold;
+                margin: 20px 0;
+            }}
+            .badge {{ 
+                display: inline-block;
+                padding: 10px 20px;
+                border-radius: 20px;
+                font-weight: bold;
+                margin-top: 15px;
+            }}
+            .badge-high {{ background: #22c55e; color: white; }}
+            .badge-medium {{ background: #fb b024; color: white; }}
+            .badge-low {{ background: #ef4444; color: white; }}
+            .footer {{ 
+                text-align: center; 
+                margin-top: 50px; 
+                padding-top: 20px;
+                border-top: 2px solid #e5e7eb;
+                color: #6b7280;
+                font-size: 0.9rem;
+            }}
+            @media print {{
+                body {{ background: white; padding: 0; }}
+                .container {{ box-shadow: none; }}
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>📊 Relatório de Análise - Folksonomia</h1>
+            <p style="text-align: center; color: #6b7280; margin-bottom: 40px;">
+                Data de Geração: {datetime.now().strftime('%d/%m/%Y %H:%M')}
+            </p>
 
-    # Data
-    date_style = ParagraphStyle('DateStyle', parent=styles['Normal'], fontSize=10, textColor=colors.grey, alignment=1)
-    story.append(Paragraph(f"Data: {datetime.now().strftime('%d/%m/%Y %H:%M')}", date_style))
-    story.append(Spacer(1, 0.5*inch))
+            <h2>📈 Métricas Principais</h2>
+            <div class="metrics">
+                <div class="metric-box">
+                    <div class="metric-label">👥 Usuários</div>
+                    <div class="metric-value">{len(users_df['user_id'].unique()) if not users_df.empty else 0}</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-label">🏷️ Total Tags</div>
+                    <div class="metric-value">{len(tags_df) if not tags_df.empty else 0}</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-label">✨ Tags Únicas</div>
+                    <div class="metric-value">{len(tags_df['tag'].unique()) if not tags_df.empty else 0}</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-label">🎨 Obras</div>
+                    <div class="metric-value">{len(obras)}</div>
+                </div>
+            </div>
+    """
 
-    # Métricas Principais
-    story.append(Paragraph("📈 Métricas Principais", styles['Heading2']))
-    story.append(Spacer(1, 0.2*inch))
-
-    metrics_data = [
-        ['Métrica', 'Valor'],
-        ['👥 Total de Usuários', str(len(users_df['user_id'].unique()) if not users_df.empty else 0)],
-        ['🏷️ Total de Tags', str(len(tags_df) if not tags_df.empty else 0)],
-        ['✨ Tags Únicas', str(len(tags_df['tag'].unique()) if not tags_df.empty else 0)],
-        ['🎨 Total de Obras', str(len(obras))]
-    ]
-
-    metrics_table = Table(metrics_data, colWidths=[3*inch, 2*inch])
-    metrics_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e3a8a')),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 12),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-        ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f0f9ff')),
-        ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#2563eb'))
-    ]))
-    story.append(metrics_table)
-    story.append(Spacer(1, 0.5*inch))
-
-    # Top 10 Tags
     if not tags_df.empty:
-        story.append(Paragraph("🔝 Top 10 Tags Mais Utilizadas", styles['Heading2']))
-        story.append(Spacer(1, 0.2*inch))
+        top_tags = tags_df['tag'].value_counts().head(15)
+        html += """
+            <h2>🔝 Top 15 Tags Mais Utilizadas</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Tag</th>
+                        <th>Frequência</th>
+                    </tr>
+                </thead>
+                <tbody>
+        """
+        for idx, (tag, count) in enumerate(top_tags.items(), 1):
+            html += f"<tr><td>{idx}</td><td>{tag}</td><td>{count}</td></tr>"
+        html += "</tbody></table>"
 
-        top_tags = tags_df['tag'].value_counts().head(10).reset_index()
-        top_tags.columns = ['Tag', 'Frequência']
+    if quality:
+        score = quality['overall']
+        if score >= 70:
+            badge_class = 'badge-high'
+            badge_text = 'Excelente'
+            interpretation = 'As tags apresentam alta qualidade, diversidade e consistência.'
+        elif score >= 50:
+            badge_class = 'badge-medium'
+            badge_text = 'Bom'
+            interpretation = 'Qualidade satisfatória, mas há espaço para melhorias.'
+        else:
+            badge_class = 'badge-low'
+            badge_text = 'Regular'
+            interpretation = 'Recomenda-se revisão das práticas de tagueamento.'
 
-        tags_data = [['#', 'Tag', 'Frequência']]
-        for idx, row in top_tags.iterrows():
-            tags_data.append([str(idx+1), row['Tag'], str(row['Frequência'])])
+        html += f"""
+            <h2>🎯 Análise de Qualidade</h2>
+            <div class="quality-score">
+                <div class="score">{score:.1f}</div>
+                <span class="badge {badge_class}">{badge_text}</span>
+                <p style="margin-top: 20px; font-size: 1.1rem;">{interpretation}</p>
+            </div>
 
-        tags_table = Table(tags_data, colWidths=[0.5*inch, 3*inch, 1.5*inch])
-        tags_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e3a8a')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 11),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f0f9ff')),
-            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#2563eb'))
-        ]))
-        story.append(tags_table)
-        story.append(Spacer(1, 0.5*inch))
+            <table>
+                <thead>
+                    <tr>
+                        <th>Métrica</th>
+                        <th>Valor</th>
+                        <th>Descrição</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Especificidade</td>
+                        <td>{quality['specificity']:.1f}%</td>
+                        <td>Proporção de tags únicas no total</td>
+                    </tr>
+                    <tr>
+                        <td>Consistência</td>
+                        <td>{quality['consistency']:.1f}%</td>
+                        <td>Uniformidade no tamanho das tags</td>
+                    </tr>
+                    <tr>
+                        <td>Completude</td>
+                        <td>{quality['completeness']:.1f}%</td>
+                        <td>Obras com 3 ou mais tags</td>
+                    </tr>
+                </tbody>
+            </table>
+        """
 
-        # Análise de Qualidade
-        quality = calculate_quality_metrics(tags_df)
-        if quality:
-            story.append(PageBreak())
-            story.append(Paragraph("🎯 Análise de Qualidade", styles['Heading2']))
-            story.append(Spacer(1, 0.2*inch))
+    if engagement:
+        html += f"""
+            <h2>📊 Análise de Engajamento</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Métrica</th>
+                        <th>Valor</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Taxa de Engajamento</td>
+                        <td>{engagement['engagement_rate']:.1f}%</td>
+                    </tr>
+                    <tr>
+                        <td>Média de Tags por Usuário</td>
+                        <td>{engagement['avg_tags_per_user']:.1f}</td>
+                    </tr>
+                    <tr>
+                        <td>Mediana de Tags</td>
+                        <td>{engagement['median_tags_per_user']:.0f}</td>
+                    </tr>
+                    <tr>
+                        <td>Máximo de Tags (1 usuário)</td>
+                        <td>{engagement['max_tags_user']}</td>
+                    </tr>
+                </tbody>
+            </table>
+        """
 
-            quality_data = [
-                ['Métrica', 'Valor', 'Descrição'],
-                ['Especificidade', f"{quality['specificity']:.1f}%", 'Proporção de tags únicas'],
-                ['Consistência', f"{quality['consistency']:.1f}%", 'Uniformidade no tamanho'],
-                ['Completude', f"{quality['completeness']:.1f}%", 'Obras com 3+ tags'],
-                ['Score Geral', f"{quality['overall']:.1f}/100", 'Qualidade geral das tags']
-            ]
+    html += """
+            <div class="footer">
+                <p>Relatório gerado automaticamente pelo Sistema Folksonomia</p>
+                <p style="margin-top: 10px;">Para salvar como PDF: Ctrl+P → Salvar como PDF</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
 
-            quality_table = Table(quality_data, colWidths=[2*inch, 1.5*inch, 2.5*inch])
-            quality_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e3a8a')),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, 0), 11),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f0f9ff')),
-                ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#2563eb'))
-            ]))
-            story.append(quality_table)
-            story.append(Spacer(1, 0.3*inch))
-
-            # Interpretação
-            score = quality['overall']
-            if score >= 70:
-                interpretation = "✅ Excelente: As tags apresentam alta qualidade, diversidade e consistência."
-            elif score >= 50:
-                interpretation = "⚠️ Bom: Qualidade satisfatória, mas há espaço para melhorias."
-            else:
-                interpretation = "❌ Regular: Recomenda-se revisão das práticas de tagueamento."
-
-            story.append(Paragraph(f"<b>Interpretação:</b> {interpretation}", styles['Normal']))
-
-        # Engajamento
-        engagement = analyze_user_engagement(users_df, tags_df)
-        if engagement:
-            story.append(Spacer(1, 0.5*inch))
-            story.append(Paragraph("📊 Análise de Engajamento", styles['Heading2']))
-            story.append(Spacer(1, 0.2*inch))
-
-            engagement_data = [
-                ['Métrica', 'Valor'],
-                ['Taxa de Engajamento', f"{engagement['engagement_rate']:.1f}%"],
-                ['Média de Tags por Usuário', f"{engagement['avg_tags_per_user']:.1f}"],
-                ['Mediana de Tags', f"{engagement['median_tags_per_user']:.0f}"],
-                ['Máximo de Tags (1 usuário)', str(engagement['max_tags_user'])]
-            ]
-
-            engagement_table = Table(engagement_data, colWidths=[3.5*inch, 2*inch])
-            engagement_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e3a8a')),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, 0), 11),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f0f9ff')),
-                ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#2563eb'))
-            ]))
-            story.append(engagement_table)
-
-    # Rodapé
-    story.append(Spacer(1, 1*inch))
-    footer_style = ParagraphStyle('Footer', parent=styles['Normal'], fontSize=8, textColor=colors.grey, alignment=1)
-    story.append(Paragraph("Relatório gerado automaticamente pelo Sistema Folksonomia", footer_style))
-
-    doc.build(story)
-    buffer.seek(0)
-    return buffer
+    return html
 
 # ==================== INTERFACE ====================
 def show_header():
@@ -812,7 +912,7 @@ def show_admin():
     else:
         st.markdown(f"<h1 class='main-title'>📊 Dashboard Administrativo</h1><p class='subtitle'>Bem-vindo, <strong style='color: #60a5fa;'>{st.session_state.get('admin_username', 'Admin')}</strong>! 🚀</p>", unsafe_allow_html=True)
 
-        tabs = st.tabs(["📊 Visão Geral", "📈 Gráficos", "🔬 Análises", "🎯 Qualidade", "🖼️ Obras", "📄 Exportar PDF"])
+        tabs = st.tabs(["📊 Visão Geral", "📈 Gráficos", "🔬 Análises", "🎯 Qualidade", "🖼️ Obras", "📄 Exportar"])
 
         with tabs[0]:
             show_overview()
@@ -825,7 +925,7 @@ def show_admin():
         with tabs[4]:
             show_manage_obras()
         with tabs[5]:
-            show_export_pdf()
+            show_export()
 
         col1, col2, col3 = st.columns([1, 1, 1])
         with col2:
@@ -1024,51 +1124,73 @@ def show_manage_obras():
                 else:
                     st.error("❌ Preencha todos!")
 
-def show_export_pdf():
-    st.markdown("### 📄 Exportar Relatório em PDF")
+def show_export():
+    st.markdown("### 📄 Exportar Dados")
 
     tags_df = load_all_tags()
     users_df = load_all_users()
     obras = load_obras()
 
     st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-    st.markdown("""
-    #### 📊 Conteúdo do Relatório
+    st.markdown("#### 📊 Opções de Exportação")
 
-    O relatório em PDF incluirá:
-    - 📈 Métricas principais do sistema
-    - 🔝 Top 10 tags mais utilizadas
-    - 🎯 Análise completa de qualidade
-    - 📊 Estatísticas de engajamento
-    - 📉 Interpretação dos dados
-    """)
+    col1, col2 = st.columns(2)
 
-    col1, col2, col3 = st.columns([1, 1, 1])
+    with col1:
+        st.markdown("##### 📄 Relatório HTML (pode ser salvo como PDF)")
+        st.markdown("Gera relatório completo com análises e métricas")
+
+        if st.button("📥 Gerar Relatório HTML", use_container_width=True, type="primary"):
+            if tags_df.empty and users_df.empty:
+                st.error("❌ Não há dados suficientes!")
+            else:
+                html_content = generate_html_report(tags_df, users_df, obras)
+                st.download_button(
+                    label="⬇️ Baixar HTML",
+                    data=html_content,
+                    file_name=f"relatorio_folksonomia_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html",
+                    mime="text/html",
+                    use_container_width=True
+                )
+                st.success("✅ Relatório gerado! Após baixar, abra no navegador e use Ctrl+P → Salvar como PDF")
 
     with col2:
-        if st.button("📥 Gerar e Baixar PDF", use_container_width=True, type="primary"):
-            if tags_df.empty and users_df.empty:
-                st.error("❌ Não há dados suficientes para gerar o relatório!")
-            else:
-                with st.spinner("Gerando relatório PDF..."):
-                    try:
-                        pdf_buffer = generate_pdf_report(tags_df, users_df, obras)
+        st.markdown("##### 📊 Dados em CSV")
+        st.markdown("Exporta dados brutos para análise em Excel/Sheets")
 
-                        st.download_button(
-                            label="📥 Download do Relatório",
-                            data=pdf_buffer,
-                            file_name=f"relatorio_folksonomia_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
-                            mime="application/pdf",
-                            use_container_width=True
-                        )
-                        st.success("✅ Relatório gerado com sucesso!")
-                        st.balloons()
-                    except Exception as e:
-                        st.error(f"❌ Erro ao gerar PDF: {str(e)}")
+        if not tags_df.empty:
+            csv_tags = tags_df.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Baixar Tags (CSV)",
+                data=csv_tags,
+                file_name=f"tags_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+
+        if not users_df.empty:
+            csv_users = users_df.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Baixar Usuários (CSV)",
+                data=csv_users,
+                file_name=f"usuarios_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+
+        if obras:
+            csv_obras = pd.DataFrame(obras).to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Baixar Obras (CSV)",
+                data=csv_obras,
+                file_name=f"obras_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # Preview das métricas
+    # Preview
     if not tags_df.empty:
         st.markdown("### 👁️ Preview dos Dados")
         col1, col2, col3, col4 = st.columns(4)
