@@ -1038,7 +1038,9 @@ def main():
     else:
         # LIBERADO - MOSTRAR NAVEGAÇÃO E CONTEÚDO
         show_header()
-        st.markdown("<div class='main-content'>", unsafe_allow_html=Truestate['current_page'] == "Explorar Obras":
+        st.markdown("<div class='main-content'>", unsafe_allow_html=True)
+
+        if st.session_state['current_page'] == "Explorar Obras":
             show_obras()
         elif st.session_state['current_page'] == "Área Administrativa":
             show_admin()
@@ -1295,7 +1297,7 @@ def show_admin():
             show_deep_analysis()
 
         with admin_tabs[2]:
-            show_user_segmentation()
+            show_user_segmentation_tab()
 
         with admin_tabs[3]:
             show_quality_metrics()
@@ -1380,15 +1382,5 @@ def show_overview_dashboard():
         with col1:
             st.markdown("<div class='dark-blue-card'>", unsafe_allow_html=True)
             st.markdown("#### 🔝 Top 10 Tags Mais Usadas")
-            top_tags = tags_df['tag'].value_counts().head(10).reset_index()
-            top_tags.columns = ['Tag', 'Quantidade']
-            st.dataframe(top_tags, use_container_width=True, hide_index=True)
-            st.markdown("</div>", unsafe_allow_html=True)
+            top_tags =
 
-        with col2:
-            st.markdown("<div class='dark-blue-card'>", unsafe_allow_html=True)
-            st.markdown("#### 🎨 Obras Mais Tagueadas")
-            obras_tags = tags_df.groupby('obra_id').size().reset_index(name='Total Tags')
-            obras_dict = {obra['id']: obra['titulo'] for obra in obras}
-            obras_tags['Obra'] = obras_tags['obra_id'].map(obras_dict)
-            obras_tags
