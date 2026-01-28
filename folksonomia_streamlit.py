@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit as st
 import pandas as pd
 import numpy as np
 import os
@@ -6,8 +7,6 @@ from datetime import datetime
 import hashlib
 import base64
 import json
-from sklearn.cluster import KMeans
-from sklearn.metrics import silhouette_score
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -341,8 +340,9 @@ def load_all_users():
     users = load_json_file(USERS_FILE, [])
     return pd.DataFrame(users) if users else pd.DataFrame()
 
-# ==================== ANÁLISES ====================
+# ==================== ANÁLISES SIMPLIFICADAS ====================
 def calculate_tag_diversity(tags_df):
+    """Índice de Shannon para diversidade"""
     if tags_df.empty:
         return 0
     counts = tags_df['tag'].value_counts()
@@ -350,44 +350,97 @@ def calculate_tag_diversity(tags_df):
     return -sum(proportions * np.log(proportions + 1e-10))
 
 def calculate_quality_metrics(tags_df):
+    """Métricas de qualidade das tags"""
     if tags_df.empty:
         return None
+
     metrics = {}
+
+    # Especificidade: % de tags únicas
     metrics['specificity'] = len(tags_df['tag'].unique()) / len(tags_df) * 100
+
+    # Consistência: variação no tamanho das tags
     lengths = tags_df['tag'].str.len()
     metrics['consistency'] = 100 - (lengths.std() / lengths.mean() * 100) if lengths.mean() > 0 else 0
+
+    # Completude: obras com pelo menos 3 tags
     per_obra = tags_df.groupby('obra_id').size()
     metrics['completeness'] = (per_obra >= 3).sum() / len(per_obra) * 100 if len(per_obra) > 0 else 0
+
+    # Score geral ponderado
     metrics['overall'] = (
         metrics['specificity'] * 0.4 +
         metrics['consistency'] * 0.3 +
         metrics['completeness'] * 0.3
     )
+
     return metrics
 
-def perform_clustering(tags_df, n_clusters=3):
-    if tags_df.empty or len(tags_df['tag'].unique()) < n_clusters:
+def simple_clustering(tags_df, n_groups=3):
+    """Clustering simples baseado em frequência"""
+    if tags_df.empty or len(tags_df['tag'].unique()) < n_groups:
         return None
 
     top_tags = tags_df['tag'].value_counts().head(30)
-    if len(top_tags) < n_clusters:
+    if len(top_tags) < n_groups:
         return None
 
+    # Dividir tags em grupos por frequência
     tags_sorted = top_tags.sort_values(ascending=False)
-    chunk_size = len(tags_sorted) // n_clusters
+    chunk_size = len(tags_sorted) // n_groups
 
     clusters = {}
-    for i in range(n_clusters):
+    for i in range(n_groups):
         start = i * chunk_size
-        end = start + chunk_size if i < n_clusters - 1 else len(tags_sorted)
+        end = start + chunk_size if i < n_groups - 1 else len(tags_sorted)
         cluster_tags = tags_sorted.iloc[start:end]
+
         clusters[f'Grupo {i+1}'] = {
-            'tags': cluster_tags.index.tolist(),
+            'tags': cluster_tags.index.tolist()[:5],  # Top 5 de cada grupo
             'total': int(cluster_tags.sum()),
-            'avg': float(cluster_tags.mean())
+            'avg': float(cluster_tags.mean()),
+            'size': len(cluster_tags)
         }
 
     return clusters
+
+def analyze_temporal_patterns(tags_df):
+    """Análise temporal de criação de tags"""
+    if tags_df.empty or 'timestamp' not in tags_df.columns:
+        return None
+
+    try:
+        tags_df['timestamp'] = pd.to_datetime(tags_df['timestamp'])
+        tags_df['date'] = tags_df['timestamp'].dt.date
+        tags_df['hour'] = tags_df['timestamp'].dt.hour
+
+        daily_activity = tags_df.groupby('date').size()
+        hourly_activity = tags_df.groupby('hour').size()
+
+        return {
+            'total_days': len(daily_activity),
+            'avg_per_day': daily_activity.mean(),
+            'peak_hour': int(hourly_activity.idxmax()) if not hourly_activity.empty else None,
+            'peak_day': str(daily_activity.idxmax()) if not daily_activity.empty else None
+        }
+    except:
+        return None
+
+def analyze_user_engagement(users_df, tags_df):
+    """Análise de engajamento dos usuários"""
+    if users_df.empty or tags_df.empty:
+        return None
+
+    tags_per_user = tags_df.groupby('user_id').size().reset_index(name='tag_count')
+
+    return {
+        'total_users': len(users_df),
+        'active_users': len(tags_per_user),
+        'engagement_rate': (len(tags_per_user) / len(users_df) * 100) if len(users_df) > 0 else 0,
+        'avg_tags_per_user': tags_per_user['tag_count'].mean(),
+        'median_tags_per_user': tags_per_user['tag_count'].median(),
+        'max_tags_user': int(tags_per_user['tag_count'].max()) if not tags_per_user.empty else 0
+    }
 
 # ==================== INTERFACE ====================
 def show_header():
@@ -440,7 +493,7 @@ def main():
 def show_intro():
     st.markdown("<div class='main-content'>", unsafe_allow_html=True)
     st.markdown("<h1 class='main-title'>🎨 Folksonomia Digital Premium</h1>", unsafe_allow_html=True)
-    st.markdown("<p class='subtitle'>Sistema avançado de catalogação colaborativa com IA<br>Complete o questionário para acessar</p>", unsafe_allow_html=True)
+    st.markdown("<p class='subtitle'>Sistema avançado de catalogação colaborativa com análises inteligentes<br>Complete o questionário para acessar</p>", unsafe_allow_html=True)
 
     st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
     st.markdown("<h2 style='color: #60a5fa; text-align: center; margin-bottom: 2rem;'>📋 Questionário de Acesso</h2>", unsafe_allow_html=True)
@@ -454,7 +507,7 @@ def show_intro():
                 ["Nunca ouvi falar", "Já ouvi, mas não sei", "Ideia básica", "Conheço bem"])
         with col2:
             q3 = st.text_area("3️⃣ O que são 'tags' digitais para acervo?",
-                max_chars=500, height=200, placeholder="Descreva...")
+                max_chars=500, height=200, placeholder="Descreva sua compreensão...")
 
         col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 1])
         with col_btn2:
@@ -584,15 +637,17 @@ def show_admin():
     else:
         st.markdown(f"<h1 class='main-title'>📊 Dashboard Premium</h1><p class='subtitle'>Bem-vindo, <strong style='color: #60a5fa;'>{st.session_state.get('admin_username', 'Admin')}</strong>! 🚀</p>", unsafe_allow_html=True)
 
-        tabs = st.tabs(["📊 Visão Geral", "🔬 Análises", "🎯 Qualidade", "🖼️ Obras"])
+        tabs = st.tabs(["📊 Visão Geral", "🔬 Análises Avançadas", "🎯 Qualidade", "📈 Engajamento", "🖼️ Obras"])
 
         with tabs[0]:
             show_overview()
         with tabs[1]:
-            show_analysis()
+            show_advanced_analysis()
         with tabs[2]:
             show_quality()
         with tabs[3]:
+            show_engagement()
+        with tabs[4]:
             show_manage_obras()
 
         col1, col2, col3 = st.columns([1, 1, 1])
@@ -606,7 +661,7 @@ def show_overview():
     users_df = load_all_users()
     obras = load_obras()
 
-    st.markdown("### 📈 Métricas Principais")
+    st.markdown("### 📈 Métricas em Tempo Real")
     col1, col2, col3, col4 = st.columns(4)
 
     metrics_data = [
@@ -626,13 +681,13 @@ def show_overview():
             """, unsafe_allow_html=True)
 
     if not tags_df.empty:
-        st.markdown("### 📊 Estatísticas")
+        st.markdown("### 📊 Top Rankings")
         col1, col2 = st.columns(2)
 
         with col1:
             st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-            st.markdown("#### 🔝 Top 10 Tags")
-            top = tags_df['tag'].value_counts().head(10).reset_index()
+            st.markdown("#### 🔝 Top 15 Tags Mais Utilizadas")
+            top = tags_df['tag'].value_counts().head(15).reset_index()
             top.columns = ['Tag', 'Quantidade']
             st.dataframe(top, use_container_width=True, hide_index=True)
             st.markdown("</div>", unsafe_allow_html=True)
@@ -647,48 +702,76 @@ def show_overview():
                         use_container_width=True, hide_index=True)
             st.markdown("</div>", unsafe_allow_html=True)
 
-def show_analysis():
-    st.markdown("### 🔬 Análises Avançadas")
+def show_advanced_analysis():
+    st.markdown("### 🔬 Análises Avançadas com Inteligência")
     tags_df = load_all_tags()
 
     if tags_df.empty:
-        st.info("📊 Dados insuficientes")
+        st.info("📊 Dados insuficientes para análise avançada")
         return
 
     col1, col2 = st.columns(2)
 
     with col1:
         st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-        st.markdown("#### 🧠 Clustering")
-        clusters = perform_clustering(tags_df, 3)
+        st.markdown("#### 🧠 Clustering Inteligente de Tags")
+        clusters = simple_clustering(tags_df, 3)
         if clusters:
             for name, data in clusters.items():
-                st.markdown(f"**{name}** ({data['total']} tags)")
-                st.markdown(f"Tags: {', '.join(data['tags'][:5])}")
-                st.markdown(f"Média: {data['avg']:.1f}")
+                st.markdown(f"**{name}** - {data['size']} tags ({data['total']} usos)")
+                st.markdown(f"🏷️ Tags principais: {', '.join(data['tags'])}")
+                st.markdown(f"📊 Média de uso: {data['avg']:.1f}")
                 st.divider()
+        else:
+            st.info("Dados insuficientes para clustering")
         st.markdown("</div>", unsafe_allow_html=True)
 
     with col2:
         st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-        st.markdown("#### 📊 Diversidade (Shannon)")
+        st.markdown("#### 📊 Índice de Diversidade (Shannon)")
         diversity = calculate_tag_diversity(tags_df)
-        st.metric("Índice", f"{diversity:.3f}")
+
+        # Visual do índice
+        st.markdown(f"""
+        <div style='text-align: center; padding: 2rem;'>
+            <div style='font-size: 3rem; font-weight: 900; color: #60a5fa;'>{diversity:.3f}</div>
+            <div style='font-size: 0.9rem; color: #94a3b8; margin-top: 0.5rem;'>ÍNDICE DE SHANNON</div>
+        </div>
+        """, unsafe_allow_html=True)
 
         if diversity > 2.5:
-            st.success("✅ Alta diversidade!")
+            st.success("✅ **Alta diversidade!** As tags são muito variadas.")
         elif diversity > 1.5:
-            st.warning("⚠️ Moderada")
+            st.warning("⚠️ **Diversidade moderada.** Há alguma repetição.")
         else:
-            st.error("❌ Baixa")
+            st.error("❌ **Baixa diversidade.** Tags muito repetitivas.")
+
         st.markdown("</div>", unsafe_allow_html=True)
 
+    # Análise Temporal
+    st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+    st.markdown("#### ⏰ Padrões Temporais de Uso")
+    temporal = analyze_temporal_patterns(tags_df)
+    if temporal:
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("📅 Dias Ativos", temporal['total_days'])
+        with col2:
+            st.metric("📊 Média/Dia", f"{temporal['avg_per_day']:.1f}")
+        with col3:
+            st.metric("🕐 Hora Pico", f"{temporal['peak_hour']}h" if temporal['peak_hour'] else "N/A")
+        with col4:
+            st.metric("📆 Dia Pico", temporal['peak_day'] if temporal['peak_day'] else "N/A")
+    else:
+        st.info("Análise temporal indisponível")
+    st.markdown("</div>", unsafe_allow_html=True)
+
 def show_quality():
-    st.markdown("### 🎯 Qualidade das Tags")
+    st.markdown("### 🎯 Análise de Qualidade das Tags")
     tags_df = load_all_tags()
 
     if tags_df.empty:
-        st.info("📊 Sem dados")
+        st.info("📊 Sem dados para análise de qualidade")
         return
 
     quality = calculate_quality_metrics(tags_df)
@@ -700,25 +783,84 @@ def show_quality():
 
         st.markdown(f"""
         <div style='text-align: center; padding: 3rem;'>
-            <h1 style='font-size: 5rem; color: #60a5fa; font-weight: 900;'>{score:.1f}</h1>
-            <span class='status-badge {status}'>{status_text}</span>
+            <h1 style='font-size: 5rem; color: #60a5fa; font-weight: 900; margin: 0;'>{score:.1f}</h1>
+            <div style='margin: 1rem 0;'>
+                <span class='status-badge {status}'>{status_text}</span>
+            </div>
+            <p style='color: #94a3b8; font-size: 1.1rem; margin-top: 1rem;'>Score Geral de Qualidade</p>
         </div>
         """, unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
+        st.markdown("### 📊 Detalhamento das Métricas")
         col1, col2, col3 = st.columns(3)
+
         with col1:
-            st.metric("📌 Especificidade", f"{quality['specificity']:.1f}%")
+            st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+            st.markdown("#### 📌 Especificidade")
+            st.metric("", f"{quality['specificity']:.1f}%")
+            st.markdown("*Proporção de tags únicas no total*")
+            st.markdown("</div>", unsafe_allow_html=True)
+
         with col2:
-            st.metric("🎯 Consistência", f"{quality['consistency']:.1f}%")
+            st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+            st.markdown("#### 🎯 Consistência")
+            st.metric("", f"{quality['consistency']:.1f}%")
+            st.markdown("*Uniformidade no tamanho das tags*")
+            st.markdown("</div>", unsafe_allow_html=True)
+
         with col3:
-            st.metric("✅ Completude", f"{quality['completeness']:.1f}%")
+            st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+            st.markdown("#### ✅ Completude")
+            st.metric("", f"{quality['completeness']:.1f}%")
+            st.markdown("*Obras com 3+ tags*")
+            st.markdown("</div>", unsafe_allow_html=True)
+
+def show_engagement():
+    st.markdown("### 📈 Análise de Engajamento dos Usuários")
+    tags_df = load_all_tags()
+    users_df = load_all_users()
+
+    if tags_df.empty or users_df.empty:
+        st.info("📊 Dados insuficientes para análise de engajamento")
+        return
+
+    engagement = analyze_user_engagement(users_df, tags_df)
+
+    if engagement:
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+            st.markdown("#### 👥 Taxa de Engajamento")
+            st.markdown(f"""
+            <div style='text-align: center; padding: 2rem;'>
+                <div style='font-size: 3rem; font-weight: 900; color: #60a5fa;'>{engagement['engagement_rate']:.1f}%</div>
+                <div style='color: #94a3b8; margin-top: 0.5rem;'>usuários ativos</div>
+            </div>
+            """, unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        with col2:
+            st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+            st.markdown("#### 📊 Média de Tags")
+            st.metric("Por Usuário", f"{engagement['avg_tags_per_user']:.1f}")
+            st.metric("Mediana", f"{engagement['median_tags_per_user']:.0f}")
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        with col3:
+            st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+            st.markdown("#### 🏆 Recordes")
+            st.metric("Usuários Totais", engagement['total_users'])
+            st.metric("Usuários Ativos", engagement['active_users'])
+            st.metric("Máx Tags/User", engagement['max_tags_user'])
+            st.markdown("</div>", unsafe_allow_html=True)
 
 def show_manage_obras():
     st.markdown("### 🖼️ Gestão de Obras")
     obras = load_obras()
 
-    tab1, tab2 = st.tabs(["📋 Listar", "➕ Adicionar"])
+    tab1, tab2 = st.tabs(["📋 Listar Obras", "➕ Adicionar Nova Obra"])
 
     with tab1:
         if obras:
@@ -728,35 +870,47 @@ def show_manage_obras():
                     st.image(obra['imagem'], use_container_width=True)
                 with col2:
                     st.markdown(f"**{obra['titulo']}**")
-                    st.markdown(f"{obra['artista']} - {obra['ano']}")
+                    st.markdown(f"*{obra['artista']} - {obra['ano']}*")
                 with col3:
                     if st.button("🗑️ Remover", key=f"del_{obra['id']}"):
                         obras.remove(obra)
                         save_json_file(OBRAS_FILE, obras)
-                        st.success("Removida!")
+                        st.success("✅ Obra removida!")
                         st.cache_data.clear()
                         st.rerun()
                 st.divider()
         else:
-            st.info("Nenhuma obra")
+            st.info("Nenhuma obra cadastrada")
 
     with tab2:
+        st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
         with st.form("add_obra"):
-            titulo = st.text_input("Título")
-            artista = st.text_input("Artista")
-            ano = st.text_input("Ano")
-            imagem = st.text_input("URL Imagem")
+            titulo = st.text_input("📝 Título da Obra")
+            artista = st.text_input("👨‍🎨 Nome do Artista")
+            ano = st.text_input("📅 Ano de Criação")
+            imagem = st.text_input("🖼️ URL da Imagem")
 
-            if st.form_submit_button("➕ Adicionar"):
+            st.markdown("<br>", unsafe_allow_html=True)
+            submitted = st.form_submit_button("➕ Adicionar Obra", use_container_width=True)
+
+            if submitted:
                 if titulo and artista and ano and imagem:
                     new_id = max([o['id'] for o in obras]) + 1 if obras else 1
-                    obras.append({"id": new_id, "titulo": titulo, "artista": artista, "ano": ano, "imagem": imagem})
+                    obras.append({
+                        "id": new_id,
+                        "titulo": titulo,
+                        "artista": artista,
+                        "ano": ano,
+                        "imagem": imagem
+                    })
                     save_json_file(OBRAS_FILE, obras)
-                    st.success("✅ Adicionada!")
+                    st.success("✅ Obra adicionada com sucesso!")
                     st.cache_data.clear()
+                    st.balloons()
                     st.rerun()
                 else:
-                    st.error("Preencha tudo!")
+                    st.error("❌ Preencha todos os campos!")
+        st.markdown("</div>", unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
