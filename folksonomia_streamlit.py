@@ -1,5 +1,4 @@
 import streamlit as st
-import streamlit as st
 import pandas as pd
 import numpy as np
 import os
@@ -8,6 +7,13 @@ import hashlib
 import base64
 import json
 import warnings
+import io
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+from reportlab.lib.units import inch
+import matplotlib.pyplot as plt
 warnings.filterwarnings('ignore')
 
 # ==================== CONFIGURAÇÃO ====================
@@ -50,8 +56,8 @@ def save_json_file(filepath, data):
     except:
         return False
 
-# ==================== CSS PREMIUM ====================
-def load_premium_css():
+# ==================== CSS AZUL ESCURO ====================
+def load_custom_css():
     st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700;900&display=swap');
@@ -59,7 +65,7 @@ def load_premium_css():
     * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Poppins', sans-serif !important; }
 
     .stApp {
-        background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 50%, #0a0e27 100%);
+        background: linear-gradient(135deg, #0a1929 0%, #1a2942 50%, #0a1929 100%);
         background-size: 400% 400%;
         animation: gradientWave 15s ease infinite;
     }
@@ -71,8 +77,8 @@ def load_premium_css():
 
     .top-navbar {
         position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
-        background: rgba(10, 14, 39, 0.9); backdrop-filter: blur(30px);
-        border-bottom: 2px solid rgba(59, 130, 246, 0.3);
+        background: rgba(10, 25, 41, 0.95); backdrop-filter: blur(30px);
+        border-bottom: 2px solid rgba(30, 58, 138, 0.4);
         padding: 1.5rem 3rem; display: flex;
         justify-content: space-between; align-items: center;
         box-shadow: 0 10px 50px rgba(0, 0, 0, 0.7);
@@ -80,7 +86,7 @@ def load_premium_css():
 
     .navbar-logo {
         font-size: 2rem; font-weight: 900;
-        background: linear-gradient(135deg, #3b82f6, #8b5cf6, #ec4899);
+        background: linear-gradient(135deg, #1e3a8a, #2563eb, #3b82f6);
         -webkit-background-clip: text; -webkit-text-fill-color: transparent;
         animation: logoFloat 3s ease-in-out infinite;
     }
@@ -97,7 +103,7 @@ def load_premium_css():
 
     .glass-card {
         background: rgba(15, 30, 58, 0.7); backdrop-filter: blur(20px);
-        border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 24px;
+        border: 1px solid rgba(30, 58, 138, 0.4); border-radius: 24px;
         padding: 2rem; margin: 1.5rem 0;
         box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
         transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
@@ -105,13 +111,13 @@ def load_premium_css():
 
     .glass-card:hover {
         transform: translateY(-10px);
-        box-shadow: 0 20px 60px rgba(59, 130, 246, 0.4);
-        border-color: rgba(96, 165, 250, 0.6);
+        box-shadow: 0 20px 60px rgba(30, 58, 138, 0.5);
+        border-color: rgba(37, 99, 235, 0.6);
     }
 
-    .obra-card-premium {
+    .obra-card {
         background: rgba(15, 30, 58, 0.8);
-        border: 2px solid rgba(59, 130, 246, 0.4);
+        border: 2px solid rgba(30, 58, 138, 0.5);
         border-radius: 20px; overflow: hidden;
         transition: all 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         cursor: pointer; position: relative;
@@ -123,18 +129,18 @@ def load_premium_css():
         50% { transform: translateY(-20px) rotateX(5deg); }
     }
 
-    .obra-card-premium:hover {
+    .obra-card:hover {
         transform: translateY(-30px) scale(1.08) rotateY(5deg) !important;
-        box-shadow: 0 40px 100px rgba(59, 130, 246, 0.6);
-        border-color: rgba(96, 165, 250, 1); animation: none;
+        box-shadow: 0 40px 100px rgba(30, 64, 175, 0.6);
+        border-color: rgba(59, 130, 246, 1); animation: none;
     }
 
-    .obra-card-premium img {
+    .obra-card img {
         width: 100%; height: 300px; object-fit: cover;
         transition: transform 0.6s ease; filter: brightness(0.9);
     }
 
-    .obra-card-premium:hover img {
+    .obra-card:hover img {
         transform: scale(1.2) rotate(3deg);
         filter: brightness(1.1) contrast(1.1);
     }
@@ -142,7 +148,7 @@ def load_premium_css():
     .main-title {
         color: #e0e7ff; font-size: 4rem; font-weight: 900;
         text-align: center; margin: 2rem 0;
-        background: linear-gradient(135deg, #3b82f6, #8b5cf6, #ec4899);
+        background: linear-gradient(135deg, #1e3a8a, #2563eb, #3b82f6);
         -webkit-background-clip: text; -webkit-text-fill-color: transparent;
         animation: titlePulse 3s ease-in-out infinite;
     }
@@ -157,32 +163,33 @@ def load_premium_css():
         text-align: center; margin-bottom: 3rem;
     }
 
-    .tag-premium {
+    .tag-badge {
         display: inline-block;
-        background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(139, 92, 246, 0.2));
-        border: 2px solid rgba(59, 130, 246, 0.5); color: #93c5fd;
+        background: linear-gradient(135deg, rgba(30, 58, 138, 0.3), rgba(37, 99, 235, 0.3));
+        border: 2px solid rgba(30, 64, 175, 0.6); color: #93c5fd;
         padding: 0.6rem 1.3rem; border-radius: 30px; margin: 0.4rem;
         font-size: 0.9rem; font-weight: 700;
         transition: all 0.3s ease; cursor: pointer;
     }
 
-    .tag-premium:hover {
+    .tag-badge:hover {
         transform: scale(1.2) translateY(-5px);
-        box-shadow: 0 10px 30px rgba(59, 130, 246, 0.6);
+        box-shadow: 0 10px 30px rgba(30, 64, 175, 0.7);
+        border-color: rgba(59, 130, 246, 0.9);
     }
 
-    .metric-premium {
-        background: linear-gradient(135deg, #1e40af, #3b82f6, #8b5cf6);
-        border: 2px solid rgba(96, 165, 250, 0.5);
+    .metric-card {
+        background: linear-gradient(135deg, #1e3a8a, #1e40af, #2563eb);
+        border: 2px solid rgba(37, 99, 235, 0.6);
         border-radius: 24px; padding: 2.5rem;
         text-align: center; color: white;
-        box-shadow: 0 15px 50px rgba(37, 99, 235, 0.5);
+        box-shadow: 0 15px 50px rgba(30, 64, 175, 0.6);
         transition: all 0.4s ease;
     }
 
-    .metric-premium:hover {
+    .metric-card:hover {
         transform: translateY(-15px) scale(1.08);
-        box-shadow: 0 25px 70px rgba(37, 99, 235, 0.7);
+        box-shadow: 0 25px 70px rgba(37, 99, 235, 0.8);
     }
 
     .metric-value {
@@ -196,42 +203,42 @@ def load_premium_css():
     }
 
     .stButton button {
-        background: linear-gradient(135deg, #1e40af, #3b82f6) !important;
-        color: white !important; border: 2px solid #3b82f6 !important;
+        background: linear-gradient(135deg, #1e3a8a, #2563eb) !important;
+        color: white !important; border: 2px solid #1e40af !important;
         border-radius: 16px !important; padding: 1rem 3rem !important;
         font-weight: 700 !important; font-size: 1.1rem !important;
         transition: all 0.4s ease !important;
-        box-shadow: 0 8px 25px rgba(59, 130, 246, 0.4) !important;
+        box-shadow: 0 8px 25px rgba(30, 64, 175, 0.5) !important;
     }
 
     .stButton button:hover {
         transform: translateY(-10px) scale(1.1) !important;
-        box-shadow: 0 20px 50px rgba(59, 130, 246, 0.7) !important;
+        box-shadow: 0 20px 50px rgba(37, 99, 235, 0.8) !important;
     }
 
     .stTextInput input, .stTextArea textarea, .stSelectbox select {
         background: rgba(10, 22, 40, 0.9) !important;
-        border: 2px solid rgba(59, 130, 246, 0.3) !important;
+        border: 2px solid rgba(30, 58, 138, 0.4) !important;
         color: #e0e7ff !important; border-radius: 12px !important;
         padding: 1rem !important; transition: all 0.3s ease !important;
     }
 
     .stTextInput input:focus, .stTextArea textarea:focus {
-        border-color: #3b82f6 !important;
-        box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.2) !important;
+        border-color: #2563eb !important;
+        box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.3) !important;
     }
 
     .stTabs [data-baseweb="tab"] {
         background: rgba(15, 30, 58, 0.6);
-        border: 2px solid rgba(59, 130, 246, 0.3);
+        border: 2px solid rgba(30, 58, 138, 0.4);
         border-radius: 16px 16px 0 0; color: #94a3b8;
         padding: 1rem 2rem; font-weight: 700;
     }
 
     .stTabs [aria-selected="true"] {
-        background: linear-gradient(135deg, #1e40af, #3b82f6) !important;
+        background: linear-gradient(135deg, #1e3a8a, #2563eb) !important;
         color: white !important;
-        box-shadow: 0 10px 35px rgba(59, 130, 246, 0.5);
+        box-shadow: 0 10px 35px rgba(30, 64, 175, 0.6);
     }
 
     .status-badge {
@@ -340,9 +347,8 @@ def load_all_users():
     users = load_json_file(USERS_FILE, [])
     return pd.DataFrame(users) if users else pd.DataFrame()
 
-# ==================== ANÁLISES SIMPLIFICADAS ====================
+# ==================== ANÁLISES ====================
 def calculate_tag_diversity(tags_df):
-    """Índice de Shannon para diversidade"""
     if tags_df.empty:
         return 0
     counts = tags_df['tag'].value_counts()
@@ -350,34 +356,23 @@ def calculate_tag_diversity(tags_df):
     return -sum(proportions * np.log(proportions + 1e-10))
 
 def calculate_quality_metrics(tags_df):
-    """Métricas de qualidade das tags"""
     if tags_df.empty:
         return None
 
     metrics = {}
-
-    # Especificidade: % de tags únicas
     metrics['specificity'] = len(tags_df['tag'].unique()) / len(tags_df) * 100
-
-    # Consistência: variação no tamanho das tags
     lengths = tags_df['tag'].str.len()
     metrics['consistency'] = 100 - (lengths.std() / lengths.mean() * 100) if lengths.mean() > 0 else 0
-
-    # Completude: obras com pelo menos 3 tags
     per_obra = tags_df.groupby('obra_id').size()
     metrics['completeness'] = (per_obra >= 3).sum() / len(per_obra) * 100 if len(per_obra) > 0 else 0
-
-    # Score geral ponderado
     metrics['overall'] = (
         metrics['specificity'] * 0.4 +
         metrics['consistency'] * 0.3 +
         metrics['completeness'] * 0.3
     )
-
     return metrics
 
 def simple_clustering(tags_df, n_groups=3):
-    """Clustering simples baseado em frequência"""
     if tags_df.empty or len(tags_df['tag'].unique()) < n_groups:
         return None
 
@@ -385,7 +380,6 @@ def simple_clustering(tags_df, n_groups=3):
     if len(top_tags) < n_groups:
         return None
 
-    # Dividir tags em grupos por frequência
     tags_sorted = top_tags.sort_values(ascending=False)
     chunk_size = len(tags_sorted) // n_groups
 
@@ -396,7 +390,7 @@ def simple_clustering(tags_df, n_groups=3):
         cluster_tags = tags_sorted.iloc[start:end]
 
         clusters[f'Grupo {i+1}'] = {
-            'tags': cluster_tags.index.tolist()[:5],  # Top 5 de cada grupo
+            'tags': cluster_tags.index.tolist()[:5],
             'total': int(cluster_tags.sum()),
             'avg': float(cluster_tags.mean()),
             'size': len(cluster_tags)
@@ -404,30 +398,7 @@ def simple_clustering(tags_df, n_groups=3):
 
     return clusters
 
-def analyze_temporal_patterns(tags_df):
-    """Análise temporal de criação de tags"""
-    if tags_df.empty or 'timestamp' not in tags_df.columns:
-        return None
-
-    try:
-        tags_df['timestamp'] = pd.to_datetime(tags_df['timestamp'])
-        tags_df['date'] = tags_df['timestamp'].dt.date
-        tags_df['hour'] = tags_df['timestamp'].dt.hour
-
-        daily_activity = tags_df.groupby('date').size()
-        hourly_activity = tags_df.groupby('hour').size()
-
-        return {
-            'total_days': len(daily_activity),
-            'avg_per_day': daily_activity.mean(),
-            'peak_hour': int(hourly_activity.idxmax()) if not hourly_activity.empty else None,
-            'peak_day': str(daily_activity.idxmax()) if not daily_activity.empty else None
-        }
-    except:
-        return None
-
 def analyze_user_engagement(users_df, tags_df):
-    """Análise de engajamento dos usuários"""
     if users_df.empty or tags_df.empty:
         return None
 
@@ -442,11 +413,218 @@ def analyze_user_engagement(users_df, tags_df):
         'max_tags_user': int(tags_per_user['tag_count'].max()) if not tags_per_user.empty else 0
     }
 
+# ==================== GRÁFICOS ====================
+def create_tags_chart(tags_df):
+    """Gráfico de barras das top tags"""
+    if tags_df.empty:
+        return None
+
+    top_tags = tags_df['tag'].value_counts().head(10)
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    fig.patch.set_facecolor('#0a1929')
+    ax.set_facecolor('#0f1e3a')
+
+    bars = ax.barh(range(len(top_tags)), top_tags.values, color='#2563eb')
+    ax.set_yticks(range(len(top_tags)))
+    ax.set_yticklabels(top_tags.index, color='#e0e7ff')
+    ax.set_xlabel('Frequência', color='#e0e7ff', fontsize=12)
+    ax.set_title('Top 10 Tags Mais Utilizadas', color='#e0e7ff', fontsize=14, fontweight='bold')
+    ax.tick_params(colors='#e0e7ff')
+    ax.spines['bottom'].set_color('#2563eb')
+    ax.spines['left'].set_color('#2563eb')
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.grid(axis='x', alpha=0.3, color='#2563eb')
+
+    plt.tight_layout()
+    return fig
+
+def create_distribution_chart(tags_df):
+    """Gráfico de distribuição de tags por obra"""
+    if tags_df.empty:
+        return None
+
+    tags_per_obra = tags_df.groupby('obra_id').size()
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    fig.patch.set_facecolor('#0a1929')
+    ax.set_facecolor('#0f1e3a')
+
+    ax.hist(tags_per_obra.values, bins=15, color='#2563eb', edgecolor='#3b82f6', alpha=0.7)
+    ax.set_xlabel('Número de Tags', color='#e0e7ff', fontsize=12)
+    ax.set_ylabel('Quantidade de Obras', color='#e0e7ff', fontsize=12)
+    ax.set_title('Distribuição de Tags por Obra', color='#e0e7ff', fontsize=14, fontweight='bold')
+    ax.tick_params(colors='#e0e7ff')
+    ax.spines['bottom'].set_color('#2563eb')
+    ax.spines['left'].set_color('#2563eb')
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.grid(axis='y', alpha=0.3, color='#2563eb')
+
+    plt.tight_layout()
+    return fig
+
+# ==================== EXPORTAR PDF ====================
+def generate_pdf_report(tags_df, users_df, obras):
+    """Gera relatório completo em PDF"""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=0.5*inch)
+
+    story = []
+    styles = getSampleStyleSheet()
+
+    # Título
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        textColor=colors.HexColor('#1e3a8a'),
+        spaceAfter=30,
+        alignment=1
+    )
+    story.append(Paragraph("📊 Relatório de Análise - Folksonomia", title_style))
+    story.append(Spacer(1, 0.3*inch))
+
+    # Data
+    date_style = ParagraphStyle('DateStyle', parent=styles['Normal'], fontSize=10, textColor=colors.grey, alignment=1)
+    story.append(Paragraph(f"Data: {datetime.now().strftime('%d/%m/%Y %H:%M')}", date_style))
+    story.append(Spacer(1, 0.5*inch))
+
+    # Métricas Principais
+    story.append(Paragraph("📈 Métricas Principais", styles['Heading2']))
+    story.append(Spacer(1, 0.2*inch))
+
+    metrics_data = [
+        ['Métrica', 'Valor'],
+        ['👥 Total de Usuários', str(len(users_df['user_id'].unique()) if not users_df.empty else 0)],
+        ['🏷️ Total de Tags', str(len(tags_df) if not tags_df.empty else 0)],
+        ['✨ Tags Únicas', str(len(tags_df['tag'].unique()) if not tags_df.empty else 0)],
+        ['🎨 Total de Obras', str(len(obras))]
+    ]
+
+    metrics_table = Table(metrics_data, colWidths=[3*inch, 2*inch])
+    metrics_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e3a8a')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 12),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f0f9ff')),
+        ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#2563eb'))
+    ]))
+    story.append(metrics_table)
+    story.append(Spacer(1, 0.5*inch))
+
+    # Top 10 Tags
+    if not tags_df.empty:
+        story.append(Paragraph("🔝 Top 10 Tags Mais Utilizadas", styles['Heading2']))
+        story.append(Spacer(1, 0.2*inch))
+
+        top_tags = tags_df['tag'].value_counts().head(10).reset_index()
+        top_tags.columns = ['Tag', 'Frequência']
+
+        tags_data = [['#', 'Tag', 'Frequência']]
+        for idx, row in top_tags.iterrows():
+            tags_data.append([str(idx+1), row['Tag'], str(row['Frequência'])])
+
+        tags_table = Table(tags_data, colWidths=[0.5*inch, 3*inch, 1.5*inch])
+        tags_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e3a8a')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 11),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f0f9ff')),
+            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#2563eb'))
+        ]))
+        story.append(tags_table)
+        story.append(Spacer(1, 0.5*inch))
+
+        # Análise de Qualidade
+        quality = calculate_quality_metrics(tags_df)
+        if quality:
+            story.append(PageBreak())
+            story.append(Paragraph("🎯 Análise de Qualidade", styles['Heading2']))
+            story.append(Spacer(1, 0.2*inch))
+
+            quality_data = [
+                ['Métrica', 'Valor', 'Descrição'],
+                ['Especificidade', f"{quality['specificity']:.1f}%", 'Proporção de tags únicas'],
+                ['Consistência', f"{quality['consistency']:.1f}%", 'Uniformidade no tamanho'],
+                ['Completude', f"{quality['completeness']:.1f}%", 'Obras com 3+ tags'],
+                ['Score Geral', f"{quality['overall']:.1f}/100", 'Qualidade geral das tags']
+            ]
+
+            quality_table = Table(quality_data, colWidths=[2*inch, 1.5*inch, 2.5*inch])
+            quality_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e3a8a')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 11),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f0f9ff')),
+                ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#2563eb'))
+            ]))
+            story.append(quality_table)
+            story.append(Spacer(1, 0.3*inch))
+
+            # Interpretação
+            score = quality['overall']
+            if score >= 70:
+                interpretation = "✅ Excelente: As tags apresentam alta qualidade, diversidade e consistência."
+            elif score >= 50:
+                interpretation = "⚠️ Bom: Qualidade satisfatória, mas há espaço para melhorias."
+            else:
+                interpretation = "❌ Regular: Recomenda-se revisão das práticas de tagueamento."
+
+            story.append(Paragraph(f"<b>Interpretação:</b> {interpretation}", styles['Normal']))
+
+        # Engajamento
+        engagement = analyze_user_engagement(users_df, tags_df)
+        if engagement:
+            story.append(Spacer(1, 0.5*inch))
+            story.append(Paragraph("📊 Análise de Engajamento", styles['Heading2']))
+            story.append(Spacer(1, 0.2*inch))
+
+            engagement_data = [
+                ['Métrica', 'Valor'],
+                ['Taxa de Engajamento', f"{engagement['engagement_rate']:.1f}%"],
+                ['Média de Tags por Usuário', f"{engagement['avg_tags_per_user']:.1f}"],
+                ['Mediana de Tags', f"{engagement['median_tags_per_user']:.0f}"],
+                ['Máximo de Tags (1 usuário)', str(engagement['max_tags_user'])]
+            ]
+
+            engagement_table = Table(engagement_data, colWidths=[3.5*inch, 2*inch])
+            engagement_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e3a8a')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 11),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f0f9ff')),
+                ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#2563eb'))
+            ]))
+            story.append(engagement_table)
+
+    # Rodapé
+    story.append(Spacer(1, 1*inch))
+    footer_style = ParagraphStyle('Footer', parent=styles['Normal'], fontSize=8, textColor=colors.grey, alignment=1)
+    story.append(Paragraph("Relatório gerado automaticamente pelo Sistema Folksonomia", footer_style))
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
 # ==================== INTERFACE ====================
 def show_header():
     st.markdown("""
     <div class='top-navbar'>
-        <div class='navbar-logo'>🎨 Folksonomia Digital Premium</div>
+        <div class='navbar-logo'>🎨 Folksonomia</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -461,7 +639,7 @@ def show_header():
             st.rerun()
 
 def main():
-    load_premium_css()
+    load_custom_css()
 
     try:
         check_and_init_admin()
@@ -492,8 +670,8 @@ def main():
 
 def show_intro():
     st.markdown("<div class='main-content'>", unsafe_allow_html=True)
-    st.markdown("<h1 class='main-title'>🎨 Folksonomia Digital Premium</h1>", unsafe_allow_html=True)
-    st.markdown("<p class='subtitle'>Sistema avançado de catalogação colaborativa com análises inteligentes<br>Complete o questionário para acessar</p>", unsafe_allow_html=True)
+    st.markdown("<h1 class='main-title'>🎨 Folksonomia</h1>", unsafe_allow_html=True)
+    st.markdown("<p class='subtitle'>Sistema de catalogação colaborativa de obras de arte<br>Complete o questionário para acessar</p>", unsafe_allow_html=True)
 
     st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
     st.markdown("<h2 style='color: #60a5fa; text-align: center; margin-bottom: 2rem;'>📋 Questionário de Acesso</h2>", unsafe_allow_html=True)
@@ -527,8 +705,8 @@ def show_intro():
     st.markdown("</div></div>", unsafe_allow_html=True)
 
 def show_obras():
-    st.markdown("<h1 class='main-title'>📚 Galeria de Obras Premium</h1>", unsafe_allow_html=True)
-    st.markdown("<p class='subtitle'>Explore obras clássicas com tecnologia de ponta • Contribua com tags inteligentes</p>", unsafe_allow_html=True)
+    st.markdown("<h1 class='main-title'>📚 Galeria de Obras</h1>", unsafe_allow_html=True)
+    st.markdown("<p class='subtitle'>Explore obras de arte e contribua com tags colaborativas</p>", unsafe_allow_html=True)
 
     obras = load_obras()
     if not obras:
@@ -536,13 +714,11 @@ def show_obras():
         return
 
     st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([2, 1, 1])
+    col1, col2 = st.columns([2, 1])
     with col1:
-        search = st.text_input("🔍 Buscar", "", placeholder="Título ou artista...")
+        search = st.text_input("🔍 Buscar obra", "", placeholder="Título ou artista...")
     with col2:
-        sort_by = st.selectbox("📊 Ordenar:", ["Título", "Artista", "Ano"])
-    with col3:
-        view = st.selectbox("👁️ Visualizar:", ["Grid", "Lista"])
+        sort_by = st.selectbox("📊 Ordenar por:", ["Título", "Artista", "Ano"])
     st.markdown("</div>", unsafe_allow_html=True)
 
     filtered = obras
@@ -558,52 +734,51 @@ def show_obras():
 
     st.markdown(f"<div style='text-align: center; color: #94a3b8; margin: 2rem 0; font-size: 1.2rem;'>Exibindo <strong style='color: #60a5fa;'>{len(filtered)}</strong> obra(s)</div>", unsafe_allow_html=True)
 
-    if view == "Grid":
-        cols = st.columns(3)
-        for i, obra in enumerate(filtered):
-            with cols[i % 3]:
-                st.markdown(f"""
-                <div class='obra-card-premium'>
-                    <img src='{obra['imagem']}' alt='{obra['titulo']}' />
-                    <div style='padding: 1.5rem;'>
-                        <h3 style='color: #e0e7ff; font-size: 1.3rem; font-weight: 800;'>{obra['titulo']}</h3>
-                        <p style='color: #94a3b8; font-size: 0.95rem;'>👨‍🎨 {obra['artista']}</p>
-                        <p style='color: #94a3b8; font-size: 0.95rem;'>📅 {obra['ano']}</p>
-                    </div>
+    cols = st.columns(3)
+    for i, obra in enumerate(filtered):
+        with cols[i % 3]:
+            st.markdown(f"""
+            <div class='obra-card'>
+                <img src='{obra['imagem']}' alt='{obra['titulo']}' />
+                <div style='padding: 1.5rem;'>
+                    <h3 style='color: #e0e7ff; font-size: 1.3rem; font-weight: 800;'>{obra['titulo']}</h3>
+                    <p style='color: #94a3b8; font-size: 0.95rem;'>👨‍🎨 {obra['artista']}</p>
+                    <p style='color: #94a3b8; font-size: 0.95rem;'>📅 {obra['ano']}</p>
                 </div>
-                """, unsafe_allow_html=True)
+            </div>
+            """, unsafe_allow_html=True)
 
-                if st.button(f"🏷️ Adicionar Tag", key=f"btn_{obra['id']}", use_container_width=True):
-                    st.session_state['selected_obra'] = obra
-                    st.rerun()
+            if st.button(f"🏷️ Adicionar Tag", key=f"btn_{obra['id']}", use_container_width=True):
+                st.session_state['selected_obra'] = obra
+                st.rerun()
 
-                if 'selected_obra' in st.session_state and st.session_state['selected_obra']['id'] == obra['id']:
-                    with st.form(f"tag_form_{obra['id']}"):
-                        tag = st.text_input("✨ Sua tag:", key=f"tag_{obra['id']}", placeholder="ex: impressionismo...")
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            submitted = st.form_submit_button("✅ Enviar", use_container_width=True)
-                        with col2:
-                            cancel = st.form_submit_button("❌ Cancelar", use_container_width=True)
+            if 'selected_obra' in st.session_state and st.session_state['selected_obra']['id'] == obra['id']:
+                with st.form(f"tag_form_{obra['id']}"):
+                    tag = st.text_input("✨ Sua tag:", key=f"tag_{obra['id']}", placeholder="ex: impressionismo...")
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        submitted = st.form_submit_button("✅ Enviar", use_container_width=True)
+                    with col2:
+                        cancel = st.form_submit_button("❌ Cancelar", use_container_width=True)
 
-                        if submitted and tag:
-                            save_tag(st.session_state['user_id'], obra['id'], tag)
-                            st.success(f"✅ Tag '{tag}' adicionada!")
-                            del st.session_state['selected_obra']
-                            st.rerun()
-                        if cancel:
-                            del st.session_state['selected_obra']
-                            st.rerun()
+                    if submitted and tag:
+                        save_tag(st.session_state['user_id'], obra['id'], tag)
+                        st.success(f"✅ Tag '{tag}' adicionada!")
+                        del st.session_state['selected_obra']
+                        st.rerun()
+                    if cancel:
+                        del st.session_state['selected_obra']
+                        st.rerun()
 
-                tags = get_tags_for_obra(obra['id'])
-                if not tags.empty:
-                    st.markdown("**🏆 Tags Populares:**")
-                    html = ""
-                    for _, row in tags.head(5).iterrows():
-                        html += f"<span class='tag-premium'>{row['tag']} ({row['count']})</span>"
-                    st.markdown(html, unsafe_allow_html=True)
-                else:
-                    st.info("🌟 Seja o primeiro!")
+            tags = get_tags_for_obra(obra['id'])
+            if not tags.empty:
+                st.markdown("**🏆 Tags Populares:**")
+                html = ""
+                for _, row in tags.head(5).iterrows():
+                    html += f"<span class='tag-badge'>{row['tag']} ({row['count']})</span>"
+                st.markdown(html, unsafe_allow_html=True)
+            else:
+                st.info("🌟 Seja o primeiro!")
 
 def show_admin():
     if 'admin_logged_in' not in st.session_state:
@@ -635,20 +810,22 @@ def show_admin():
 
             st.markdown("</div>", unsafe_allow_html=True)
     else:
-        st.markdown(f"<h1 class='main-title'>📊 Dashboard Premium</h1><p class='subtitle'>Bem-vindo, <strong style='color: #60a5fa;'>{st.session_state.get('admin_username', 'Admin')}</strong>! 🚀</p>", unsafe_allow_html=True)
+        st.markdown(f"<h1 class='main-title'>📊 Dashboard Administrativo</h1><p class='subtitle'>Bem-vindo, <strong style='color: #60a5fa;'>{st.session_state.get('admin_username', 'Admin')}</strong>! 🚀</p>", unsafe_allow_html=True)
 
-        tabs = st.tabs(["📊 Visão Geral", "🔬 Análises Avançadas", "🎯 Qualidade", "📈 Engajamento", "🖼️ Obras"])
+        tabs = st.tabs(["📊 Visão Geral", "📈 Gráficos", "🔬 Análises", "🎯 Qualidade", "🖼️ Obras", "📄 Exportar PDF"])
 
         with tabs[0]:
             show_overview()
         with tabs[1]:
-            show_advanced_analysis()
+            show_graphs()
         with tabs[2]:
-            show_quality()
+            show_advanced_analysis()
         with tabs[3]:
-            show_engagement()
+            show_quality()
         with tabs[4]:
             show_manage_obras()
+        with tabs[5]:
+            show_export_pdf()
 
         col1, col2, col3 = st.columns([1, 1, 1])
         with col2:
@@ -674,19 +851,19 @@ def show_overview():
     for col, (label, value) in zip([col1, col2, col3, col4], metrics_data):
         with col:
             st.markdown(f"""
-            <div class='metric-premium'>
+            <div class='metric-card'>
                 <div class='metric-label'>{label}</div>
                 <div class='metric-value'>{value}</div>
             </div>
             """, unsafe_allow_html=True)
 
     if not tags_df.empty:
-        st.markdown("### 📊 Top Rankings")
+        st.markdown("### 📊 Rankings")
         col1, col2 = st.columns(2)
 
         with col1:
             st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-            st.markdown("#### 🔝 Top 15 Tags Mais Utilizadas")
+            st.markdown("#### 🔝 Top 15 Tags")
             top = tags_df['tag'].value_counts().head(15).reset_index()
             top.columns = ['Tag', 'Quantidade']
             st.dataframe(top, use_container_width=True, hide_index=True)
@@ -702,76 +879,82 @@ def show_overview():
                         use_container_width=True, hide_index=True)
             st.markdown("</div>", unsafe_allow_html=True)
 
-def show_advanced_analysis():
-    st.markdown("### 🔬 Análises Avançadas com Inteligência")
+def show_graphs():
+    st.markdown("### 📈 Gráficos e Visualizações")
     tags_df = load_all_tags()
 
     if tags_df.empty:
-        st.info("📊 Dados insuficientes para análise avançada")
+        st.info("📊 Sem dados para gerar gráficos")
         return
 
     col1, col2 = st.columns(2)
 
     with col1:
         st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-        st.markdown("#### 🧠 Clustering Inteligente de Tags")
-        clusters = simple_clustering(tags_df, 3)
-        if clusters:
-            for name, data in clusters.items():
-                st.markdown(f"**{name}** - {data['size']} tags ({data['total']} usos)")
-                st.markdown(f"🏷️ Tags principais: {', '.join(data['tags'])}")
-                st.markdown(f"📊 Média de uso: {data['avg']:.1f}")
-                st.divider()
-        else:
-            st.info("Dados insuficientes para clustering")
+        st.markdown("#### 📊 Top Tags")
+        fig1 = create_tags_chart(tags_df)
+        if fig1:
+            st.pyplot(fig1)
+            plt.close()
         st.markdown("</div>", unsafe_allow_html=True)
 
     with col2:
         st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-        st.markdown("#### 📊 Índice de Diversidade (Shannon)")
+        st.markdown("#### 📈 Distribuição")
+        fig2 = create_distribution_chart(tags_df)
+        if fig2:
+            st.pyplot(fig2)
+            plt.close()
+        st.markdown("</div>", unsafe_allow_html=True)
+
+def show_advanced_analysis():
+    st.markdown("### 🔬 Análises Avançadas")
+    tags_df = load_all_tags()
+
+    if tags_df.empty:
+        st.info("📊 Dados insuficientes")
+        return
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+        st.markdown("#### 🧠 Clustering")
+        clusters = simple_clustering(tags_df, 3)
+        if clusters:
+            for name, data in clusters.items():
+                st.markdown(f"**{name}** - {data['size']} tags ({data['total']} usos)")
+                st.markdown(f"🏷️ Tags: {', '.join(data['tags'])}")
+                st.markdown(f"📊 Média: {data['avg']:.1f}")
+                st.divider()
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with col2:
+        st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+        st.markdown("#### 📊 Diversidade (Shannon)")
         diversity = calculate_tag_diversity(tags_df)
 
-        # Visual do índice
         st.markdown(f"""
         <div style='text-align: center; padding: 2rem;'>
             <div style='font-size: 3rem; font-weight: 900; color: #60a5fa;'>{diversity:.3f}</div>
-            <div style='font-size: 0.9rem; color: #94a3b8; margin-top: 0.5rem;'>ÍNDICE DE SHANNON</div>
+            <div style='font-size: 0.9rem; color: #94a3b8; margin-top: 0.5rem;'>ÍNDICE</div>
         </div>
         """, unsafe_allow_html=True)
 
         if diversity > 2.5:
-            st.success("✅ **Alta diversidade!** As tags são muito variadas.")
+            st.success("✅ Alta diversidade!")
         elif diversity > 1.5:
-            st.warning("⚠️ **Diversidade moderada.** Há alguma repetição.")
+            st.warning("⚠️ Moderada")
         else:
-            st.error("❌ **Baixa diversidade.** Tags muito repetitivas.")
-
+            st.error("❌ Baixa")
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # Análise Temporal
-    st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-    st.markdown("#### ⏰ Padrões Temporais de Uso")
-    temporal = analyze_temporal_patterns(tags_df)
-    if temporal:
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("📅 Dias Ativos", temporal['total_days'])
-        with col2:
-            st.metric("📊 Média/Dia", f"{temporal['avg_per_day']:.1f}")
-        with col3:
-            st.metric("🕐 Hora Pico", f"{temporal['peak_hour']}h" if temporal['peak_hour'] else "N/A")
-        with col4:
-            st.metric("📆 Dia Pico", temporal['peak_day'] if temporal['peak_day'] else "N/A")
-    else:
-        st.info("Análise temporal indisponível")
-    st.markdown("</div>", unsafe_allow_html=True)
-
 def show_quality():
-    st.markdown("### 🎯 Análise de Qualidade das Tags")
+    st.markdown("### 🎯 Qualidade das Tags")
     tags_df = load_all_tags()
 
     if tags_df.empty:
-        st.info("📊 Sem dados para análise de qualidade")
+        st.info("📊 Sem dados")
         return
 
     quality = calculate_quality_metrics(tags_df)
@@ -783,84 +966,25 @@ def show_quality():
 
         st.markdown(f"""
         <div style='text-align: center; padding: 3rem;'>
-            <h1 style='font-size: 5rem; color: #60a5fa; font-weight: 900; margin: 0;'>{score:.1f}</h1>
-            <div style='margin: 1rem 0;'>
-                <span class='status-badge {status}'>{status_text}</span>
-            </div>
-            <p style='color: #94a3b8; font-size: 1.1rem; margin-top: 1rem;'>Score Geral de Qualidade</p>
+            <h1 style='font-size: 5rem; color: #60a5fa; font-weight: 900;'>{score:.1f}</h1>
+            <span class='status-badge {status}'>{status_text}</span>
         </div>
         """, unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
-        st.markdown("### 📊 Detalhamento das Métricas")
         col1, col2, col3 = st.columns(3)
-
         with col1:
-            st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-            st.markdown("#### 📌 Especificidade")
-            st.metric("", f"{quality['specificity']:.1f}%")
-            st.markdown("*Proporção de tags únicas no total*")
-            st.markdown("</div>", unsafe_allow_html=True)
-
+            st.metric("📌 Especificidade", f"{quality['specificity']:.1f}%")
         with col2:
-            st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-            st.markdown("#### 🎯 Consistência")
-            st.metric("", f"{quality['consistency']:.1f}%")
-            st.markdown("*Uniformidade no tamanho das tags*")
-            st.markdown("</div>", unsafe_allow_html=True)
-
+            st.metric("🎯 Consistência", f"{quality['consistency']:.1f}%")
         with col3:
-            st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-            st.markdown("#### ✅ Completude")
-            st.metric("", f"{quality['completeness']:.1f}%")
-            st.markdown("*Obras com 3+ tags*")
-            st.markdown("</div>", unsafe_allow_html=True)
-
-def show_engagement():
-    st.markdown("### 📈 Análise de Engajamento dos Usuários")
-    tags_df = load_all_tags()
-    users_df = load_all_users()
-
-    if tags_df.empty or users_df.empty:
-        st.info("📊 Dados insuficientes para análise de engajamento")
-        return
-
-    engagement = analyze_user_engagement(users_df, tags_df)
-
-    if engagement:
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-            st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-            st.markdown("#### 👥 Taxa de Engajamento")
-            st.markdown(f"""
-            <div style='text-align: center; padding: 2rem;'>
-                <div style='font-size: 3rem; font-weight: 900; color: #60a5fa;'>{engagement['engagement_rate']:.1f}%</div>
-                <div style='color: #94a3b8; margin-top: 0.5rem;'>usuários ativos</div>
-            </div>
-            """, unsafe_allow_html=True)
-            st.markdown("</div>", unsafe_allow_html=True)
-
-        with col2:
-            st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-            st.markdown("#### 📊 Média de Tags")
-            st.metric("Por Usuário", f"{engagement['avg_tags_per_user']:.1f}")
-            st.metric("Mediana", f"{engagement['median_tags_per_user']:.0f}")
-            st.markdown("</div>", unsafe_allow_html=True)
-
-        with col3:
-            st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-            st.markdown("#### 🏆 Recordes")
-            st.metric("Usuários Totais", engagement['total_users'])
-            st.metric("Usuários Ativos", engagement['active_users'])
-            st.metric("Máx Tags/User", engagement['max_tags_user'])
-            st.markdown("</div>", unsafe_allow_html=True)
+            st.metric("✅ Completude", f"{quality['completeness']:.1f}%")
 
 def show_manage_obras():
     st.markdown("### 🖼️ Gestão de Obras")
     obras = load_obras()
 
-    tab1, tab2 = st.tabs(["📋 Listar Obras", "➕ Adicionar Nova Obra"])
+    tab1, tab2 = st.tabs(["📋 Listar", "➕ Adicionar"])
 
     with tab1:
         if obras:
@@ -875,42 +999,88 @@ def show_manage_obras():
                     if st.button("🗑️ Remover", key=f"del_{obra['id']}"):
                         obras.remove(obra)
                         save_json_file(OBRAS_FILE, obras)
-                        st.success("✅ Obra removida!")
+                        st.success("✅ Removida!")
                         st.cache_data.clear()
                         st.rerun()
                 st.divider()
         else:
-            st.info("Nenhuma obra cadastrada")
+            st.info("Nenhuma obra")
 
     with tab2:
-        st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
         with st.form("add_obra"):
-            titulo = st.text_input("📝 Título da Obra")
-            artista = st.text_input("👨‍🎨 Nome do Artista")
-            ano = st.text_input("📅 Ano de Criação")
-            imagem = st.text_input("🖼️ URL da Imagem")
+            titulo = st.text_input("📝 Título")
+            artista = st.text_input("👨‍🎨 Artista")
+            ano = st.text_input("📅 Ano")
+            imagem = st.text_input("🖼️ URL Imagem")
 
-            st.markdown("<br>", unsafe_allow_html=True)
-            submitted = st.form_submit_button("➕ Adicionar Obra", use_container_width=True)
-
-            if submitted:
+            if st.form_submit_button("➕ Adicionar"):
                 if titulo and artista and ano and imagem:
                     new_id = max([o['id'] for o in obras]) + 1 if obras else 1
-                    obras.append({
-                        "id": new_id,
-                        "titulo": titulo,
-                        "artista": artista,
-                        "ano": ano,
-                        "imagem": imagem
-                    })
+                    obras.append({"id": new_id, "titulo": titulo, "artista": artista, "ano": ano, "imagem": imagem})
                     save_json_file(OBRAS_FILE, obras)
-                    st.success("✅ Obra adicionada com sucesso!")
+                    st.success("✅ Adicionada!")
                     st.cache_data.clear()
-                    st.balloons()
                     st.rerun()
                 else:
-                    st.error("❌ Preencha todos os campos!")
-        st.markdown("</div>", unsafe_allow_html=True)
+                    st.error("❌ Preencha todos!")
+
+def show_export_pdf():
+    st.markdown("### 📄 Exportar Relatório em PDF")
+
+    tags_df = load_all_tags()
+    users_df = load_all_users()
+    obras = load_obras()
+
+    st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+    st.markdown("""
+    #### 📊 Conteúdo do Relatório
+
+    O relatório em PDF incluirá:
+    - 📈 Métricas principais do sistema
+    - 🔝 Top 10 tags mais utilizadas
+    - 🎯 Análise completa de qualidade
+    - 📊 Estatísticas de engajamento
+    - 📉 Interpretação dos dados
+    """)
+
+    col1, col2, col3 = st.columns([1, 1, 1])
+
+    with col2:
+        if st.button("📥 Gerar e Baixar PDF", use_container_width=True, type="primary"):
+            if tags_df.empty and users_df.empty:
+                st.error("❌ Não há dados suficientes para gerar o relatório!")
+            else:
+                with st.spinner("Gerando relatório PDF..."):
+                    try:
+                        pdf_buffer = generate_pdf_report(tags_df, users_df, obras)
+
+                        st.download_button(
+                            label="📥 Download do Relatório",
+                            data=pdf_buffer,
+                            file_name=f"relatorio_folksonomia_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+                            mime="application/pdf",
+                            use_container_width=True
+                        )
+                        st.success("✅ Relatório gerado com sucesso!")
+                        st.balloons()
+                    except Exception as e:
+                        st.error(f"❌ Erro ao gerar PDF: {str(e)}")
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # Preview das métricas
+    if not tags_df.empty:
+        st.markdown("### 👁️ Preview dos Dados")
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            st.metric("👥 Usuários", len(users_df['user_id'].unique()) if not users_df.empty else 0)
+        with col2:
+            st.metric("🏷️ Tags", len(tags_df))
+        with col3:
+            st.metric("✨ Únicas", len(tags_df['tag'].unique()))
+        with col4:
+            st.metric("🎨 Obras", len(obras))
 
 if __name__ == "__main__":
     main()
