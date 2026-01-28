@@ -12,7 +12,7 @@ warnings.filterwarnings('ignore')
 
 # ==================== CONFIGURAÇÃO ====================
 st.set_page_config(
-    page_title="Folksonomia Digital Premium",
+    page_title="Folksonomia",
     layout="wide",
     initial_sidebar_state="collapsed",
     page_icon="🎨"
