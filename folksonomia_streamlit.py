@@ -7,7 +7,7 @@ import hashlib
 import base64
 import json
 import warnings
-# import plotly.express as px # Removido Plotly
+import plotly.express as px # Importar Plotly para gráficos de barras avançados
 
 warnings.filterwarnings('ignore')
 
@@ -57,11 +57,11 @@ def save_json_file(filepath, data):
         st.error(f"Erro ao salvar o arquivo {filepath}: {e}")
         return False
 
-# ==================== CSS PROFISSIONAL CLARO (com letras pretas) e Liquid Glass ====================
+# ==================== CSS MODERNO CINZA-BRANCO E DINÂMICO ====================
 def load_custom_css():
     st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
     * { 
         margin: 0; 
         padding: 0; 
@@ -69,8 +69,8 @@ def load_custom_css():
         font-family: 'Inter', sans-serif !important; 
     }
     .stApp {
-        background: linear-gradient(to bottom, #f8fafc 0%, #f1f5f9 100%); /* Fundo claro, branco acinzentado */
-        color: #1e293b; /* Cor de texto padrão escura */
+        background: #f0f2f5; /* Cinza muito claro, quase branco */
+        color: #2c3e50; /* Cor de texto padrão escura */
     }
     .top-navbar {
         position: fixed;
@@ -78,20 +78,19 @@ def load_custom_css():
         left: 0;
         right: 0;
         z-index: 9999;
-        background: rgba(255, 255, 255, 0.8); /* Fundo branco semi-transparente para Liquid Glass */
-        backdrop-filter: blur(10px); /* Efeito de desfoque */
-        border-bottom: 1px solid rgba(226, 232, 240, 0.6); /* Borda mais suave */
+        background: #ffffff; /* Branco puro para a barra superior */
+        border-bottom: 1px solid #e0e6ed; /* Borda suave */
         padding: 1.2rem 3rem;
         display: flex;
         justify-content: space-between;
         align-items: center;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08); /* Sombra mais pronunciada para profundidade */
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05); /* Sombra sutil */
     }
     .navbar-logo {
-        font-size: 1.5rem;
-        font-weight: 700;
-        color: #1e293b; /* Logo em preto */
-        letter-spacing: -0.5px;
+        font-size: 1.6rem;
+        font-weight: 800;
+        color: #2c3e50; /* Logo em cinza escuro */
+        letter-spacing: -0.8px;
     }
     .main-content {
         margin-top: 100px; /* Ajuste para a barra fixa */
@@ -101,204 +100,194 @@ def load_custom_css():
         margin-right: auto;
     }
     .professional-card {
-        background: rgba(255, 255, 255, 0.9); /* Fundo semi-transparente */
-        border: 1px solid rgba(226, 232, 240, 0.7); /* Borda suave */
-        border-radius: 16px; /* Bordas mais arredondadas */
+        background: #ffffff; /* Branco para os cards */
+        border: 1px solid #e0e6ed;
+        border-radius: 12px;
         padding: 2rem;
         margin: 1.5rem 0;
-        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1); /* Sombra para profundidade */
-        transition: all 0.4s ease;
-        backdrop-filter: blur(8px); /* Efeito de desfoque */
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+        transition: all 0.3s ease;
     }
     .professional-card:hover {
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
-        border-color: rgba(192, 204, 218, 0.8);
-        transform: translateY(-3px); /* Leve elevação ao passar o mouse */
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+        border-color: #cdd5df;
+        transform: translateY(-2px);
     }
     .obra-card {
-        background: rgba(255, 255, 255, 0.9);
-        border: 1px solid rgba(226, 232, 240, 0.7);
-        border-radius: 16px;
+        background: #ffffff;
+        border: 1px solid #e0e6ed;
+        border-radius: 12px;
         overflow: hidden;
-        transition: all 0.4s ease;
+        transition: all 0.3s ease;
         cursor: pointer;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
-        backdrop-filter: blur(5px);
+        box-shadow: 0 3px 10px rgba(0, 0, 0, 0.04);
     }
     .obra-card:hover {
-        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
-        transform: translateY(-6px);
-        border-color: rgba(148, 163, 184, 0.8);
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
+        transform: translateY(-4px);
+        border-color: #aeb8c4;
     }
     .obra-card img {
         width: 100%;
         height: 240px;
         object-fit: cover;
-        transition: transform 0.4s ease;
+        transition: transform 0.3s ease;
     }
     .obra-card:hover img {
-        transform: scale(1.08);
+        transform: scale(1.05);
     }
     .main-title {
-        color: #1e293b;
-        font-size: 2.8rem; /* Um pouco maior */
-        font-weight: 800; /* Mais negrito */
+        color: #2c3e50;
+        font-size: 2.6rem;
+        font-weight: 800;
         text-align: center;
         margin: 2.5rem 0 1.2rem 0;
-        letter-spacing: -1px;
-        text-shadow: 1px 1px 2px rgba(0,0,0,0.05); /* Leve sombra no texto */
+        letter-spacing: -0.8px;
     }
     .subtitle {
-        color: #64748b;
-        font-size: 1.2rem; /* Um pouco maior */
+        color: #7f8c8d; /* Cinza médio */
+        font-size: 1.1rem;
         text-align: center;
         margin-bottom: 3rem;
-        line-height: 1.7;
+        line-height: 1.6;
     }
     .tag-badge {
         display: inline-block;
-        background: rgba(241, 245, 249, 0.7); /* Semi-transparente */
-        border: 1px solid rgba(203, 213, 225, 0.6);
-        color: #475569;
-        padding: 0.6rem 1.2rem; /* Um pouco mais de padding */
-        border-radius: 8px; /* Mais arredondado */
-        margin: 0.4rem;
-        font-size: 0.9rem;
+        background: #ecf0f1; /* Cinza claro */
+        border: 1px solid #dce0e6;
+        color: #34495e; /* Cinza escuro */
+        padding: 0.5rem 1rem;
+        border-radius: 8px;
+        margin: 0.3rem;
+        font-size: 0.85rem;
         font-weight: 600;
-        transition: all 0.3s ease;
-        backdrop-filter: blur(3px);
+        transition: all 0.2s ease;
     }
     .tag-badge:hover {
-        background: rgba(226, 232, 240, 0.8);
-        border-color: rgba(148, 163, 184, 0.7);
-        transform: translateY(-2px);
+        background: #dce0e6;
+        border-color: #bdc3c7;
+        transform: translateY(-1px);
     }
     .metric-card {
-        background: linear-gradient(135deg, rgba(71, 85, 105, 0.9) 0%, rgba(51, 65, 85, 0.95) 100%); /* Gradiente escuro semi-transparente */
+        background: linear-gradient(135deg, #34495e 0%, #2c3e50 100%); /* Gradiente de cinza escuro */
         border: none;
-        border-radius: 16px;
-        padding: 2.2rem; /* Mais padding */
+        border-radius: 12px;
+        padding: 2rem;
         text-align: center;
         color: white;
-        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2); /* Sombra mais forte */
-        transition: all 0.4s ease;
-        backdrop-filter: blur(8px);
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+        transition: all 0.3s ease;
     }
     .metric-card:hover {
-        transform: translateY(-6px);
-        box-shadow: 0 12px 35px rgba(0, 0, 0, 0.25);
+        transform: translateY(-4px);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
     }
     .metric-value {
-        font-size: 3.5rem; /* Maior */
-        font-weight: 800; /* Mais negrito */
-        margin: 0.6rem 0;
-        text-shadow: 1px 1px 3px rgba(0,0,0,0.1);
+        font-size: 3.2rem;
+        font-weight: 800;
+        margin: 0.5rem 0;
     }
     .metric-label {
-        font-size: 1rem; /* Maior */
+        font-size: 0.95rem;
         text-transform: uppercase;
-        letter-spacing: 1.5px; /* Mais espaçamento */
+        letter-spacing: 1.2px;
         font-weight: 700;
-        opacity: 0.95;
+        opacity: 0.9;
     }
     .stButton button {
-        background: linear-gradient(145deg, #475569 0%, #334155 100%) !important; /* Gradiente para Liquid Glass */
+        background: linear-gradient(145deg, #3498db 0%, #2980b9 100%) !important; /* Azul vibrante para botões */
         color: white !important;
         border: none !important;
-        border-radius: 12px !important; /* Mais arredondado */
-        padding: 1rem 2.5rem !important; /* Mais padding */
-        font-weight: 700 !important; /* Mais negrito */
-        transition: all 0.4s ease !important;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15) !important; /* Sombra para profundidade */
+        border-radius: 10px !important;
+        padding: 0.9rem 2.2rem !important;
+        font-weight: 700 !important;
+        transition: all 0.3s ease !important;
+        box-shadow: 0 3px 10px rgba(0, 0, 0, 0.1) !important;
         text-transform: uppercase;
         letter-spacing: 0.5px;
     }
     .stButton button:hover {
-        background: linear-gradient(145deg, #334155 0%, #1e293b 100%) !important; /* Gradiente mais escuro no hover */
-        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.25) !important;
-        transform: translateY(-3px) !important; /* Efeito de elevação */
+        background: linear-gradient(145deg, #2980b9 0%, #2c3e50 100%) !important; /* Azul mais escuro no hover */
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15) !important;
+        transform: translateY(-2px) !important;
     }
     .stTextInput input, .stTextArea textarea, .stSelectbox select {
-        background: rgba(255, 255, 255, 0.8) !important; /* Semi-transparente */
-        border: 1px solid rgba(203, 213, 225, 0.7) !important;
-        color: #1e293b !important;
-        border-radius: 10px !important; /* Mais arredondado */
-        padding: 0.9rem !important;
-        transition: all 0.3s ease !important;
-        backdrop-filter: blur(5px);
+        background: #ffffff !important;
+        border: 1px solid #dce0e6 !important;
+        color: #2c3e50 !important;
+        border-radius: 10px !important;
+        padding: 0.8rem !important;
+        transition: all 0.2s ease !important;
     }
     .stTextInput input:focus, .stTextArea textarea:focus, .stSelectbox select:focus {
-        border-color: #475569 !important; /* Borda mais escura no foco */
-        box-shadow: 0 0 0 4px rgba(71, 85, 105, 0.15) !important; /* Sombra de foco mais proeminente */
+        border-color: #3498db !important; /* Borda azul no foco */
+        box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2) !important;
     }
     label {
-        color: #475569 !important;
-        font-weight: 700 !important; /* Mais negrito */
-        font-size: 0.95rem !important; /* Um pouco maior */
-        margin-bottom: 0.6rem !important;
+        color: #34495e !important;
+        font-weight: 700 !important;
+        font-size: 0.9rem !important;
+        margin-bottom: 0.5rem !important;
     }
     .stTabs [data-baseweb="tab"] {
-        background: rgba(255, 255, 255, 0.7); /* Tabs semi-transparentes */
-        border: 1px solid rgba(226, 232, 240, 0.6);
-        border-radius: 10px 10px 0 0; /* Mais arredondado */
-        color: #64748b;
-        padding: 1rem 1.8rem; /* Mais padding */
+        background: #ecf0f1; /* Cinza claro para tabs inativas */
+        border: 1px solid #dce0e6;
+        border-radius: 8px 8px 0 0;
+        color: #7f8c8d;
+        padding: 0.8rem 1.5rem;
         font-weight: 600;
         transition: all 0.3s ease;
-        backdrop-filter: blur(5px);
     }
     .stTabs [aria-selected="true"] {
-        background: linear-gradient(145deg, #475569 0%, #334155 100%) !important; /* Gradiente para tab ativa */
+        background: linear-gradient(145deg, #3498db 0%, #2980b9 100%) !important; /* Azul para tab ativa */
         color: white !important;
-        border-color: #475569 !important;
-        box-shadow: 0 -3px 10px rgba(0, 0, 0, 0.1); /* Sombra para tab ativa */
+        border-color: #3498db !important;
+        box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.1);
     }
     .status-badge {
         display: inline-block;
-        padding: 0.6rem 1.2rem;
-        border-radius: 8px;
-        font-size: 0.9rem;
+        padding: 0.5rem 1rem;
+        border-radius: 6px;
+        font-size: 0.85rem;
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.5px;
-        backdrop-filter: blur(3px);
     }
     .status-high {
-        background: rgba(220, 252, 231, 0.8);
-        border: 1px solid rgba(134, 239, 172, 0.7);
-        color: #166534;
+        background: #d4edda; /* Verde claro */
+        border: 1px solid #28a745;
+        color: #155724;
     }
     .status-medium {
-        background: rgba(254, 243, 199, 0.8);
-        border: 1px solid rgba(252, 211, 77, 0.7);
-        color: #92400e;
+        background: #fff3cd; /* Amarelo claro */
+        border: 1px solid #ffc107;
+        color: #856404;
     }
     .status-low {
-        background: rgba(254, 226, 226, 0.8);
-        border: 1px solid rgba(252, 165, 165, 0.7);
-        color: #991b1b;
+        background: #f8d7da; /* Vermelho claro */
+        border: 1px solid #dc3545;
+        color: #721c24;
     }
-    /* Cores para st.info, st.success, st.warning, st.error para texto escuro */
+    /* Cores para st.info, st.success, st.warning, st.error */
     .stAlert {
-        color: #1e293b !important;
+        color: #2c3e50 !important;
         border-radius: 10px !important;
-        backdrop-filter: blur(5px);
     }
     .stAlert.info {
-        background-color: rgba(224, 242, 254, 0.8) !important;
-        border-left: 5px solid #0ea5e9 !important;
+        background-color: #e7f3ff !important; /* Azul claro */
+        border-left: 5px solid #007bff !important;
     }
     .stAlert.success {
-        background-color: rgba(220, 252, 231, 0.8) !important;
-        border-left: 5px solid #22c55e !important;
+        background-color: #d4edda !important; /* Verde claro */
+        border-left: 5px solid #28a745 !important;
     }
     .stAlert.warning {
-        background-color: rgba(254, 243, 199, 0.8) !important;
-        border-left: 5px solid #f59e0b !important;
+        background-color: #fff3cd !important; /* Amarelo claro */
+        border-left: 5px solid #ffc107 !important;
     }
     .stAlert.error {
-        background-color: rgba(254, 226, 226, 0.8) !important;
-        border-left: 5px solid #ef4444 !important;
+        background-color: #f8d7da !important; /* Vermelho claro */
+        border-left: 5px solid #dc3545 !important;
     }
 
     #MainMenu, footer, header {visibility: hidden;}
@@ -306,84 +295,72 @@ def load_custom_css():
     [data-testid="stSidebar"] {display: none;} 
 
     h1, h2, h3, h4, h5, h6 {
-        color: #1e293b;
-        font-weight: 700; /* Mais negrito */
+        color: #2c3e50;
+        font-weight: 700;
     }
     .dataframe {
-        border: 1px solid rgba(226, 232, 240, 0.7) !important;
-        border-radius: 12px !important;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-        background: rgba(255, 255, 255, 0.8);
-        backdrop-filter: blur(5px);
+        border: 1px solid #e0e6ed !important;
+        border-radius: 10px !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+        background: #ffffff;
     }
 
-    /* Estilo para os botões de navegação na parte inferior */
-    .bottom-nav-container {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        z-index: 9998; /* Abaixo da navbar superior se houver */
-        background: rgba(255, 255, 255, 0.9); /* Fundo branco acinzentado semi-transparente */
-        backdrop-filter: blur(12px); /* Efeito de desfoque mais forte */
-        border-top: 1px solid rgba(226, 232, 240, 0.6);
-        padding: 1rem 3rem;
+    /* Estilo para os botões de navegação principais (Explorar Obras, Área Administrativa) */
+    .main-nav-buttons-container {
         display: flex;
-        justify-content: center; /* Centraliza os botões */
-        gap: 2rem; /* Espaçamento entre os botões */
-        box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.08);
-        border-radius: 20px 20px 0 0; /* Bordas superiores arredondadas */
+        justify-content: center;
+        gap: 1.5rem;
+        margin-bottom: 2rem; /* Espaço abaixo dos botões */
+        padding-top: 1rem; /* Espaço acima dos botões */
+        border-bottom: 1px solid #e0e6ed; /* Linha sutil para separar do conteúdo */
+        padding-bottom: 1.5rem;
     }
 
-    .bottom-nav-button {
-        flex-grow: 0; /* Não cresce para preencher o espaço */
-        flex-basis: auto; /* Tamanho automático */
-        min-width: 180px; /* Largura mínima para os botões */
-        background: linear-gradient(145deg, #475569 0%, #334155 100%) !important;
+    .main-nav-button {
+        background: linear-gradient(145deg, #3498db 0%, #2980b9 100%) !important; /* Azul vibrante */
         color: white !important;
         border: none !important;
-        border-radius: 12px !important;
+        border-radius: 10px !important;
         padding: 1rem 2.5rem !important;
         font-weight: 700 !important;
-        transition: all 0.4s ease !important;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15) !important;
+        transition: all 0.3s ease !important;
+        box-shadow: 0 3px 10px rgba(0, 0, 0, 0.1) !important;
         text-transform: uppercase;
         letter-spacing: 0.5px;
         cursor: pointer;
         text-align: center;
-        text-decoration: none; /* Para links, se aplicável */
-        display: inline-flex; /* Para alinhar ícones e texto */
+        text-decoration: none;
+        display: inline-flex;
         align-items: center;
         justify-content: center;
+        min-width: 200px; /* Largura mínima para botões */
     }
 
-    .bottom-nav-button:hover {
-        background: linear-gradient(145deg, #334155 0%, #1e293b 100%) !important;
-        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.25) !important;
-        transform: translateY(-3px) !important;
+    .main-nav-button:hover {
+        background: linear-gradient(145deg, #2980b9 0%, #2c3e50 100%) !important;
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15) !important;
+        transform: translateY(-2px) !important;
     }
 
-    /* Estilo para o botão ativo na navegação inferior */
-    .bottom-nav-button.active {
-        background: linear-gradient(145deg, #1e293b 0%, #0f172a 100%) !important; /* Cor mais escura para o ativo */
-        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3) !important;
-        transform: translateY(-5px) !important;
-        border: 2px solid #64748b !important; /* Borda sutil para destaque */
+    .main-nav-button.active {
+        background: linear-gradient(145deg, #2c3e50 0%, #1c2833 100%) !important; /* Cinza escuro para o ativo */
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2) !important;
+        transform: translateY(-1px) !important;
+        border: 2px solid #7f8c8d !important; /* Borda sutil para destaque */
     }
 
     @media (max-width: 768px) {
-        .main-title { font-size: 2.2rem; }
+        .main-title { font-size: 2rem; }
         .main-content { margin-top: 120px; padding: 1rem; }
         .top-navbar { padding: 1rem 1.5rem; }
-        .bottom-nav-container {
-            flex-direction: column; /* Empilha os botões em telas pequenas */
+        .main-nav-buttons-container {
+            flex-direction: column;
             gap: 0.8rem;
             padding: 1rem;
-            border-radius: 15px 15px 0 0;
         }
-        .bottom-nav-button {
-            min-width: unset; /* Remove largura mínima */
-            width: 100%; /* Ocupa a largura total */
+        .main-nav-button {
+            min-width: unset;
+            width: 100%;
             padding: 0.8rem 1.5rem !important;
         }
     }
@@ -493,16 +470,15 @@ def generate_user_questionnaire_report(user_id):
         <meta charset="UTF-8">
         <title>Respostas do Questionário</title>
         <style>
-            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
             * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-            body {{ font-family: 'Inter', sans-serif; background: #f8fafc; padding: 40px; color: #1e293b; }}
+            body {{ font-family: 'Inter', sans-serif; background: #f0f2f5; padding: 40px; color: #2c3e50; }}
             .container {{ max-width: 900px; margin: 0 auto; background: white; padding: 50px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.08); }}
-            h1 {{ color: #1e293b; text-align: center; margin-bottom: 15px; font-size: 2.2rem; border-bottom: 3px solid #475569; padding-bottom: 20px; }}
-            .header-info {{ text-align: center; color: #64748b; margin-bottom: 40px; font-size: 0.95rem; }}
-            .question-block {{ margin: 30px 0; padding: 25px; background: #f8fafc; border-left: 4px solid #475569; border-radius: 8px; }}
-            .question {{ color: #475569; font-weight: 700; font-size: 1.1rem; margin-bottom: 12px; }}
-            .answer {{ color: #1e293b; font-size: 1rem; line-height: 1.7; padding: 10px 0; }}
-            .footer {{ text-align: center; margin-top: 50px; padding-top: 25px; border-top: 2px solid #e2e8f0; color: #94a3b8; font-size: 0.85rem; }}
+            h1 {{ color: #2c3e50; text-align: center; margin-bottom: 15px; font-size: 2.2rem; border-bottom: 3px solid #34495e; padding-bottom: 20px; }}
+            .header-info {{ text-align: center; color: #7f8c8d; margin-bottom: 40px; font-size: 0.95rem; }}
+            .question-block {{ margin: 30px 0; padding: 25px; background: #ecf0f1; border-left: 4px solid #3498db; border-radius: 8px; }}
+            .question {{ color: #34495e; font-weight: 700; font-size: 1.1rem; margin-bottom: 12px; }}
+            .answer {{ color: #2c3e50; font-size: 1rem; line-height: 1.7; padding: 10px 0; }}
+            .footer {{ text-align: center; margin-top: 50px; padding-top: 25px; border-top: 2px solid #e0e6ed; color: #aeb8c4; font-size: 0.85rem; }}
             @media print {{ body {{ background: white; padding: 0; }} .container {{ box-shadow: none; }} }}
         </style>
     </head>
@@ -550,23 +526,22 @@ def generate_user_tags_report(user_id, obras):
         <meta charset="UTF-8">
         <title>Relatório de Tags Criadas</title>
         <style>
-            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
             * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-            body {{ font-family: 'Inter', sans-serif; background: #f8fafc; padding: 40px; color: #1e293b; }}
+            body {{ font-family: 'Inter', sans-serif; background: #f0f2f5; padding: 40px; color: #2c3e50; }}
             .container {{ max-width: 1200px; margin: 0 auto; background: white; padding: 50px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.08); }}
-            h1 {{ color: #1e293b; text-align: center; margin-bottom: 15px; font-size: 2.2rem; border-bottom: 3px solid #475569; padding-bottom: 20px; }}
-            .header-info {{ text-align: center; color: #64748b; margin-bottom: 40px; font-size: 0.95rem; }}
+            h1 {{ color: #2c3e50; text-align: center; margin-bottom: 15px; font-size: 2.2rem; border-bottom: 3px solid #34495e; padding-bottom: 20px; }}
+            .header-info {{ text-align: center; color: #7f8c8d; margin-bottom: 40px; font-size: 0.95rem; }}
             .stats {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin: 30px 0; }}
-            .stat-box {{ background: #f1f5f9; border-left: 4px solid #475569; padding: 20px; border-radius: 8px; text-align: center; }}
-            .stat-value {{ font-size: 2.5rem; font-weight: 700; color: #475569; }}
-            .stat-label {{ color: #64748b; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1px; margin-top: 8px; }}
+            .stat-box {{ background: #ecf0f1; border-left: 4px solid #3498db; padding: 20px; border-radius: 8px; text-align: center; }}
+            .stat-value {{ font-size: 2.5rem; font-weight: 700; color: #34495e; }}
+            .stat-label {{ color: #7f8c8d; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1px; margin-top: 8px; }}
             table {{ width: 100%; border-collapse: collapse; margin: 30px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }}
-            th, td {{ padding: 15px; text-align: left; border-bottom: 1px solid #e2e8f0; }}
-            th {{ background: #475569; color: white; font-weight: 700; text-transform: uppercase; font-size: 0.85rem; letter-spacing: 0.5px; }}
-            tr:nth-child(even) {{ background: #f8fafc; }}
-            tr:hover {{ background: #f1f5f9; }}
-            .tag-highlight {{ background: #f1f5f9; padding: 5px 12px; border-radius: 6px; border: 1px solid #cbd5e1; font-weight: 600; }}
-            .footer {{ text-align: center; margin-top: 50px; padding-top: 25px; border-top: 2px solid #e2e8f0; color: #94a3b8; font-size: 0.85rem; }}
+            th, td {{ padding: 15px; text-align: left; border-bottom: 1px solid #e0e6ed; }}
+            th {{ background: #34495e; color: white; font-weight: 700; text-transform: uppercase; font-size: 0.85rem; letter-spacing: 0.5px; }}
+            tr:nth-child(even) {{ background: #ecf0f1; }}
+            tr:hover {{ background: #dce0e6; }}
+            .tag-highlight {{ background: #dce0e6; padding: 5px 12px; border-radius: 6px; border: 1px solid #bdc3c7; font-weight: 600; }}
+            .footer {{ text-align: center; margin-top: 50px; padding-top: 25px; border-top: 2px solid #e0e6ed; color: #aeb8c4; font-size: 0.85rem; }}
             @media print {{ body {{ background: white; padding: 0; }} .container {{ box-shadow: none; }} }}
         </style>
     </head>
@@ -592,7 +567,7 @@ def generate_user_tags_report(user_id, obras):
                     <div class="stat-label">Obras Etiquetadas</div>
                 </div>
             </div>
-            <h2 style="color: #1e293b; margin-top: 40px; margin-bottom: 20px; font-size: 1.5rem;">Tags Detalhadas</h2>
+            <h2 style="color: #2c3e50; margin-top: 40px; margin-bottom: 20px; font-size: 1.5rem;">Tags Detalhadas</h2>
             <table>
                 <thead>
                     <tr>
@@ -621,7 +596,7 @@ def generate_user_tags_report(user_id, obras):
     html += """
                 </tbody>
             </table>
-            <h2 style="color: #1e293b; margin-top: 40px; margin-bottom: 20px; font-size: 1.5rem;">Suas Tags Mais Utilizadas</h2>
+            <h2 style="color: #2c3e50; margin-top: 40px; margin-bottom: 20px; font-size: 1.5rem;">Suas Tags Mais Utilizadas</h2>
             <table>
                 <thead>
                     <tr>
@@ -684,46 +659,51 @@ def main():
         show_header()
         st.markdown("<div class='main-content'>", unsafe_allow_html=True)
 
+        # Nova navegação principal com botões no topo do conteúdo
+        st.markdown("<div class='main-nav-buttons-container'>", unsafe_allow_html=True)
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Explorar Obras", key="nav_explorar_obras", use_container_width=True):
+                st.session_state['current_page'] = "Explorar Obras"
+                st.rerun()
+            # Adiciona CSS para o botão ativo
+            if st.session_state['current_page'] == "Explorar Obras":
+                st.markdown(f"""
+                    <style>
+                        div[data-testid="stVerticalBlock"] > div > div > div > div:nth-child(1) > div > button {{
+                            background: linear-gradient(145deg, #2c3e50 0%, #1c2833 100%) !important;
+                            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2) !important;
+                            transform: translateY(-1px) !important;
+                            border: 2px solid #7f8c8d !important;
+                        }}
+                    </style>
+                """, unsafe_allow_html=True)
+
+        with col2:
+            if st.button("Área Administrativa", key="nav_area_admin", use_container_width=True):
+                st.session_state['current_page'] = "Área Administrativa"
+                st.rerun()
+            # Adiciona CSS para o botão ativo
+            if st.session_state['current_page'] == "Área Administrativa":
+                st.markdown(f"""
+                    <style>
+                        div[data-testid="stVerticalBlock"] > div > div > div > div:nth-child(2) > div > button {{
+                            background: linear-gradient(145deg, #2c3e50 0%, #1c2833 100%) !important;
+                            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2) !important;
+                            transform: translateY(-1px) !important;
+                            border: 2px solid #7f8c8d !important;
+                        }}
+                    </style>
+                """, unsafe_allow_html=True)
+
+        st.markdown("</div>", unsafe_allow_html=True) # Fecha o container dos botões de navegação
+
         # Conteúdo principal da página
         if st.session_state['current_page'] == "Explorar Obras":
             show_obras()
         elif st.session_state['current_page'] == "Área Administrativa":
             show_admin()
-
-        st.markdown("</div>", unsafe_allow_html=True)
-
-        # Nova navegação inferior com botões Liquid Glass
-        st.markdown("<div class='bottom-nav-container'>", unsafe_allow_html=True)
-
-        # Botão Explorar Obras
-        col1, col2 = st.columns(2)
-        with col1:
-            # Usamos um truque com st.form_submit_button invisível para forçar o rerun
-            # e o st.markdown para renderizar o botão com CSS customizado.
-            # O JavaScript no onclick simula um clique no botão de submit do form.
-            with st.form("nav_explore_form", clear_on_submit=False):
-                st.markdown(f"""
-                    <button type="submit" class='bottom-nav-button {"active" if st.session_state['current_page'] == "Explorar Obras" else ""}' 
-                            name="nav_button" value="Explorar Obras">
-                        Explorar Obras
-                    </button>
-                    """, unsafe_allow_html=True)
-                if st.form_submit_button("Hidden Explore Button", key="hidden_explore_btn"):
-                    st.session_state['current_page'] = "Explorar Obras"
-                    st.rerun()
-
-        # Botão Área Administrativa
-        with col2:
-            with st.form("nav_admin_form", clear_on_submit=False):
-                st.markdown(f"""
-                    <button type="submit" class='bottom-nav-button {"active" if st.session_state['current_page'] == "Área Administrativa" else ""}' 
-                            name="nav_button" value="Área Administrativa">
-                        Área Administrativa
-                    </button>
-                    """, unsafe_allow_html=True)
-                if st.form_submit_button("Hidden Admin Button", key="hidden_admin_btn"):
-                    st.session_state['current_page'] = "Área Administrativa"
-                    st.rerun()
 
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -733,7 +713,7 @@ def show_intro():
     st.markdown("<h1 class='main-title'>Sistema Folksonomia Digital</h1>", unsafe_allow_html=True)
     st.markdown("<p class='subtitle'>Sistema de catalogação colaborativa de obras de arte<br>Complete o questionário para acessar a plataforma</p>", unsafe_allow_html=True)
     st.markdown("<div class='professional-card'>", unsafe_allow_html=True)
-    st.markdown("<h2 style='color: #1e293b; text-align: center; margin-bottom: 2rem; font-size: 1.5rem;'>Questionário de Acesso</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='color: #2c3e50; text-align: center; margin-bottom: 2rem; font-size: 1.5rem;'>Questionário de Acesso</h2>", unsafe_allow_html=True)
     with st.form("intro_form"):
         nome_usuario = st.text_input("Seu Nome:", placeholder="Digite seu nome completo")
         col1, col2 = st.columns([1, 1])
@@ -786,7 +766,7 @@ def show_obras():
     else:
         filtered = sorted(filtered, key=lambda x: x['ano'])
 
-    st.markdown(f"<div style='text-align: center; color: #64748b; margin: 2rem 0; font-size: 1.1rem;'>Exibindo <strong style='color: #475569;'>{len(filtered)}</strong> obra(s)</div>", unsafe_allow_html=True)
+    st.markdown(f"<div style='text-align: center; color: #7f8c8d; margin: 2rem 0; font-size: 1.1rem;'>Exibindo <strong style='color: #34495e;'>{len(filtered)}</strong> obra(s)</div>", unsafe_allow_html=True)
 
     cols = st.columns(3)
     for i, obra in enumerate(filtered):
@@ -795,14 +775,13 @@ def show_obras():
             <div class='obra-card'>
                 <img src='{obra['imagem']}' alt='{obra['titulo']}' />
                 <div style='padding: 1.5rem;'>
-                    <h3 style='color: #1e293b; font-size: 1.2rem; font-weight: 700; margin-bottom: 0.5rem;'>{obra['titulo']}</h3>
-                    <p style='color: #64748b; font-size: 0.9rem; margin: 0.3rem 0;'><span style='font-weight: 600;'>Artista:</span> {obra['artista']}</p>
-                    <p style='color: #94a3b8; font-size: 0.85rem;'><span style='font-weight: 600;'>Ano:</span> {obra['ano']}</p>
+                    <h3 style='color: #2c3e50; font-size: 1.2rem; font-weight: 700; margin-bottom: 0.5rem;'>{obra['titulo']}</h3>
+                    <p style='color: #7f8c8d; font-size: 0.9rem; margin: 0.3rem 0;'><span style='font-weight: 600;'>Artista:</span> {obra['artista']}</p>
+                    <p style='color: #aeb8c4; font-size: 0.85rem;'><span style='font-weight: 600;'>Ano:</span> {obra['ano']}</p>
                 </div>
             </div>
             """, unsafe_allow_html=True)
 
-            # Adicionar um identificador único para o formulário de tag
             form_key = f"tag_form_{obra['id']}_{st.session_state['user_id']}"
 
             if st.button(f"Adicionar Tag", key=f"btn_add_tag_{obra['id']}", use_container_width=True):
@@ -846,7 +825,7 @@ def show_admin():
         col1, col2, col3 = st.columns([1, 1, 1])
         with col2:
             st.markdown("<div class='professional-card'>", unsafe_allow_html=True)
-            st.markdown("<h2 style='color: #1e293b; text-align: center; margin-bottom: 2rem;'>Login Administrativo</h2>", unsafe_allow_html=True)
+            st.markdown("<h2 style='color: #2c3e50; text-align: center; margin-bottom: 2rem;'>Login Administrativo</h2>", unsafe_allow_html=True)
             with st.form("login"):
                 username = st.text_input("Usuário:", placeholder="Digite seu usuário")
                 password = st.text_input("Senha:", type="password", placeholder="Digite sua senha")
@@ -862,9 +841,9 @@ def show_admin():
                         st.error("Credenciais inválidas. Acesso negado.")
             st.markdown("</div>", unsafe_allow_html=True)
     else:
-        st.markdown(f"<h1 class='main-title'>Dashboard Administrativo</h1><p class='subtitle'>Bem-vindo, <strong style='color: #475569;'>{st.session_state.get('admin_username', 'Admin')}</strong></p>", unsafe_allow_html=True)
+        st.markdown(f"<h1 class='main-title'>Dashboard Administrativo</h1><p class='subtitle'>Bem-vindo, <strong style='color: #34495e;'>{st.session_state.get('admin_username', 'Admin')}</strong></p>", unsafe_allow_html=True)
 
-        tabs = st.tabs(["Visão Geral", "Análises", "Dados", "Obras", "Exportar Completo", "Exportar Usuários"])
+        tabs = st.tabs(["Visão Geral", "Análises", "Dados Detalhados", "Gestão de Obras", "Exportar Completo", "Exportar Usuários"])
 
         with tabs[0]:
             show_overview()
@@ -893,10 +872,10 @@ def show_overview():
     st.markdown("### Métricas Principais")
     col1, col2, col3, col4 = st.columns(4)
     metrics = [
-        ("Usuários", len(users_df['user_id'].unique()) if not users_df.empty else 0),
-        ("Total Tags", len(tags_df) if not tags_df.empty else 0),
+        ("Usuários Ativos", len(users_df['user_id'].unique()) if not users_df.empty else 0),
+        ("Total de Tags", len(tags_df) if not tags_df.empty else 0),
         ("Tags Únicas", len(tags_df['tag'].unique()) if not tags_df.empty else 0),
-        ("Obras", len(obras))
+        ("Obras Cadastradas", len(obras))
     ]
     for col, (label, value) in zip([col1, col2, col3, col4], metrics):
         with col:
@@ -908,7 +887,7 @@ def show_overview():
             """, unsafe_allow_html=True)
 
     if not tags_df.empty:
-        st.markdown("### Rankings")
+        st.markdown("### Rankings de Engajamento")
         col1, col2 = st.columns(2)
         with col1:
             st.markdown("#### Top 15 Tags Mais Utilizadas")
@@ -922,44 +901,59 @@ def show_overview():
             ot['Obra'] = ot['obra_id'].map(od)
             st.dataframe(ot[['Obra', 'Total']].sort_values('Total', ascending=False).head(10),
                          use_container_width=True, hide_index=True)
+    else:
+        st.info("Não há dados de tags para exibir rankings.")
 
 def show_analysis():
-    st.markdown("### Análises Gerais")
+    st.markdown("### Análises Visuais de Dados")
     tags_df = load_all_tags()
-    if tags_df.empty:
-        st.info("Não há dados suficientes para análises.")
+    users_df = load_all_users()
+    obras = load_obras()
+
+    if tags_df.empty and users_df.empty:
+        st.info("Não há dados suficientes para análises visuais.")
         return
 
-    col1, col2 = st.columns(2)
+    st.markdown("#### Distribuição das 15 Tags Mais Frequentes")
+    if not tags_df.empty:
+        top_tags_counts = tags_df['tag'].value_counts().head(15).reset_index()
+        top_tags_counts.columns = ['Tag', 'Frequência']
+        fig = px.bar(top_tags_counts, x='Tag', y='Frequência', title='Top 15 Tags Mais Frequentes',
+                     color='Frequência', color_continuous_scale=px.colors.sequential.Blues,
+                     template="plotly_white")
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("Não há tags para exibir a distribuição.")
 
-    with col1:
-        st.markdown("#### Distribuição de Tags (Top 15)")
-        counts = tags_df['tag'].value_counts().head(15)
-        if not counts.empty:
-            # Usando st.bar_chart no lugar do Plotly pie chart
-            st.bar_chart(counts)
-        else:
-            st.info("Não há tags para exibir.")
-
-    with col2:
-        st.markdown("#### Obras Mais Tagueadas (Top 10)")
-        per_obra = tags_df.groupby('obra_id').size()
-        obras = load_obras()
+    st.markdown("#### Distribuição das 10 Obras Mais Tagueadas")
+    if not tags_df.empty:
+        ot = tags_df.groupby('obra_id').size().reset_index(name='Total')
         od = {o['id']: o['titulo'] for o in obras}
-        per_obra_named = per_obra.rename(index=od).sort_values(ascending=False).head(10)
-        if not per_obra_named.empty:
-            # Usando st.bar_chart no lugar do Plotly pie chart
-            st.bar_chart(per_obra_named)
-        else:
-            st.info("Não há obras tagueadas para exibir.")
+        ot['Obra'] = ot['obra_id'].map(od)
+        top_obras_counts = ot[['Obra', 'Total']].sort_values('Total', ascending=False).head(10)
+        fig = px.bar(top_obras_counts, x='Obra', y='Total', title='Top 10 Obras Mais Tagueadas',
+                     color='Total', color_continuous_scale=px.colors.sequential.Greens,
+                     template="plotly_white")
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("Não há obras tagueadas para exibir a distribuição.")
 
-    st.markdown("#### Tags Raras (Top 10 menos usadas)")
-    rare_tags = tags_df['tag'].value_counts().tail(10).reset_index()
-    rare_tags.columns = ['Tag', 'Quantidade']
-    st.dataframe(rare_tags, use_container_width=True, hide_index=True)
+    st.markdown("#### Distribuição do Comprimento das Tags")
+    if not tags_df.empty:
+        tags_df['tag_length'] = tags_df['tag'].str.len()
+        length_counts = tags_df['tag_length'].value_counts().sort_index().reset_index()
+        length_counts.columns = ['Comprimento da Tag', 'Frequência']
+        fig = px.bar(length_counts, x='Comprimento da Tag', y='Frequência', title='Distribuição do Comprimento das Tags',
+                     color='Frequência', color_continuous_scale=px.colors.sequential.Purples,
+                     template="plotly_white")
+        st.plotly_chart(fig, use_container_width=True)
+        st.write(f"Média de comprimento das tags: **{tags_df['tag_length'].mean():.2f}** caracteres")
+        st.write(f"Desvio padrão do comprimento das tags: **{tags_df['tag_length'].std():.2f}** caracteres")
+    else:
+        st.info("Não há tags para analisar o comprimento.")
 
 def show_data_analysis():
-    st.markdown("### Análise Detalhada de Dados")
+    st.markdown("### Análise Detalhada de Dados e Conexões")
     tags_df = load_all_tags()
     users_df = load_all_users()
     obras = load_obras()
@@ -968,170 +962,110 @@ def show_data_analysis():
         st.info("Sem dados suficientes para análise detalhada.")
         return
 
-    tab_overview, tab_tags_detail, tab_questionnaire_analysis = st.tabs(["Visão Geral dos Dados", "Análise de Tags Detalhada", "Análise do Questionário"])
+    st.markdown("#### Dados de Usuários e Suas Tags")
+    if not users_df.empty:
+        user_tag_counts = tags_df.groupby('user_id').agg(
+            total_tags=('tag', 'count'),
+            tags_unicas=('tag', 'nunique'),
+            obras_taguadas=('obra_id', 'nunique')
+        ).reset_index()
 
-    with tab_overview:
-        st.markdown("#### Resumo dos Dados Coletados")
-        col1, col2, col3, col4 = st.columns(4)
-        metrics = [
-            ("Total de Usuários", len(users_df['user_id'].unique()) if not users_df.empty else 0),
-            ("Total de Tags", len(tags_df) if not tags_df.empty else 0),
-            ("Tags Únicas", len(tags_df['tag'].unique()) if not tags_df.empty else 0),
-            ("Total de Obras", len(obras))
-        ]
-        for col, (label, value) in zip([col1, col2, col3, col4], metrics):
-            with col:
-                st.markdown(f"""
-                <div class='metric-card'>
-                    <div class='metric-label'>{label}</div>
-                    <div class='metric-value'>{value}</div>
-                </div>
-                """, unsafe_allow_html=True)
+        users_with_tags = pd.merge(users_df, user_tag_counts, on='user_id', how='left').fillna(0)
+        users_with_tags['Nome do Usuário'] = users_with_tags['user_id'].apply(get_user_name_by_id)
 
+        st.dataframe(users_with_tags[['Nome do Usuário', 'total_tags', 'tags_unicas', 'obras_taguadas', 'timestamp']].sort_values('total_tags', ascending=False), use_container_width=True, hide_index=True)
+    else:
+        st.info("Nenhum usuário cadastrado ou tags criadas.")
+
+    st.markdown("#### Análise de Co-ocorrência de Tags (Padrões de Ligação)")
+    st.info("Esta análise identifica quais tags são frequentemente usadas juntas em uma mesma obra, revelando padrões de tagueamento e possíveis relações semânticas.")
+
+    if not tags_df.empty:
+        # Criar uma lista de sets de tags por obra para co-ocorrência
+        tags_by_obra = tags_df.groupby('obra_id')['tag'].apply(lambda x: set(x.tolist())).tolist()
+
+        co_occurrence = {}
+        for i in range(len(tags_by_obra)):
+            for tag1 in tags_by_obra[i]:
+                for tag2 in tags_by_obra[i]:
+                    if tag1 != tag2:
+                        pair = tuple(sorted((tag1, tag2)))
+                        co_occurrence[pair] = co_occurrence.get(pair, 0) + 1
+
+        if co_occurrence:
+            co_occurrence_df = pd.DataFrame(co_occurrence.items(), columns=['Par de Tags', 'Frequência'])
+            co_occurrence_df['Tag 1'] = co_occurrence_df['Par de Tags'].apply(lambda x: x[0])
+            co_occurrence_df['Tag 2'] = co_occurrence_df['Par de Tags'].apply(lambda x: x[1])
+
+            st.markdown("##### Top 20 Pares de Tags Mais Co-ocorrentes")
+            st.dataframe(co_occurrence_df[['Tag 1', 'Tag 2', 'Frequência']].sort_values('Frequência', ascending=False).head(20), use_container_width=True, hide_index=True)
+
+            # Análise mais profunda: Sugestão de tags relacionadas
+            st.markdown("##### Sugestão de Tags Relacionadas (Baseado em Co-ocorrência)")
+            selected_tag = st.selectbox("Selecione uma tag para ver suas co-ocorrências:", sorted(tags_df['tag'].unique().tolist()))
+            if selected_tag:
+                related_tags = co_occurrence_df[(co_occurrence_df['Tag 1'] == selected_tag) | (co_occurrence_df['Tag 2'] == selected_tag)]
+                if not related_tags.empty:
+                    # Extrair a tag oposta e somar frequências
+                    related_counts = {}
+                    for _, row in related_tags.iterrows():
+                        other_tag = row['Tag 2'] if row['Tag 1'] == selected_tag else row['Tag 1']
+                        related_counts[other_tag] = related_counts.get(other_tag, 0) + row['Frequência']
+
+                    related_df = pd.DataFrame(related_counts.items(), columns=['Tag Relacionada', 'Frequência de Co-ocorrência']).sort_values('Frequência de Co-ocorrência', ascending=False)
+
+                    st.dataframe(related_df, use_container_width=True, hide_index=True)
+
+                    fig_related = px.bar(related_df.head(10), x='Tag Relacionada', y='Frequência de Co-ocorrência',
+                                         title=f'Tags Mais Relacionadas a "{selected_tag}"',
+                                         color='Frequência de Co-ocorrência', color_continuous_scale=px.colors.sequential.Oranges,
+                                         template="plotly_white")
+                    st.plotly_chart(fig_related, use_container_width=True)
+                else:
+                    st.info(f"Não foram encontradas co-ocorrências para a tag '{selected_tag}'.")
+        else:
+            st.info("Não há tags suficientes para analisar co-ocorrência.")
+    else:
+        st.info("Não há tags para análise detalhada de conexões.")
+
+    st.markdown("#### Análise do Questionário de Usuários")
+    if not users_df.empty:
+        st.markdown("##### Distribuição das Respostas (Q1: Familiaridade com Museus)")
+        q1_counts = users_df['q1'].value_counts().reset_index()
+        q1_counts.columns = ['Nível de Familiaridade', 'Contagem']
+        fig_q1 = px.bar(q1_counts, x='Nível de Familiaridade', y='Contagem', title='Familiaridade com Museus',
+                        color='Contagem', color_continuous_scale=px.colors.sequential.Greens,
+                        template="plotly_white")
+        st.plotly_chart(fig_q1, use_container_width=True)
+
+        st.markdown("##### Distribuição das Respostas (Q2: Conhecimento sobre Documentação Museológica)")
+        q2_counts = users_df['q2'].value_counts().reset_index()
+        q2_counts.columns = ['Nível de Conhecimento', 'Contagem']
+        fig_q2 = px.bar(q2_counts, x='Nível de Conhecimento', y='Contagem', title='Conhecimento sobre Documentação Museológica',
+                        color='Contagem', color_continuous_scale=px.colors.sequential.Purples,
+                        template="plotly_white")
+        st.plotly_chart(fig_q2, use_container_width=True)
+
+        st.markdown("##### Correlação: Familiaridade com Museus vs. Número de Tags Criadas")
         if not tags_df.empty:
-            st.markdown("#### Distribuição das 10 Tags Mais Frequentes")
-            top_tags_counts = tags_df['tag'].value_counts().head(10)
-            if not top_tags_counts.empty:
-                # Usando st.bar_chart no lugar do Plotly pie chart
-                st.bar_chart(top_tags_counts)
-            else:
-                st.info("Não há tags para exibir.")
-
-            st.markdown("#### Distribuição das 10 Obras Mais Tagueadas")
-            ot = tags_df.groupby('obra_id').size().reset_index(name='Total')
-            od = {o['id']: o['titulo'] for o in obras}
-            ot['Obra'] = ot['obra_id'].map(od)
-            top_obras_counts = ot[['Obra', 'Total']].sort_values('Total', ascending=False).head(10).set_index('Obra')
-            if not top_obras_counts.empty:
-                # Usando st.bar_chart no lugar do Plotly pie chart
-                st.bar_chart(top_obras_counts)
-            else:
-                st.info("Não há obras tagueadas para exibir.")
+            user_tag_counts = tags_df.groupby('user_id').size().reset_index(name='Total_Tags')
+            merged_df = pd.merge(users_df, user_tag_counts, on='user_id', how='left').fillna(0)
+            avg_tags_by_familiarity = merged_df.groupby('q1')['Total_Tags'].mean().reset_index()
+            fig_corr_q1_tags = px.bar(avg_tags_by_familiarity, x='q1', y='Total_Tags',
+                                      title='Média de Tags Criadas por Nível de Familiaridade com Museus',
+                                      labels={'q1':'Familiaridade com Museus', 'Total_Tags':'Média de Tags'},
+                                      color='Total_Tags', color_continuous_scale=px.colors.sequential.YlGnBu,
+                                      template="plotly_white")
+            st.plotly_chart(fig_corr_q1_tags, use_container_width=True)
+            st.dataframe(avg_tags_by_familiarity.rename(columns={'q1': 'Familiaridade com Museus', 'Total_Tags': 'Média de Tags'}), use_container_width=True, hide_index=True)
         else:
-            st.info("Não há tags para exibir rankings e distribuições.")
+            st.info("Não há tags para cruzar com os dados do questionário.")
 
-    with tab_tags_detail:
-        st.markdown("#### Análise Aprofundada das Tags")
-        if not tags_df.empty:
-            st.markdown("##### Todas as Tags e Suas Frequências")
-            st.dataframe(tags_df['tag'].value_counts().reset_index().rename(columns={'index': 'Tag', 'tag': 'Frequência Total'}), use_container_width=True, hide_index=True)
-
-            st.markdown("##### Distribuição de Tags Únicas por Obra")
-            tags_per_obra_unique = tags_df.groupby('obra_id')['tag'].nunique().reset_index()
-            tags_per_obra_unique.columns = ['obra_id', 'Tags Únicas']
-            obras_dict = {o['id']: o['titulo'] for o in obras}
-            tags_per_obra_unique['Obra'] = tags_per_obra_unique['obra_id'].map(obras_dict)
-
-            top_unique_obra_tags = tags_per_obra_unique.sort_values('Tags Únicas', ascending=False).head(10).set_index('Obra')
-            if not top_unique_obra_tags.empty:
-                # Usando st.bar_chart no lugar do Plotly pie chart
-                st.bar_chart(top_unique_obra_tags)
-            else:
-                st.info("Não há tags únicas por obra para exibir.")
-            st.dataframe(tags_per_obra_unique[['Obra', 'Tags Únicas']].sort_values('Tags Únicas', ascending=False), use_container_width=True, hide_index=True)
-
-            st.markdown("##### Distribuição de Tags Únicas por Usuário")
-            tags_per_user_unique = tags_df.groupby('user_id')['tag'].nunique().reset_index()
-            tags_per_user_unique.columns = ['user_id', 'Tags Únicas']
-            tags_per_user_unique['Nome do Usuário'] = tags_per_user_unique['user_id'].apply(get_user_name_by_id)
-
-            top_unique_user_tags = tags_per_user_unique.sort_values('Tags Únicas', ascending=False).head(10).set_index('Nome do Usuário')
-            if not top_unique_user_tags.empty:
-                # Usando st.bar_chart no lugar do Plotly pie chart
-                st.bar_chart(top_unique_user_tags)
-            else:
-                st.info("Não há tags únicas por usuário para exibir.")
-            st.dataframe(tags_per_user_unique[['Nome do Usuário', 'Tags Únicas']].sort_values('Tags Únicas', ascending=False), use_container_width=True, hide_index=True)
-
-            st.markdown("##### Análise de Co-ocorrência de Tags (Padrões de Ligação)")
-            st.info("Esta análise mostra quais tags tendem a aparecer juntas nas mesmas obras. Isso ajuda a identificar padrões e 'bases' de tagueamento.")
-
-            tags_by_obra = tags_df.groupby('obra_id')['tag'].apply(lambda x: set(x.tolist())).tolist()
-
-            co_occurrence = {}
-            for i in range(len(tags_by_obra)):
-                for tag1 in tags_by_obra[i]:
-                    for tag2 in tags_by_obra[i]:
-                        if tag1 != tag2:
-                            pair = tuple(sorted((tag1, tag2)))
-                            co_occurrence[pair] = co_occurrence.get(pair, 0) + 1
-
-            if co_occurrence:
-                co_occurrence_df = pd.DataFrame(co_occurrence.items(), columns=['Par de Tags', 'Frequência'])
-                co_occurrence_df['Tag 1'] = co_occurrence_df['Par de Tags'].apply(lambda x: x[0])
-                co_occurrence_df['Tag 2'] = co_occurrence_df['Par de Tags'].apply(lambda x: x[1])
-                st.dataframe(co_occurrence_df[['Tag 1', 'Tag 2', 'Frequência']].sort_values('Frequência', ascending=False).head(20), use_container_width=True, hide_index=True)
-            else:
-                st.info("Não há tags suficientes para analisar co-ocorrência.")
-
-            st.markdown("##### Distribuição do Comprimento das Tags")
-            if not tags_df.empty:
-                tags_df['tag_length'] = tags_df['tag'].str.len()
-                length_counts = tags_df['tag_length'].value_counts().sort_index()
-                if not length_counts.empty:
-                    st.bar_chart(length_counts)
-                else:
-                    st.info("Não há tags para analisar o comprimento.")
-                st.write(f"Média de comprimento das tags: {tags_df['tag_length'].mean():.2f} caracteres")
-                st.write(f"Desvio padrão do comprimento das tags: {tags_df['tag_length'].std():.2f} caracteres")
-            else:
-                st.info("Não há tags para analisar o comprimento.")
-
-        else:
-            st.info("Não há tags para análise detalhada.")
-
-    with tab_questionnaire_analysis:
-        st.markdown("#### Análise do Questionário de Usuários")
-        if not users_df.empty:
-            st.markdown("##### Distribuição das Respostas (Q1: Familiaridade com Museus)")
-            q1_counts = users_df['q1'].value_counts()
-            if not q1_counts.empty:
-                # Usando st.bar_chart no lugar do Plotly pie chart
-                st.bar_chart(q1_counts)
-            else:
-                st.info("Não há respostas para Q1.")
-
-            st.markdown("##### Distribuição das Respostas (Q2: Conhecimento sobre Documentação Museológica)")
-            q2_counts = users_df['q2'].value_counts()
-            if not q2_counts.empty:
-                # Usando st.bar_chart no lugar do Plotly pie chart
-                st.bar_chart(q2_counts)
-            else:
-                st.info("Não há respostas para Q2.")
-
-            st.markdown("##### Cruzamento de Dados: Familiaridade com Museus vs. Número de Tags Criadas")
-            if not tags_df.empty:
-                user_tag_counts = tags_df.groupby('user_id').size().reset_index(name='Total_Tags')
-                merged_df = pd.merge(users_df, user_tag_counts, on='user_id', how='left').fillna(0)
-                avg_tags_by_familiarity = merged_df.groupby('q1')['Total_Tags'].mean().sort_values(ascending=False)
-                if not avg_tags_by_familiarity.empty:
-                    st.bar_chart(avg_tags_by_familiarity)
-                else:
-                    st.info("Não há dados de tags para cruzar com Q1.")
-                st.write("Média de tags criadas por nível de familiaridade com museus:")
-                st.dataframe(avg_tags_by_familiarity.reset_index(), use_container_width=True, hide_index=True)
-            else:
-                st.info("Não há tags para cruzar com os dados do questionário.")
-
-            st.markdown("##### Cruzamento de Dados: Familiaridade com Museus vs. Diversidade de Tags Criadas")
-            if not tags_df.empty:
-                user_unique_tag_counts = tags_df.groupby('user_id')['tag'].nunique().reset_index(name='Tags_Unicas')
-                merged_df_unique = pd.merge(users_df, user_unique_tag_counts, on='user_id', how='left').fillna(0)
-                avg_unique_tags_by_familiarity = merged_df_unique.groupby('q1')['Tags_Unicas'].mean().sort_values(ascending=False)
-                if not avg_unique_tags_by_familiarity.empty:
-                    st.bar_chart(avg_unique_tags_by_familiarity)
-                else:
-                    st.info("Não há dados de tags únicas para cruzar com Q1.")
-                st.write("Média de tags únicas criadas por nível de familiaridade com museus:")
-                st.dataframe(avg_unique_tags_by_familiarity.reset_index(), use_container_width=True, hide_index=True)
-            else:
-                st.info("Não há tags para cruzar com os dados do questionário.")
-
-            st.markdown("##### Respostas Abertas (Q3: O que você entende por 'tags'?)")
-            st.dataframe(users_df[['user_id', 'nome', 'q3', 'timestamp']].sort_values('timestamp', ascending=False), use_container_width=True, hide_index=True)
-            st.info("Para uma análise mais profunda das respostas abertas, seria necessário processamento de linguagem natural (NLP) para identificar temas e padrões.")
-        else:
-            st.info("Nenhum usuário respondeu ao questionário ainda.")
+        st.markdown("##### Respostas Abertas (Q3: O que você entende por 'tags'?)")
+        st.dataframe(users_df[['user_id', 'nome', 'q3', 'timestamp']].sort_values('timestamp', ascending=False), use_container_width=True, hide_index=True)
+        st.info("Para uma análise mais profunda das respostas abertas, seria necessário processamento de linguagem natural (NLP) para identificar temas e padrões.")
+    else:
+        st.info("Nenhum usuário respondeu ao questionário ainda.")
 
 def show_manage_obras():
     st.markdown("### Gestão de Obras")
@@ -1237,4 +1171,3 @@ def show_export_users():
 
 if __name__ == "__main__":
     main()
-
