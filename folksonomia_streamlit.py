@@ -7,7 +7,6 @@ import hashlib
 import base64
 import json
 import warnings
-import plotly.graph_objects as go
 from collections import Counter
 warnings.filterwarnings('ignore')
 
