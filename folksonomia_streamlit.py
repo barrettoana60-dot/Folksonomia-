@@ -7,8 +7,6 @@ import hashlib
 import base64
 import json
 import warnings
-# import matplotlib.pyplot as plt # Manter comentado por enquanto, só se for realmente necessário para algo específico
-# from wordcloud import WordCloud # Manter comentado, requer instalação e pode ser problemático
 
 warnings.filterwarnings('ignore')
 
@@ -40,7 +38,11 @@ def load_json_file(filepath, default_data):
         try:
             with open(filepath, 'r', encoding='utf-8') as f:
                 return json.load(f)
-        except:
+        except json.JSONDecodeError: # Adicionado tratamento para JSON inválido
+            st.error(f"Erro ao ler o arquivo {filepath}. O arquivo pode estar corrompido. Usando dados padrão.")
+            return default_data
+        except Exception as e:
+            st.error(f"Erro inesperado ao carregar {filepath}: {e}. Usando dados padrão.")
             return default_data
     return default_data
 
@@ -50,7 +52,8 @@ def save_json_file(filepath, data):
         with open(filepath, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         return True
-    except:
+    except Exception as e:
+        st.error(f"Erro ao salvar o arquivo {filepath}: {e}")
         return False
 
 # ==================== CSS PROFISSIONAL CLARO (com letras pretas) ====================
@@ -257,6 +260,27 @@ def load_custom_css():
         border: 1px solid #fca5a5;
         color: #991b1b;
     }
+    /* Cores para st.info, st.success, st.warning, st.error para texto escuro */
+    .stAlert {
+        color: #1e293b !important; /* Texto escuro para alertas */
+    }
+    .stAlert.info {
+        background-color: #e0f2fe !important; /* Azul claro */
+        border-left: 5px solid #0ea5e9 !important;
+    }
+    .stAlert.success {
+        background-color: #dcfce7 !important; /* Verde claro */
+        border-left: 5px solid #22c55e !important;
+    }
+    .stAlert.warning {
+        background-color: #fef3c7 !important; /* Amarelo claro */
+        border-left: 5px solid #f59e0b !important;
+    }
+    .stAlert.error {
+        background-color: #fee2e2 !important; /* Vermelho claro */
+        border-left: 5px solid #ef4444 !important;
+    }
+
     #MainMenu, footer, header {visibility: hidden;}
     .stDeployButton {display: none;}
     [data-testid="stSidebar"] {display: none;}
@@ -353,29 +377,9 @@ def load_all_users():
     users = load_json_file(USERS_FILE, [])
     return pd.DataFrame(users) if users else pd.DataFrame()
 
-# ==================== ANÁLISES ====================
-def calculate_quality_metrics(tags_df):
-    if tags_df.empty:
-        return None
-    metrics = {}
-    # Especificidade: proporção de tags únicas em relação ao total de tags
-    metrics['specificity'] = len(tags_df['tag'].unique()) / len(tags_df) * 100
-
-    # Consistência: variação no comprimento das tags (menor variação = mais consistente)
-    lengths = tags_df['tag'].str.len()
-    metrics['consistency'] = 100 - (lengths.std() / lengths.mean() * 100) if lengths.mean() > 0 else 0
-
-    # Completude: proporção de obras com um número mínimo de tags (ex: 3)
-    per_obra = tags_df.groupby('obra_id').size()
-    metrics['completeness'] = (per_obra >= 3).sum() / len(per_obra) * 100 if len(per_obra) > 0 else 0
-
-    # Métrica geral ponderada
-    metrics['overall'] = (
-        metrics['specificity'] * 0.4 +
-        metrics['consistency'] * 0.3 +
-        metrics['completeness'] * 0.3
-    )
-    return metrics
+# ==================== ANÁLISES (Função calculate_quality_metrics removida ou esvaziada) ====================
+# A função calculate_quality_metrics não é mais usada, pois as métricas genéricas foram removidas.
+# Se você quiser adicionar métricas específicas no futuro, pode recriá-la.
 
 # ==================== EXPORTAÇÃO PDF/PLANILHA ====================
 def generate_user_questionnaire_report(user_id):
@@ -410,6 +414,7 @@ def generate_user_questionnaire_report(user_id):
         <div class="container">
             <h1>Respostas do Questionário de Acesso</h1>
             <div class="header-info">
+                <p><strong>Nome do Usuário:</strong> {user_info.get('nome', 'N/A')}</p>
                 <p><strong>ID do Usuário:</strong> {user_id}</p>
                 <p><strong>Data de Resposta:</strong> {user_info.get('timestamp', 'N/A')}</p>
             </div>
@@ -570,7 +575,8 @@ def main():
     load_custom_css()
     try:
         check_and_init_admin()
-    except:
+    except Exception as e:
+        st.error(f"Erro ao inicializar admin: {e}")
         pass
 
     if 'user_id' not in st.session_state:
@@ -598,8 +604,9 @@ def show_intro():
     st.markdown("<h1 class='main-title'>Sistema Folksonomia Digital</h1>", unsafe_allow_html=True)
     st.markdown("<p class='subtitle'>Sistema de catalogação colaborativa de obras de arte<br>Complete o questionário para acessar a plataforma</p>", unsafe_allow_html=True)
     st.markdown("<div class='professional-card'>", unsafe_allow_html=True)
-    st.markdown("<h2 style='color: #475569; text-align: center; margin-bottom: 2rem; font-size: 1.5rem;'>Questionário de Acesso</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='color: #1e293b; text-align: center; margin-bottom: 2rem; font-size: 1.5rem;'>Questionário de Acesso</h2>", unsafe_allow_html=True)
     with st.form("intro_form"):
+        nome_usuario = st.text_input("Seu Nome:", placeholder="Digite seu nome completo")
         col1, col2 = st.columns([1, 1])
         with col1:
             q1 = st.selectbox("1. Qual é o seu nível de familiaridade com museus?",
@@ -613,10 +620,10 @@ def show_intro():
         with col_btn2:
             submit = st.form_submit_button("Acessar Plataforma", use_container_width=True)
         if submit:
-            if not q3.strip():
-                st.error("Por favor, responda todas as perguntas para continuar!")
+            if not nome_usuario.strip() or not q3.strip():
+                st.error("Por favor, preencha seu nome e responda todas as perguntas para continuar!")
             else:
-                st.session_state['answers'] = {"q1": q1, "q2": q2, "q3": q3}
+                st.session_state['answers'] = {"nome": nome_usuario, "q1": q1, "q2": q2, "q3": q3}
                 save_user_answers(st.session_state['user_id'], st.session_state['answers'])
                 st.session_state['step'] = 'completed'
                 st.success("Questionário completo! Acesso liberado.")
@@ -632,55 +639,7 @@ def show_obras():
         st.info("Nenhuma obra cadastrada no momento.")
         return
 
-    # Exportar dados do usuário
-    st.markdown("<div class='professional-card'>", unsafe_allow_html=True)
-    st.markdown("### Exportar Seus Dados")
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        quest_html = generate_user_questionnaire_report(st.session_state['user_id'])
-        if quest_html:
-            st.download_button(
-                "Baixar Respostas (HTML/PDF)",
-                quest_html,
-                f"questionario_{st.session_state['user_id']}.html",
-                "text/html",
-                use_container_width=True
-            )
-    with col2:
-        users_df = load_all_users()
-        if not users_df.empty:
-            user_data = users_df[users_df['user_id'] == st.session_state['user_id']]
-            if not user_data.empty:
-                csv = user_data.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    "Baixar Respostas (CSV)",
-                    csv,
-                    f"questionario_{st.session_state['user_id']}.csv",
-                    "text/csv",
-                    use_container_width=True
-                )
-    with col3:
-        tags_html = generate_user_tags_report(st.session_state['user_id'], obras)
-        if tags_html:
-            st.download_button(
-                "Baixar Tags (HTML/PDF)",
-                tags_html,
-                f"tags_{st.session_state['user_id']}.html",
-                "text/html",
-                use_container_width=True
-            )
-    with col4:
-        user_tags_df = get_user_tags(st.session_state['user_id'])
-        if not user_tags_df.empty:
-            csv = user_tags_df.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                "Baixar Tags (CSV)",
-                csv,
-                f"tags_{st.session_state['user_id']}.csv",
-                "text/csv",
-                use_container_width=True
-            )
-    st.markdown("</div>", unsafe_allow_html=True)
+    # REMOVIDA A SEÇÃO DE EXPORTAR DADOS DO USUÁRIO DA ÁREA PÚBLICA
 
     # Filtros
     st.markdown("<div class='professional-card'>", unsafe_allow_html=True)
@@ -711,8 +670,8 @@ def show_obras():
                 <img src='{obra['imagem']}' alt='{obra['titulo']}' />
                 <div style='padding: 1.5rem;'>
                     <h3 style='color: #1e293b; font-size: 1.2rem; font-weight: 700; margin-bottom: 0.5rem;'>{obra['titulo']}</h3>
-                    <p style='color: #64748b; font-size: 0.9rem; margin: 0.3rem 0;'>{obra['artista']}</p>
-                    <p style='color: #94a3b8; font-size: 0.85rem;'>{obra['ano']}</p>
+                    <p style='color: #64748b; font-size: 0.9rem; margin: 0.3rem 0;'><span style='font-weight: 600;'>Artista:</span> {obra['artista']}</p>
+                    <p style='color: #94a3b8; font-size: 0.85rem;'><span style='font-weight: 600;'>Ano:</span> {obra['ano']}</p>
                 </div>
             </div>
             """, unsafe_allow_html=True)
@@ -757,7 +716,7 @@ def show_admin():
         col1, col2, col3 = st.columns([1, 1, 1])
         with col2:
             st.markdown("<div class='professional-card'>", unsafe_allow_html=True)
-            st.markdown("<h2 style='color: #475569; text-align: center; margin-bottom: 2rem;'>Login Administrativo</h2>", unsafe_allow_html=True)
+            st.markdown("<h2 style='color: #1e293b; text-align: center; margin-bottom: 2rem;'>Login Administrativo</h2>", unsafe_allow_html=True)
             with st.form("login"):
                 username = st.text_input("Usuário:", placeholder="Digite seu usuário")
                 password = st.text_input("Senha:", type="password", placeholder="Digite sua senha")
@@ -836,7 +795,7 @@ def show_overview():
                          use_container_width=True, hide_index=True)
 
 def show_analysis():
-    st.markdown("### Análises Detalhadas")
+    st.markdown("### Análises Gerais")
     tags_df = load_all_tags()
     if tags_df.empty:
         st.info("Não há dados suficientes para análises.")
@@ -845,103 +804,126 @@ def show_analysis():
     col1, col2 = st.columns(2)
 
     with col1:
-        st.markdown("#### Distribuição de Tags")
-        # Removendo a opção de "Pizza" para evitar Plotly
-        chart_type_tags = st.selectbox("Escolha o tipo de gráfico para Tags:", ["Barras", "Tabela"], key="chart_type_tags_no_plotly")
-        counts = tags_df['tag'].value_counts().head(15) # Aumentei para 15 para mais dados
-
-        if chart_type_tags == "Barras":
-            st.bar_chart(counts)
-        elif chart_type_tags == "Tabela":
-            st.dataframe(counts.reset_index().rename(columns={'index': 'Tag', 'tag': 'Frequência'}), use_container_width=True, hide_index=True)
+        st.markdown("#### Distribuição de Tags (Top 15)")
+        counts = tags_df['tag'].value_counts().head(15)
+        st.bar_chart(counts)
 
     with col2:
-        st.markdown("#### Tags por Obra")
-        # Removendo a opção de "Pizza" para evitar Plotly
-        chart_type_obras = st.selectbox("Escolha o tipo de gráfico para Obras:", ["Barras", "Tabela"], key="chart_type_obras_no_plotly")
+        st.markdown("#### Obras Mais Tagueadas (Top 10)")
         per_obra = tags_df.groupby('obra_id').size()
         obras = load_obras()
         od = {o['id']: o['titulo'] for o in obras}
-        per_obra_named = per_obra.rename(index=od) # Mapeia IDs para títulos
-
-        if chart_type_obras == "Barras":
-            st.bar_chart(per_obra_named)
-        elif chart_type_obras == "Tabela":
-            st.dataframe(per_obra_named.reset_index().rename(columns={'index': 'Obra', 0: 'Frequência'}), use_container_width=True, hide_index=True)
+        per_obra_named = per_obra.rename(index=od)
+        st.bar_chart(per_obra_named.sort_values(ascending=False).head(10))
 
     st.markdown("#### Tags Raras (Top 10 menos usadas)")
     rare_tags = tags_df['tag'].value_counts().tail(10).reset_index()
     rare_tags.columns = ['Tag', 'Quantidade']
     st.dataframe(rare_tags, use_container_width=True, hide_index=True)
 
-def show_data_analysis(): # Função renomeada de show_quality para show_data_analysis
-    st.markdown("### Análise de Dados e Qualidade") # Novo título
+def show_data_analysis(): # Função renomeada e reestruturada
+    st.markdown("### Análise Detalhada de Dados") # Novo título
     tags_df = load_all_tags()
     users_df = load_all_users()
     obras = load_obras()
 
     if tags_df.empty and users_df.empty:
-        st.info("Sem dados suficientes para análise.")
+        st.info("Sem dados suficientes para análise detalhada.")
         return
 
-    tab_metrics, tab_patterns, tab_questionnaire = st.tabs(["Métricas de Qualidade", "Padrões e Diversificação", "Análise do Questionário"])
+    tab_overview, tab_tags_detail, tab_questionnaire_analysis = st.tabs(["Visão Geral dos Dados", "Análise de Tags Detalhada", "Análise do Questionário"])
 
-    with tab_metrics:
-        st.markdown("#### Métricas de Qualidade das Tags")
-        quality = calculate_quality_metrics(tags_df)
-        if quality:
-            score = quality['overall']
-            status = 'status-high' if score >= 70 else 'status-medium' if score >= 50 else 'status-low'
-            status_text = 'Excelente' if score >= 70 else 'Bom' if score >= 50 else 'Regular'
-            st.markdown(f"""
-            <div class='professional-card' style='text-align: center; padding: 3rem;'>
-                <h1 style='font-size: 5rem; color: #475569;'>{score:.1f}</h1>
-                <span class='status-badge {status}'>{status_text}</span>
-            </div>
-            """, unsafe_allow_html=True)
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Especificidade", f"{quality['specificity']:.1f}%", help="Porcentagem de tags únicas em relação ao total de tags. Maior = mais específico.")
-            with col2:
-                st.metric("Consistência", f"{quality['consistency']:.1f}%", help="Medida da uniformidade no comprimento das tags. Maior = mais consistente.")
-            with col3:
-                st.metric("Completude", f"{quality['completeness']:.1f}%", help="Porcentagem de obras com pelo menos 3 tags. Maior = mais completo.")
-        else:
-            st.info("Não há tags para calcular as métricas de qualidade.")
+    with tab_overview:
+        st.markdown("#### Resumo dos Dados Coletados")
+        col1, col2, col3, col4 = st.columns(4)
+        metrics = [
+            ("Total de Usuários", len(users_df['user_id'].unique()) if not users_df.empty else 0),
+            ("Total de Tags", len(tags_df) if not tags_df.empty else 0),
+            ("Tags Únicas", len(tags_df['tag'].unique()) if not tags_df.empty else 0),
+            ("Total de Obras", len(obras))
+        ]
+        for col, (label, value) in zip([col1, col2, col3, col4], metrics):
+            with col:
+                st.markdown(f"""
+                <div class='metric-card'>
+                    <div class='metric-label'>{label}</div>
+                    <div class='metric-value'>{value}</div>
+                </div>
+                """, unsafe_allow_html=True)
 
-    with tab_patterns:
-        st.markdown("#### Análise de Padrões e Diversificação")
         if not tags_df.empty:
-            st.markdown("##### Tags Repetidas e Frequência")
-            st.dataframe(tags_df['tag'].value_counts().reset_index().rename(columns={'index': 'Tag', 'tag': 'Frequência'}), use_container_width=True, hide_index=True)
+            st.markdown("#### Tags Mais Frequentes")
+            st.dataframe(tags_df['tag'].value_counts().head(20).reset_index().rename(columns={'index': 'Tag', 'tag': 'Frequência'}), use_container_width=True, hide_index=True)
 
-            st.markdown("##### Diversificação de Tags por Obra")
-            tags_per_obra = tags_df.groupby('obra_id')['tag'].nunique().reset_index()
-            tags_per_obra.columns = ['obra_id', 'Tags Únicas']
+            st.markdown("#### Obras com Mais Tags")
+            ot = tags_df.groupby('obra_id').size().reset_index(name='Total')
+            od = {o['id']: o['titulo'] for o in obras}
+            ot['Obra'] = ot['obra_id'].map(od)
+            st.dataframe(ot[['Obra', 'Total']].sort_values('Total', ascending=False).head(10), use_container_width=True, hide_index=True)
+        else:
+            st.info("Não há tags para exibir rankings.")
+
+    with tab_tags_detail:
+        st.markdown("#### Análise Aprofundada das Tags")
+        if not tags_df.empty:
+            st.markdown("##### Todas as Tags e Suas Frequências")
+            st.dataframe(tags_df['tag'].value_counts().reset_index().rename(columns={'index': 'Tag', 'tag': 'Frequência Total'}), use_container_width=True, hide_index=True)
+
+            st.markdown("##### Tags Únicas por Obra")
+            tags_per_obra_unique = tags_df.groupby('obra_id')['tag'].nunique().reset_index()
+            tags_per_obra_unique.columns = ['obra_id', 'Tags Únicas']
             obras_dict = {o['id']: o['titulo'] for o in obras}
-            tags_per_obra['Obra'] = tags_per_obra['obra_id'].map(obras_dict)
-            st.dataframe(tags_per_obra[['Obra', 'Tags Únicas']].sort_values('Tags Únicas', ascending=False), use_container_width=True, hide_index=True)
+            tags_per_obra_unique['Obra'] = tags_per_obra_unique['obra_id'].map(obras_dict)
+            st.dataframe(tags_per_obra_unique[['Obra', 'Tags Únicas']].sort_values('Tags Únicas', ascending=False), use_container_width=True, hide_index=True)
+            st.bar_chart(tags_per_obra_unique.set_index('Obra')['Tags Únicas'].head(10))
 
-            st.markdown("##### Diversificação de Tags por Usuário")
-            tags_per_user = tags_df.groupby('user_id')['tag'].nunique().reset_index()
-            tags_per_user.columns = ['user_id', 'Tags Únicas']
-            st.dataframe(tags_per_user.sort_values('Tags Únicas', ascending=False), use_container_width=True, hide_index=True)
+            st.markdown("##### Tags Únicas por Usuário")
+            tags_per_user_unique = tags_df.groupby('user_id')['tag'].nunique().reset_index()
+            tags_per_user_unique.columns = ['user_id', 'Tags Únicas']
+            st.dataframe(tags_per_user_unique.sort_values('Tags Únicas', ascending=False), use_container_width=True, hide_index=True)
+            st.bar_chart(tags_per_user_unique.set_index('user_id')['Tags Únicas'].head(10))
 
-            st.markdown("##### Análise de Similaridade de Tags (Exemplo - requer lógica avançada)")
-            st.info("Para identificar sinônimos ou tags muito similares, seria necessário implementar algoritmos de similaridade textual (ex: embeddings de palavras, distância de Levenshtein).")
+            st.markdown("##### Análise de Co-ocorrência de Tags (Padrões de Ligação)")
+            st.info("Esta análise mostra quais tags tendem a aparecer juntas nas mesmas obras. Isso ajuda a identificar padrões e 'bases' de tagueamento.")
+
+            # Criar uma lista de sets de tags por obra para co-ocorrência
+            tags_by_obra = tags_df.groupby('obra_id')['tag'].apply(lambda x: set(x.tolist())).tolist()
+
+            co_occurrence = {}
+            for i in range(len(tags_by_obra)):
+                for tag1 in tags_by_obra[i]:
+                    for tag2 in tags_by_obra[i]:
+                        if tag1 != tag2:
+                            pair = tuple(sorted((tag1, tag2)))
+                            co_occurrence[pair] = co_occurrence.get(pair, 0) + 1
+
+            if co_occurrence:
+                co_occurrence_df = pd.DataFrame(co_occurrence.items(), columns=['Par de Tags', 'Frequência'])
+                co_occurrence_df['Tag 1'] = co_occurrence_df['Par de Tags'].apply(lambda x: x[0])
+                co_occurrence_df['Tag 2'] = co_occurrence_df['Par de Tags'].apply(lambda x: x[1])
+                st.dataframe(co_occurrence_df[['Tag 1', 'Tag 2', 'Frequência']].sort_values('Frequência', ascending=False).head(20), use_container_width=True, hide_index=True)
+            else:
+                st.info("Não há tags suficientes para analisar co-ocorrência.")
+
+            st.markdown("##### Distribuição do Comprimento das Tags")
+            if not tags_df.empty:
+                tags_df['tag_length'] = tags_df['tag'].str.len()
+                st.bar_chart(tags_df['tag_length'].value_counts().sort_index())
+                st.write(f"Média de comprimento das tags: {tags_df['tag_length'].mean():.2f} caracteres")
+                st.write(f"Desvio padrão do comprimento das tags: {tags_df['tag_length'].std():.2f} caracteres")
+            else:
+                st.info("Não há tags para analisar o comprimento.")
 
         else:
-            st.info("Não há tags para analisar padrões e diversificação.")
+            st.info("Não há tags para análise detalhada.")
 
-    with tab_questionnaire:
+    with tab_questionnaire_analysis:
         st.markdown("#### Análise do Questionário de Usuários")
         if not users_df.empty:
-            st.markdown("##### Distribuição das Respostas")
-            st.write("1. Qual é o seu nível de familiaridade com museus?")
-            # Usando st.bar_chart para a distribuição das respostas do questionário
+            st.markdown("##### Distribuição das Respostas (Q1: Familiaridade com Museus)")
             st.bar_chart(users_df['q1'].value_counts())
 
-            st.write("2. Você já ouviu falar sobre documentação museológica?")
+            st.markdown("##### Distribuição das Respostas (Q2: Conhecimento sobre Documentação Museológica)")
             st.bar_chart(users_df['q2'].value_counts())
 
             st.markdown("##### Cruzamento de Dados: Familiaridade com Museus vs. Número de Tags Criadas")
@@ -955,8 +937,19 @@ def show_data_analysis(): # Função renomeada de show_quality para show_data_an
             else:
                 st.info("Não há tags para cruzar com os dados do questionário.")
 
-            st.markdown("##### Respostas Abertas (Q3)")
-            st.dataframe(users_df[['user_id', 'q3', 'timestamp']].sort_values('timestamp', ascending=False), use_container_width=True, hide_index=True)
+            st.markdown("##### Cruzamento de Dados: Familiaridade com Museus vs. Diversidade de Tags Criadas")
+            if not tags_df.empty:
+                user_unique_tag_counts = tags_df.groupby('user_id')['tag'].nunique().reset_index(name='Tags_Unicas')
+                merged_df_unique = pd.merge(users_df, user_unique_tag_counts, on='user_id', how='left').fillna(0)
+                avg_unique_tags_by_familiarity = merged_df_unique.groupby('q1')['Tags_Unicas'].mean().sort_values(ascending=False)
+                st.bar_chart(avg_unique_tags_by_familiarity)
+                st.write("Média de tags únicas criadas por nível de familiaridade com museus:")
+                st.dataframe(avg_unique_tags_by_familiarity.reset_index(), use_container_width=True, hide_index=True)
+            else:
+                st.info("Não há tags para cruzar com os dados do questionário.")
+
+            st.markdown("##### Respostas Abertas (Q3: O que você entende por 'tags'?)")
+            st.dataframe(users_df[['user_id', 'nome', 'q3', 'timestamp']].sort_values('timestamp', ascending=False), use_container_width=True, hide_index=True)
             st.info("Para uma análise mais profunda das respostas abertas, seria necessário processamento de linguagem natural (NLP) para identificar temas e padrões.")
         else:
             st.info("Nenhum usuário respondeu ao questionário ainda.")
@@ -1032,12 +1025,24 @@ def show_export_users():
         return
 
     user_ids = users_df['user_id'].unique().tolist()
-    selected_user = st.selectbox("Selecione o usuário:", user_ids)
+    # Adicionando o nome do usuário ao selectbox para facilitar a identificação
+    user_options = []
+    for user_id in user_ids:
+        user_data = users_df[users_df['user_id'] == user_id]
+        if not user_data.empty:
+            user_name = user_data.iloc[0].get('nome', 'Nome Não Informado')
+            user_options.append(f"{user_name} (ID: {user_id})")
+        else:
+            user_options.append(f"ID: {user_id}")
+
+    selected_option = st.selectbox("Selecione o usuário:", user_options)
+    selected_user = selected_option.split('(ID: ')[-1].replace(')', '') if selected_option else None
 
     if selected_user:
+        st.markdown(f"#### Dados para o Usuário: {selected_option.split(' (ID:')[0]}")
         col1, col2 = st.columns(2)
         with col1:
-            st.markdown("#### Questionário")
+            st.markdown("##### Questionário")
             html = generate_user_questionnaire_report(selected_user)
             if html:
                 st.download_button("Baixar Respostas (HTML/PDF)", html, f"questionario_{selected_user}.html", "text/html", use_container_width=True)
@@ -1046,7 +1051,7 @@ def show_export_users():
                 csv = user_data.to_csv(index=False).encode('utf-8')
                 st.download_button("Baixar Respostas (CSV)", csv, f"questionario_{selected_user}.csv", "text/csv", use_container_width=True)
         with col2:
-            st.markdown("#### Tags Criadas")
+            st.markdown("##### Tags Criadas")
             html = generate_user_tags_report(selected_user, obras)
             if html:
                 st.download_button("Baixar Tags (HTML/PDF)", html, f"tags_{selected_user}.html", "text/html", use_container_width=True)
