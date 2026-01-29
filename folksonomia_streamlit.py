@@ -7,7 +7,7 @@ import hashlib
 import base64
 import json
 import warnings
-import plotly.express as px # Importar Plotly para gráficos de pizza
+# import plotly.express as px # Removido Plotly
 
 warnings.filterwarnings('ignore')
 
@@ -493,6 +493,7 @@ def generate_user_questionnaire_report(user_id):
         <meta charset="UTF-8">
         <title>Respostas do Questionário</title>
         <style>
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
             * {{ margin: 0; padding: 0; box-sizing: border-box; }}
             body {{ font-family: 'Inter', sans-serif; background: #f8fafc; padding: 40px; color: #1e293b; }}
             .container {{ max-width: 900px; margin: 0 auto; background: white; padding: 50px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.08); }}
@@ -549,6 +550,7 @@ def generate_user_tags_report(user_id, obras):
         <meta charset="UTF-8">
         <title>Relatório de Tags Criadas</title>
         <style>
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
             * {{ margin: 0; padding: 0; box-sizing: border-box; }}
             body {{ font-family: 'Inter', sans-serif; background: #f8fafc; padding: 40px; color: #1e293b; }}
             .container {{ max-width: 1200px; margin: 0 auto; background: white; padding: 50px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.08); }}
@@ -696,27 +698,32 @@ def main():
         # Botão Explorar Obras
         col1, col2 = st.columns(2)
         with col1:
-            if st.markdown(f"""
-                <button class='bottom-nav-button {"active" if st.session_state['current_page'] == "Explorar Obras" else ""}' 
-                        onclick="window.parent.document.querySelector('[data-testid=\"stFormSubmitButton\"]').click();">
-                    Explorar Obras
-                </button>
-                <style>div[data-testid="stVerticalBlock"] > div > div > div > div:nth-child(1) > div > button {{ display: none; }}</style>
-                """, unsafe_allow_html=True):
-                st.session_state['current_page'] = "Explorar Obras"
-                st.rerun()
+            # Usamos um truque com st.form_submit_button invisível para forçar o rerun
+            # e o st.markdown para renderizar o botão com CSS customizado.
+            # O JavaScript no onclick simula um clique no botão de submit do form.
+            with st.form("nav_explore_form", clear_on_submit=False):
+                st.markdown(f"""
+                    <button type="submit" class='bottom-nav-button {"active" if st.session_state['current_page'] == "Explorar Obras" else ""}' 
+                            name="nav_button" value="Explorar Obras">
+                        Explorar Obras
+                    </button>
+                    """, unsafe_allow_html=True)
+                if st.form_submit_button("Hidden Explore Button", key="hidden_explore_btn"):
+                    st.session_state['current_page'] = "Explorar Obras"
+                    st.rerun()
 
         # Botão Área Administrativa
         with col2:
-            if st.markdown(f"""
-                <button class='bottom-nav-button {"active" if st.session_state['current_page'] == "Área Administrativa" else ""}' 
-                        onclick="window.parent.document.querySelector('[data-testid=\"stFormSubmitButton\"]').click();">
-                    Área Administrativa
-                </button>
-                <style>div[data-testid="stVerticalBlock"] > div > div > div > div:nth-child(2) > div > button {{ display: none; }}</style>
-                """, unsafe_allow_html=True):
-                st.session_state['current_page'] = "Área Administrativa"
-                st.rerun()
+            with st.form("nav_admin_form", clear_on_submit=False):
+                st.markdown(f"""
+                    <button type="submit" class='bottom-nav-button {"active" if st.session_state['current_page'] == "Área Administrativa" else ""}' 
+                            name="nav_button" value="Área Administrativa">
+                        Área Administrativa
+                    </button>
+                    """, unsafe_allow_html=True)
+                if st.form_submit_button("Hidden Admin Button", key="hidden_admin_btn"):
+                    st.session_state['current_page'] = "Área Administrativa"
+                    st.rerun()
 
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -929,10 +936,8 @@ def show_analysis():
         st.markdown("#### Distribuição de Tags (Top 15)")
         counts = tags_df['tag'].value_counts().head(15)
         if not counts.empty:
-            fig = px.pie(counts, values=counts.values, names=counts.index, title='Top 15 Tags Mais Utilizadas',
-                         hole=0.3, # Para um gráfico de rosca
-                         color_discrete_sequence=px.colors.sequential.RdBu) # Paleta de cores
-            st.plotly_chart(fig, use_container_width=True)
+            # Usando st.bar_chart no lugar do Plotly pie chart
+            st.bar_chart(counts)
         else:
             st.info("Não há tags para exibir.")
 
@@ -943,10 +948,8 @@ def show_analysis():
         od = {o['id']: o['titulo'] for o in obras}
         per_obra_named = per_obra.rename(index=od).sort_values(ascending=False).head(10)
         if not per_obra_named.empty:
-            fig = px.pie(per_obra_named, values=per_obra_named.values, names=per_obra_named.index, title='Top 10 Obras Mais Tagueadas',
-                         hole=0.3,
-                         color_discrete_sequence=px.colors.sequential.Plasma)
-            st.plotly_chart(fig, use_container_width=True)
+            # Usando st.bar_chart no lugar do Plotly pie chart
+            st.bar_chart(per_obra_named)
         else:
             st.info("Não há obras tagueadas para exibir.")
 
@@ -989,9 +992,8 @@ def show_data_analysis():
             st.markdown("#### Distribuição das 10 Tags Mais Frequentes")
             top_tags_counts = tags_df['tag'].value_counts().head(10)
             if not top_tags_counts.empty:
-                fig = px.pie(top_tags_counts, values=top_tags_counts.values, names=top_tags_counts.index, title='Top 10 Tags Mais Frequentes',
-                             hole=0.4, color_discrete_sequence=px.colors.sequential.Viridis)
-                st.plotly_chart(fig, use_container_width=True)
+                # Usando st.bar_chart no lugar do Plotly pie chart
+                st.bar_chart(top_tags_counts)
             else:
                 st.info("Não há tags para exibir.")
 
@@ -1001,9 +1003,8 @@ def show_data_analysis():
             ot['Obra'] = ot['obra_id'].map(od)
             top_obras_counts = ot[['Obra', 'Total']].sort_values('Total', ascending=False).head(10).set_index('Obra')
             if not top_obras_counts.empty:
-                fig = px.pie(top_obras_counts, values=top_obras_counts['Total'], names=top_obras_counts.index, title='Top 10 Obras Mais Tagueadas',
-                             hole=0.4, color_discrete_sequence=px.colors.sequential.Magma)
-                st.plotly_chart(fig, use_container_width=True)
+                # Usando st.bar_chart no lugar do Plotly pie chart
+                st.bar_chart(top_obras_counts)
             else:
                 st.info("Não há obras tagueadas para exibir.")
         else:
@@ -1023,9 +1024,8 @@ def show_data_analysis():
 
             top_unique_obra_tags = tags_per_obra_unique.sort_values('Tags Únicas', ascending=False).head(10).set_index('Obra')
             if not top_unique_obra_tags.empty:
-                fig = px.pie(top_unique_obra_tags, values=top_unique_obra_tags['Tags Únicas'], names=top_unique_obra_tags.index, title='Top 10 Obras com Mais Tags Únicas',
-                             hole=0.4, color_discrete_sequence=px.colors.sequential.Cividis)
-                st.plotly_chart(fig, use_container_width=True)
+                # Usando st.bar_chart no lugar do Plotly pie chart
+                st.bar_chart(top_unique_obra_tags)
             else:
                 st.info("Não há tags únicas por obra para exibir.")
             st.dataframe(tags_per_obra_unique[['Obra', 'Tags Únicas']].sort_values('Tags Únicas', ascending=False), use_container_width=True, hide_index=True)
@@ -1037,9 +1037,8 @@ def show_data_analysis():
 
             top_unique_user_tags = tags_per_user_unique.sort_values('Tags Únicas', ascending=False).head(10).set_index('Nome do Usuário')
             if not top_unique_user_tags.empty:
-                fig = px.pie(top_unique_user_tags, values=top_unique_user_tags['Tags Únicas'], names=top_unique_user_tags.index, title='Top 10 Usuários com Mais Tags Únicas',
-                             hole=0.4, color_discrete_sequence=px.colors.sequential.Inferno)
-                st.plotly_chart(fig, use_container_width=True)
+                # Usando st.bar_chart no lugar do Plotly pie chart
+                st.bar_chart(top_unique_user_tags)
             else:
                 st.info("Não há tags únicas por usuário para exibir.")
             st.dataframe(tags_per_user_unique[['Nome do Usuário', 'Tags Únicas']].sort_values('Tags Únicas', ascending=False), use_container_width=True, hide_index=True)
@@ -1070,10 +1069,7 @@ def show_data_analysis():
                 tags_df['tag_length'] = tags_df['tag'].str.len()
                 length_counts = tags_df['tag_length'].value_counts().sort_index()
                 if not length_counts.empty:
-                    fig = px.bar(length_counts, x=length_counts.index, y=length_counts.values, title='Distribuição do Comprimento das Tags',
-                                 labels={'x':'Comprimento da Tag', 'y':'Frequência'},
-                                 color_discrete_sequence=px.colors.sequential.Blues_r)
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.bar_chart(length_counts)
                 else:
                     st.info("Não há tags para analisar o comprimento.")
                 st.write(f"Média de comprimento das tags: {tags_df['tag_length'].mean():.2f} caracteres")
@@ -1090,18 +1086,16 @@ def show_data_analysis():
             st.markdown("##### Distribuição das Respostas (Q1: Familiaridade com Museus)")
             q1_counts = users_df['q1'].value_counts()
             if not q1_counts.empty:
-                fig = px.pie(q1_counts, values=q1_counts.values, names=q1_counts.index, title='Familiaridade com Museus',
-                             hole=0.4, color_discrete_sequence=px.colors.sequential.Greens)
-                st.plotly_chart(fig, use_container_width=True)
+                # Usando st.bar_chart no lugar do Plotly pie chart
+                st.bar_chart(q1_counts)
             else:
                 st.info("Não há respostas para Q1.")
 
             st.markdown("##### Distribuição das Respostas (Q2: Conhecimento sobre Documentação Museológica)")
             q2_counts = users_df['q2'].value_counts()
             if not q2_counts.empty:
-                fig = px.pie(q2_counts, values=q2_counts.values, names=q2_counts.index, title='Conhecimento sobre Documentação Museológica',
-                             hole=0.4, color_discrete_sequence=px.colors.sequential.Purples)
-                st.plotly_chart(fig, use_container_width=True)
+                # Usando st.bar_chart no lugar do Plotly pie chart
+                st.bar_chart(q2_counts)
             else:
                 st.info("Não há respostas para Q2.")
 
@@ -1111,10 +1105,7 @@ def show_data_analysis():
                 merged_df = pd.merge(users_df, user_tag_counts, on='user_id', how='left').fillna(0)
                 avg_tags_by_familiarity = merged_df.groupby('q1')['Total_Tags'].mean().sort_values(ascending=False)
                 if not avg_tags_by_familiarity.empty:
-                    fig = px.bar(avg_tags_by_familiarity.reset_index(), x='q1', y='Total_Tags', title='Média de Tags por Familiaridade com Museus',
-                                 labels={'q1':'Familiaridade com Museus', 'Total_Tags':'Média de Tags'},
-                                 color='q1', color_discrete_sequence=px.colors.sequential.YlGnBu)
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.bar_chart(avg_tags_by_familiarity)
                 else:
                     st.info("Não há dados de tags para cruzar com Q1.")
                 st.write("Média de tags criadas por nível de familiaridade com museus:")
@@ -1128,10 +1119,7 @@ def show_data_analysis():
                 merged_df_unique = pd.merge(users_df, user_unique_tag_counts, on='user_id', how='left').fillna(0)
                 avg_unique_tags_by_familiarity = merged_df_unique.groupby('q1')['Tags_Unicas'].mean().sort_values(ascending=False)
                 if not avg_unique_tags_by_familiarity.empty:
-                    fig = px.bar(avg_unique_tags_by_familiarity.reset_index(), x='q1', y='Tags_Unicas', title='Média de Tags Únicas por Familiaridade com Museus',
-                                 labels={'q1':'Familiaridade com Museus', 'Tags_Unicas':'Média de Tags Únicas'},
-                                 color='q1', color_discrete_sequence=px.colors.sequential.OrRd)
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.bar_chart(avg_unique_tags_by_familiarity)
                 else:
                     st.info("Não há dados de tags únicas para cruzar com Q1.")
                 st.write("Média de tags únicas criadas por nível de familiaridade com museus:")
