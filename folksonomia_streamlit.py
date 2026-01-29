@@ -52,7 +52,7 @@ def save_json_file(filepath, data):
     except:
         return False
 
-# ==================== CSS MODERNO E DINÂMICO - FUNDO CLARO ====================
+# ==================== CSS MODERNO E DINÂMICO ====================
 def load_custom_css():
     st.markdown("""
     <style>
@@ -510,13 +510,11 @@ def load_all_users():
 
 # ==================== ANÁLISES AVANÇADAS ====================
 def analyze_tag_patterns(tags_df):
-    """Análise profunda de padrões de tags"""
     if tags_df.empty:
         return None
 
     analysis = {}
 
-    # Tags repetidas
     tag_counts = tags_df['tag'].value_counts()
     analysis['total_tags'] = len(tags_df)
     analysis['unique_tags'] = len(tag_counts)
@@ -524,45 +522,37 @@ def analyze_tag_patterns(tags_df):
     analysis['repetition_rate'] = (analysis['repeated_tags'] / analysis['unique_tags'] * 100) if analysis['unique_tags'] > 0 else 0
     analysis['most_repeated'] = tag_counts.head(10).to_dict()
 
-    # Padrões e ligações
     analysis['single_word'] = sum(tags_df['tag'].str.split().str.len() == 1)
     analysis['multi_word'] = sum(tags_df['tag'].str.split().str.len() > 1)
     analysis['avg_length'] = tags_df['tag'].str.len().mean()
 
-    # Diversificação
     analysis['diversity_score'] = (analysis['unique_tags'] / analysis['total_tags'] * 100) if analysis['total_tags'] > 0 else 0
 
-    # Base de consistência
     analysis['consistency_score'] = 100 - (tags_df['tag'].str.len().std() / tags_df['tag'].str.len().mean() * 100) if tags_df['tag'].str.len().mean() > 0 else 0
 
     return analysis
 
 def analyze_questionnaire_patterns(users_df):
-    """Análise do questionário com separação e padrões"""
     if users_df.empty:
         return None
 
     analysis = {}
 
-    # Análise Q1 - Familiaridade
     if 'q1' in users_df.columns:
         q1_counts = users_df['q1'].value_counts()
         analysis['q1_distribution'] = q1_counts.to_dict()
         analysis['q1_most_common'] = q1_counts.index[0] if len(q1_counts) > 0 else None
 
-    # Análise Q2 - Conhecimento
     if 'q2' in users_df.columns:
         q2_counts = users_df['q2'].value_counts()
         analysis['q2_distribution'] = q2_counts.to_dict()
         analysis['q2_most_common'] = q2_counts.index[0] if len(q2_counts) > 0 else None
 
-    # Análise Q3 - Texto livre
     if 'q3' in users_df.columns:
         q3_texts = users_df['q3'].dropna()
         analysis['q3_avg_length'] = q3_texts.str.len().mean() if not q3_texts.empty else 0
         analysis['q3_total_responses'] = len(q3_texts)
 
-        # Palavras-chave mais comuns
         all_words = ' '.join(q3_texts.str.lower()).split()
         word_counts = Counter(all_words)
         analysis['q3_top_keywords'] = dict(word_counts.most_common(15))
@@ -570,7 +560,6 @@ def analyze_questionnaire_patterns(users_df):
     return analysis
 
 def create_interactive_charts(data, chart_type, title):
-    """Cria gráficos interativos com Plotly"""
     if chart_type == "bar":
         fig = px.bar(
             x=list(data.keys()),
@@ -890,7 +879,6 @@ def show_obras():
         st.info("Nenhuma obra cadastrada no momento.")
         return
 
-    # Exportar dados do usuário
     st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
     st.markdown("### Exportar Seus Dados")
     col1, col2, col3, col4 = st.columns(4)
@@ -945,7 +933,6 @@ def show_obras():
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # Filtros
     st.markdown("<div class='modern-card'>", unsafe_allow_html=True)
     col1, col2 = st.columns([2, 1])
     with col1:
@@ -1117,7 +1104,6 @@ def show_smart_charts():
         st.info("Não há dados suficientes para gerar gráficos.")
         return
 
-    # Escolha do tipo de gráfico
     col1, col2 = st.columns([1, 3])
     with col1:
         chart_option = st.selectbox(
@@ -1293,4 +1279,35 @@ def show_data_analysis():
                     st.dataframe(q2_df, use_container_width=True, hide_index=True)
 
                 st.markdown("#### Análise de Texto Livre - Questão 3")
+                if 'q3_avg_length' in quest_analysis:
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.metric("Respostas Recebidas", quest_analysis['q3_total_responses'])
+                    with col2:
+                        st.metric("Tamanho Médio", f"{quest_analysis['q3_avg_length']:.0f} chars")
 
+                if 'q3_top_keywords' in quest_analysis:
+                    st.markdown("**Palavras-Chave Mais Frequentes:**")
+                    keywords_df = pd.DataFrame(
+                        list(quest_analysis['q3_top_keywords'].items()),
+                        columns=['Palavra', 'Frequência']
+                    )
+                    st.dataframe(keywords_df, use_container_width=True, hide_index=True)
+
+                    fig = create_interactive_charts(
+                        quest_analysis['q3_top_keywords'],
+                        "bar",
+                        "Top 15 Palavras-Chave em Respostas"
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+
+def show_manage_obras():
+    st.markdown("### Gestão de Obras")
+    obras = load_obras()
+
+    tab1, tab2 = st.tabs(["Listar Obras", "Adicionar Nova"])
+
+    with tab1:
+        if obras:
+            for obra in obras:
+                col1, col2, col3 = st.columns([1, 2, 1])
