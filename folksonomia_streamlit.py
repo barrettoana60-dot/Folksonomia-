@@ -7,9 +7,8 @@ import hashlib
 import base64
 import json
 import warnings
-import plotly.express as px # Importação para gráficos interativos
-# import matplotlib.pyplot as plt # Para wordcloud, se for usar
-# from wordcloud import WordCloud # Para wordcloud, se for usar
+# import matplotlib.pyplot as plt # Manter comentado por enquanto, só se for realmente necessário para algo específico
+# from wordcloud import WordCloud # Manter comentado, requer instalação e pode ser problemático
 
 warnings.filterwarnings('ignore')
 
@@ -847,27 +846,19 @@ def show_analysis():
 
     with col1:
         st.markdown("#### Distribuição de Tags")
-        chart_type_tags = st.selectbox("Escolha o tipo de gráfico para Tags:", ["Barras", "Pizza"], key="chart_type_tags")
+        # Removendo a opção de "Pizza" para evitar Plotly
+        chart_type_tags = st.selectbox("Escolha o tipo de gráfico para Tags:", ["Barras", "Tabela"], key="chart_type_tags_no_plotly")
         counts = tags_df['tag'].value_counts().head(15) # Aumentei para 15 para mais dados
 
         if chart_type_tags == "Barras":
             st.bar_chart(counts)
-        elif chart_type_tags == "Pizza":
-            fig = px.pie(counts, values=counts.values, names=counts.index, title='Distribuição de Tags', hole=0.3)
-            st.plotly_chart(fig, use_container_width=True)
-        # elif chart_type_tags == "Nuvem de Palavras":
-        #     if not counts.empty:
-        #         wordcloud = WordCloud(width=800, height=400, background_color='white').generate_from_frequencies(counts)
-        #         plt.figure(figsize=(10, 5))
-        #         plt.imshow(wordcloud, interpolation='bilinear')
-        #         plt.axis('off')
-        #         st.pyplot(plt)
-        #     else:
-        #         st.info("Não há tags para gerar a nuvem de palavras.")
+        elif chart_type_tags == "Tabela":
+            st.dataframe(counts.reset_index().rename(columns={'index': 'Tag', 'tag': 'Frequência'}), use_container_width=True, hide_index=True)
 
     with col2:
         st.markdown("#### Tags por Obra")
-        chart_type_obras = st.selectbox("Escolha o tipo de gráfico para Obras:", ["Barras", "Pizza"], key="chart_type_obras")
+        # Removendo a opção de "Pizza" para evitar Plotly
+        chart_type_obras = st.selectbox("Escolha o tipo de gráfico para Obras:", ["Barras", "Tabela"], key="chart_type_obras_no_plotly")
         per_obra = tags_df.groupby('obra_id').size()
         obras = load_obras()
         od = {o['id']: o['titulo'] for o in obras}
@@ -875,9 +866,8 @@ def show_analysis():
 
         if chart_type_obras == "Barras":
             st.bar_chart(per_obra_named)
-        elif chart_type_obras == "Pizza":
-            fig = px.pie(per_obra_named, values=per_obra_named.values, names=per_obra_named.index, title='Tags por Obra', hole=0.3)
-            st.plotly_chart(fig, use_container_width=True)
+        elif chart_type_obras == "Tabela":
+            st.dataframe(per_obra_named.reset_index().rename(columns={'index': 'Obra', 0: 'Frequência'}), use_container_width=True, hide_index=True)
 
     st.markdown("#### Tags Raras (Top 10 menos usadas)")
     rare_tags = tags_df['tag'].value_counts().tail(10).reset_index()
@@ -948,12 +938,11 @@ def show_data_analysis(): # Função renomeada de show_quality para show_data_an
         if not users_df.empty:
             st.markdown("##### Distribuição das Respostas")
             st.write("1. Qual é o seu nível de familiaridade com museus?")
-            fig_q1 = px.pie(users_df, names='q1', title='Familiaridade com Museus', hole=0.3)
-            st.plotly_chart(fig_q1, use_container_width=True)
+            # Usando st.bar_chart para a distribuição das respostas do questionário
+            st.bar_chart(users_df['q1'].value_counts())
 
             st.write("2. Você já ouviu falar sobre documentação museológica?")
-            fig_q2 = px.pie(users_df, names='q2', title='Conhecimento sobre Documentação Museológica', hole=0.3)
-            st.plotly_chart(fig_q2, use_container_width=True)
+            st.bar_chart(users_df['q2'].value_counts())
 
             st.markdown("##### Cruzamento de Dados: Familiaridade com Museus vs. Número de Tags Criadas")
             if not tags_df.empty:
