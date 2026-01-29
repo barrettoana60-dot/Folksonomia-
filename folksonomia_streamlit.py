@@ -7,6 +7,7 @@ import hashlib
 import base64
 import json
 import warnings
+import plotly.express as px # Reintroduzindo Plotly para gráficos de pizza
 
 warnings.filterwarnings('ignore')
 
@@ -91,8 +92,9 @@ def load_custom_css():
         color: #1e293b; /* Logo em preto */
         letter-spacing: -0.5px;
     }
+    /* Removendo estilos de botões de navegação da top-navbar, pois agora são tabs */
     .main-content {
-        margin-top: 100px;
+        margin-top: 100px; /* Ajuste para a barra fixa */
         padding: 2rem 3rem;
         max-width: 1600px;
         margin-left: auto;
@@ -283,7 +285,9 @@ def load_custom_css():
 
     #MainMenu, footer, header {visibility: hidden;}
     .stDeployButton {display: none;}
-    [data-testid="stSidebar"] {display: none;}
+    /* Removendo o sidebar completamente para controlar a navegação manualmente */
+    [data-testid="stSidebar"] {display: none;} 
+
     h1, h2, h3, h4, h5, h6 {
         color: #1e293b; /* Títulos em preto */
         font-weight: 600;
@@ -377,6 +381,14 @@ def load_all_users():
     users = load_json_file(USERS_FILE, [])
     return pd.DataFrame(users) if users else pd.DataFrame()
 
+def get_user_name_by_id(user_id):
+    users_df = load_all_users()
+    if not users_df.empty:
+        user_row = users_df[users_df['user_id'] == user_id]
+        if not user_row.empty:
+            return user_row.iloc[0].get('nome', f"Usuário {user_id[:8]}...")
+    return f"Usuário {user_id[:8]}..." # Fallback se não encontrar o nome
+
 # ==================== ANÁLISES (Função calculate_quality_metrics removida ou esvaziada) ====================
 # A função calculate_quality_metrics não é mais usada, pois as métricas genéricas foram removidas.
 # Se você quiser adicionar métricas específicas no futuro, pode recriá-la.
@@ -446,6 +458,7 @@ def generate_user_tags_report(user_id, obras):
     if user_tags_df.empty:
         return None
     obras_dict = {o['id']: o for o in obras}
+    user_name = get_user_name_by_id(user_id)
     html = f"""
     <!DOCTYPE html>
     <html>
@@ -476,6 +489,7 @@ def generate_user_tags_report(user_id, obras):
         <div class="container">
             <h1>Relatório de Tags Criadas</h1>
             <div class="header-info">
+                <p><strong>Nome do Usuário:</strong> {user_name}</p>
                 <p><strong>ID do Usuário:</strong> {user_id}</p>
                 <p><strong>Data de Geração:</strong> {datetime.now().strftime('%d/%m/%Y %H:%M')}</p>
             </div>
@@ -493,7 +507,7 @@ def generate_user_tags_report(user_id, obras):
                     <div class="stat-label">Obras Etiquetadas</div>
                 </div>
             </div>
-            <h2 style="color: #475569; margin-top: 40px; margin-bottom: 20px; font-size: 1.5rem;">Tags Detalhadas</h2>
+            <h2 style="color: #1e293b; margin-top: 40px; margin-bottom: 20px; font-size: 1.5rem;">Tags Detalhadas</h2>
             <table>
                 <thead>
                     <tr>
@@ -522,7 +536,7 @@ def generate_user_tags_report(user_id, obras):
     html += """
                 </tbody>
             </table>
-            <h2 style="color: #475569; margin-top: 40px; margin-bottom: 20px; font-size: 1.5rem;">Suas Tags Mais Utilizadas</h2>
+            <h2 style="color: #1e293b; margin-top: 40px; margin-bottom: 20px; font-size: 1.5rem;">Suas Tags Mais Utilizadas</h2>
             <table>
                 <thead>
                     <tr>
@@ -561,15 +575,7 @@ def show_header():
         <div class='navbar-logo'>Sistema Folksonomia Digital</div>
     </div>
     """, unsafe_allow_html=True)
-    col1, col2, col3, col4, col5 = st.columns([1, 1, 1, 1, 1])
-    with col2:
-        if st.button("Explorar Obras", key="nav_obras", use_container_width=True):
-            st.session_state['current_page'] = "Explorar Obras"
-            st.rerun()
-    with col4:
-        if st.button("Área Administrativa", key="nav_admin", use_container_width=True):
-            st.session_state['current_page'] = "Área Administrativa"
-            st.rerun()
+    # A navegação principal agora é feita via st.tabs no main()
 
 def main():
     load_custom_css()
@@ -593,10 +599,15 @@ def main():
     else:
         show_header()
         st.markdown("<div class='main-content'>", unsafe_allow_html=True)
-        if st.session_state['current_page'] == "Explorar Obras":
+
+        # Nova navegação principal usando st.tabs
+        main_tabs = st.tabs(["Explorar Obras", "Área Administrativa"])
+
+        with main_tabs[0]:
             show_obras()
-        elif st.session_state['current_page'] == "Área Administrativa":
+        with main_tabs[1]:
             show_admin()
+
         st.markdown("</div>", unsafe_allow_html=True)
 
 def show_intro():
@@ -734,7 +745,7 @@ def show_admin():
     else:
         st.markdown(f"<h1 class='main-title'>Dashboard Administrativo</h1><p class='subtitle'>Bem-vindo, <strong style='color: #475569;'>{st.session_state.get('admin_username', 'Admin')}</strong></p>", unsafe_allow_html=True)
 
-        # Tabs atualizadas: "Qualidade" mudou para "Dados"
+        # Tabs da área administrativa
         tabs = st.tabs(["Visão Geral", "Análises", "Dados", "Obras", "Exportar Completo", "Exportar Usuários"])
 
         with tabs[0]:
@@ -805,16 +816,28 @@ def show_analysis():
 
     with col1:
         st.markdown("#### Distribuição de Tags (Top 15)")
+        chart_type_tags = st.radio("Visualizar Tags por:", ["Barras", "Pizza"], key="chart_type_tags_analysis")
         counts = tags_df['tag'].value_counts().head(15)
-        st.bar_chart(counts)
+
+        if chart_type_tags == "Barras":
+            st.bar_chart(counts)
+        elif chart_type_tags == "Pizza":
+            fig = px.pie(counts, values=counts.values, names=counts.index, title='Distribuição de Tags', hole=0.3)
+            st.plotly_chart(fig, use_container_width=True)
 
     with col2:
         st.markdown("#### Obras Mais Tagueadas (Top 10)")
+        chart_type_obras = st.radio("Visualizar Obras por:", ["Barras", "Pizza"], key="chart_type_obras_analysis")
         per_obra = tags_df.groupby('obra_id').size()
         obras = load_obras()
         od = {o['id']: o['titulo'] for o in obras}
-        per_obra_named = per_obra.rename(index=od)
-        st.bar_chart(per_obra_named.sort_values(ascending=False).head(10))
+        per_obra_named = per_obra.rename(index=od).sort_values(ascending=False).head(10)
+
+        if chart_type_obras == "Barras":
+            st.bar_chart(per_obra_named)
+        elif chart_type_obras == "Pizza":
+            fig = px.pie(per_obra_named, values=per_obra_named.values, names=per_obra_named.index, title='Obras Mais Tagueadas', hole=0.3)
+            st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("#### Tags Raras (Top 10 menos usadas)")
     rare_tags = tags_df['tag'].value_counts().tail(10).reset_index()
@@ -852,16 +875,20 @@ def show_data_analysis(): # Função renomeada e reestruturada
                 """, unsafe_allow_html=True)
 
         if not tags_df.empty:
-            st.markdown("#### Tags Mais Frequentes")
-            st.dataframe(tags_df['tag'].value_counts().head(20).reset_index().rename(columns={'index': 'Tag', 'tag': 'Frequência'}), use_container_width=True, hide_index=True)
+            st.markdown("#### Distribuição das 10 Tags Mais Frequentes")
+            top_tags_counts = tags_df['tag'].value_counts().head(10)
+            fig_top_tags = px.pie(top_tags_counts, values=top_tags_counts.values, names=top_tags_counts.index, title='Top 10 Tags Mais Frequentes', hole=0.3)
+            st.plotly_chart(fig_top_tags, use_container_width=True)
 
-            st.markdown("#### Obras com Mais Tags")
+            st.markdown("#### Distribuição das 10 Obras Mais Tagueadas")
             ot = tags_df.groupby('obra_id').size().reset_index(name='Total')
             od = {o['id']: o['titulo'] for o in obras}
             ot['Obra'] = ot['obra_id'].map(od)
-            st.dataframe(ot[['Obra', 'Total']].sort_values('Total', ascending=False).head(10), use_container_width=True, hide_index=True)
+            top_obras_counts = ot[['Obra', 'Total']].sort_values('Total', ascending=False).head(10)
+            fig_top_obras = px.pie(top_obras_counts, values='Total', names='Obra', title='Top 10 Obras Mais Tagueadas', hole=0.3)
+            st.plotly_chart(fig_top_obras, use_container_width=True)
         else:
-            st.info("Não há tags para exibir rankings.")
+            st.info("Não há tags para exibir rankings e distribuições.")
 
     with tab_tags_detail:
         st.markdown("#### Análise Aprofundada das Tags")
@@ -869,19 +896,29 @@ def show_data_analysis(): # Função renomeada e reestruturada
             st.markdown("##### Todas as Tags e Suas Frequências")
             st.dataframe(tags_df['tag'].value_counts().reset_index().rename(columns={'index': 'Tag', 'tag': 'Frequência Total'}), use_container_width=True, hide_index=True)
 
-            st.markdown("##### Tags Únicas por Obra")
+            st.markdown("##### Distribuição de Tags Únicas por Obra")
             tags_per_obra_unique = tags_df.groupby('obra_id')['tag'].nunique().reset_index()
             tags_per_obra_unique.columns = ['obra_id', 'Tags Únicas']
             obras_dict = {o['id']: o['titulo'] for o in obras}
             tags_per_obra_unique['Obra'] = tags_per_obra_unique['obra_id'].map(obras_dict)
-            st.dataframe(tags_per_obra_unique[['Obra', 'Tags Únicas']].sort_values('Tags Únicas', ascending=False), use_container_width=True, hide_index=True)
-            st.bar_chart(tags_per_obra_unique.set_index('Obra')['Tags Únicas'].head(10))
 
-            st.markdown("##### Tags Únicas por Usuário")
+            # Gráfico de pizza para tags únicas por obra (Top 10)
+            top_unique_obra_tags = tags_per_obra_unique.sort_values('Tags Únicas', ascending=False).head(10)
+            fig_unique_obra = px.pie(top_unique_obra_tags, values='Tags Únicas', names='Obra', title='Top 10 Obras por Diversidade de Tags', hole=0.3)
+            st.plotly_chart(fig_unique_obra, use_container_width=True)
+            st.dataframe(tags_per_obra_unique[['Obra', 'Tags Únicas']].sort_values('Tags Únicas', ascending=False), use_container_width=True, hide_index=True)
+
+
+            st.markdown("##### Distribuição de Tags Únicas por Usuário")
             tags_per_user_unique = tags_df.groupby('user_id')['tag'].nunique().reset_index()
             tags_per_user_unique.columns = ['user_id', 'Tags Únicas']
-            st.dataframe(tags_per_user_unique.sort_values('Tags Únicas', ascending=False), use_container_width=True, hide_index=True)
-            st.bar_chart(tags_per_user_unique.set_index('user_id')['Tags Únicas'].head(10))
+            tags_per_user_unique['Nome do Usuário'] = tags_per_user_unique['user_id'].apply(get_user_name_by_id)
+
+            # Gráfico de pizza para tags únicas por usuário (Top 10)
+            top_unique_user_tags = tags_per_user_unique.sort_values('Tags Únicas', ascending=False).head(10)
+            fig_unique_user = px.pie(top_unique_user_tags, values='Tags Únicas', names='Nome do Usuário', title='Top 10 Usuários por Diversidade de Tags', hole=0.3)
+            st.plotly_chart(fig_unique_user, use_container_width=True)
+            st.dataframe(tags_per_user_unique[['Nome do Usuário', 'Tags Únicas']].sort_values('Tags Únicas', ascending=False), use_container_width=True, hide_index=True)
 
             st.markdown("##### Análise de Co-ocorrência de Tags (Padrões de Ligação)")
             st.info("Esta análise mostra quais tags tendem a aparecer juntas nas mesmas obras. Isso ajuda a identificar padrões e 'bases' de tagueamento.")
@@ -921,10 +958,14 @@ def show_data_analysis(): # Função renomeada e reestruturada
         st.markdown("#### Análise do Questionário de Usuários")
         if not users_df.empty:
             st.markdown("##### Distribuição das Respostas (Q1: Familiaridade com Museus)")
-            st.bar_chart(users_df['q1'].value_counts())
+            q1_counts = users_df['q1'].value_counts()
+            fig_q1 = px.pie(q1_counts, values=q1_counts.values, names=q1_counts.index, title='Familiaridade com Museus', hole=0.3)
+            st.plotly_chart(fig_q1, use_container_width=True)
 
             st.markdown("##### Distribuição das Respostas (Q2: Conhecimento sobre Documentação Museológica)")
-            st.bar_chart(users_df['q2'].value_counts())
+            q2_counts = users_df['q2'].value_counts()
+            fig_q2 = px.pie(q2_counts, values=q2_counts.values, names=q2_counts.index, title='Conhecimento sobre Documentação Museológica', hole=0.3)
+            st.plotly_chart(fig_q2, use_container_width=True)
 
             st.markdown("##### Cruzamento de Dados: Familiaridade com Museus vs. Número de Tags Criadas")
             if not tags_df.empty:
@@ -1028,18 +1069,16 @@ def show_export_users():
     # Adicionando o nome do usuário ao selectbox para facilitar a identificação
     user_options = []
     for user_id in user_ids:
-        user_data = users_df[users_df['user_id'] == user_id]
-        if not user_data.empty:
-            user_name = user_data.iloc[0].get('nome', 'Nome Não Informado')
-            user_options.append(f"{user_name} (ID: {user_id})")
-        else:
-            user_options.append(f"ID: {user_id}")
+        user_name = get_user_name_by_id(user_id)
+        user_options.append(f"{user_name} (ID: {user_id})")
 
     selected_option = st.selectbox("Selecione o usuário:", user_options)
+    # Extrair o user_id da string selecionada
     selected_user = selected_option.split('(ID: ')[-1].replace(')', '') if selected_option else None
 
     if selected_user:
-        st.markdown(f"#### Dados para o Usuário: {selected_option.split(' (ID:')[0]}")
+        user_name_display = selected_option.split(' (ID:')[0]
+        st.markdown(f"#### Dados para o Usuário: **{user_name_display}**")
         col1, col2 = st.columns(2)
         with col1:
             st.markdown("##### Questionário")
