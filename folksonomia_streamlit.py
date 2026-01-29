@@ -1,4 +1,4 @@
-import streamlit as st
+importimport streamlit as st
 import pandas as pd
 import numpy as np
 import os
@@ -7,7 +7,7 @@ import hashlib
 import base64
 import json
 import warnings
-import plotly.express as px # Reintroduzindo Plotly para gráficos de pizza
+
 warnings.filterwarnings('ignore')
 
 # ==================== CONFIGURAÇÃO ====================
@@ -56,7 +56,7 @@ def save_json_file(filepath, data):
         st.error(f"Erro ao salvar o arquivo {filepath}: {e}")
         return False
 
-# ==================== CSS PROFISSIONAL CLARO (com letras pretas, liquid glass e animações) ====================
+# ==================== CSS PROFISSIONAL CLARO (com letras pretas) ====================
 def load_custom_css():
     st.markdown("""
     <style>
@@ -68,8 +68,7 @@ def load_custom_css():
         font-family: 'Inter', sans-serif !important; 
     }
     .stApp {
-        /* Fundo branco acinzentado sutil */
-        background: linear-gradient(to bottom, #f8f9fa 0%, #e9ecef 100%); 
+        background: linear-gradient(to bottom, #f8fafc 0%, #f1f5f9 100%); /* Fundo claro */
         color: #1e293b; /* Cor de texto padrão escura */
     }
     .top-navbar {
@@ -92,37 +91,13 @@ def load_custom_css():
         color: #1e293b; /* Logo em preto */
         letter-spacing: -0.5px;
     }
+    /* Removendo estilos de botões de navegação da top-navbar, pois agora são tabs */
     .main-content {
         margin-top: 100px; /* Ajuste para a barra fixa */
         padding: 2rem 3rem;
         max-width: 1600px;
         margin-left: auto;
         margin-right: auto;
-    }
-    /* Estilo para os botões principais de navegação (Explorar Obras, Área Administrativa) */
-    .liquid-glass-button {
-        background: rgba(255, 255, 255, 0.3) !important; /* Fundo semi-transparente */
-        border: 1px solid rgba(255, 255, 255, 0.6) !important; /* Borda clara */
-        backdrop-filter: blur(10px) !important; /* Efeito de vidro embaçado */
-        -webkit-backdrop-filter: blur(10px) !important; /* Compatibilidade Safari */
-        color: #1e293b !important; /* Texto preto */
-        border-radius: 12px !important; /* Bordas mais arredondadas */
-        padding: 1rem 2.5rem !important; /* Padding generoso */
-        font-weight: 600 !important;
-        font-size: 1.1rem !important;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1) !important; /* Sombra suave */
-        transition: all 0.3s ease !important; /* Animação suave */
-        cursor: pointer !important;
-        display: inline-flex; /* Para centralizar o texto */
-        align-items: center;
-        justify-content: center;
-        text-decoration: none; /* Remover sublinhado de links */
-    }
-    .liquid-glass-button:hover {
-        background: rgba(255, 255, 255, 0.5) !important; /* Mais transparente no hover */
-        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15) !important; /* Sombra mais pronunciada */
-        transform: translateY(-3px) scale(1.02) !important; /* Leve levantamento e aumento */
-        border-color: rgba(255, 255, 255, 0.8) !important; /* Borda mais visível */
     }
     .professional-card {
         background: white;
@@ -216,7 +191,6 @@ def load_custom_css():
         font-weight: 600;
         opacity: 0.9;
     }
-    /* Botões Streamlit padrão (para formulários, etc.) */
     .stButton button {
         background: #475569 !important;
         color: white !important;
@@ -250,7 +224,6 @@ def load_custom_css():
         font-size: 0.9rem !important;
         margin-bottom: 0.5rem !important;
     }
-    /* Tabs Streamlit (para navegação secundária) */
     .stTabs [data-baseweb="tab"] {
         background: white;
         border: 1px solid #e2e8f0;
@@ -308,10 +281,12 @@ def load_custom_css():
         background-color: #fee2e2 !important; /* Vermelho claro */
         border-left: 5px solid #ef4444 !important;
     }
+
     #MainMenu, footer, header {visibility: hidden;}
     .stDeployButton {display: none;}
     /* Removendo o sidebar completamente para controlar a navegação manualmente */
     [data-testid="stSidebar"] {display: none;} 
+
     h1, h2, h3, h4, h5, h6 {
         color: #1e293b; /* Títulos em preto */
         font-weight: 600;
@@ -378,8 +353,7 @@ def save_tag(user_id, obra_id, tag):
 def get_user_tags(user_id):
     """Retorna apenas tags do usuário atual"""
     tags = load_json_file(TAGS_FILE, [])
-    # CORREÇÃO AQUI: Removido o 't' duplicado na list comprehension
-    user_tags = [t for t in tags if t['user_id'] == user_id] 
+    user_tags = [t for t in tags if t['user_id'] == user_id]
     return pd.DataFrame(user_tags) if user_tags else pd.DataFrame()
 
 def get_tags_for_obra_by_user(obra_id, user_id):
@@ -548,13 +522,13 @@ def generate_user_tags_report(user_id, obras):
     for idx, row in user_tags_df.iterrows():
         obra = obras_dict.get(row['obra_id'], {})
         html += f"""
-                                <tr>
-                                    <td>{idx + 1}</td>
-                                    <td>{obra.get('titulo', 'N/A')}</td>
-                                    <td>{obra.get('artista', 'N/A')}</td>
-                                    <td><span class="tag-highlight">{row['tag']}</span></td>
-                                    <td>{row['timestamp']}</td>
-                                </tr>
+                        <tr>
+                            <td>{idx + 1}</td>
+                            <td>{obra.get('titulo', 'N/A')}</td>
+                            <td>{obra.get('artista', 'N/A')}</td>
+                            <td><span class="tag-highlight">{row['tag']}</span></td>
+                            <td>{row['timestamp']}</td>
+                        </tr>
         """
     # Top 10 tags mais usadas
     top_tags = user_tags_df['tag'].value_counts().head(10)
@@ -574,11 +548,11 @@ def generate_user_tags_report(user_id, obras):
     """
     for idx, (tag, count) in enumerate(top_tags.items(), 1):
         html += f"""
-                                <tr>
-                                    <td>{idx}</td>
-                                    <td><span class="tag-highlight">{tag}</span></td>
-                                    <td>{count}</td>
-                                </tr>
+                        <tr>
+                            <td>{idx}</td>
+                            <td><span class="tag-highlight">{tag}</span></td>
+                            <td>{count}</td>
+                        </tr>
         """
     html += """
                 </tbody>
@@ -600,7 +574,7 @@ def show_header():
         <div class='navbar-logo'>Sistema Folksonomia Digital</div>
     </div>
     """, unsafe_allow_html=True)
-    # A navegação principal agora é feita via botões estilizados no main()
+    # A navegação principal agora é feita via st.tabs no main()
 
 def main():
     load_custom_css()
@@ -616,70 +590,23 @@ def main():
         st.session_state['step'] = 'intro'
     if 'answers' not in st.session_state:
         st.session_state['answers'] = {}
-    if 'current_view' not in st.session_state: # Renomeado de 'current_page' para 'current_view'
-        st.session_state['current_view'] = "Explorar Obras"
+    if 'current_page' not in st.session_state:
+        st.session_state['current_page'] = "Explorar Obras"
 
     if st.session_state['step'] != 'completed':
         show_intro()
     else:
         show_header()
         st.markdown("<div class='main-content'>", unsafe_allow_html=True)
-        # Botões de navegação principais abaixo da barra branca
-        st.markdown("<div style='display: flex; justify-content: center; gap: 2rem; margin-bottom: 3rem;'>", unsafe_allow_html=True)
-        # Botão Explorar Obras
-        if st.button("Explorar Obras", key="nav_explorar_obras", help="Navegar para a galeria de obras", 
-                             use_container_width=False, 
-                             type="secondary" if st.session_state['current_view'] != "Explorar Obras" else "primary"):
-            st.session_state['current_view'] = "Explorar Obras"
-            st.rerun()
-        # Injetar o CSS do liquid glass diretamente no botão Streamlit
-        st.markdown(f"""
-            <style>
-                div[data-testid="stButton"] > button[kind="secondary"][data-testid="stFormSubmitButton"]:has(span:contains("Explorar Obras")) {{
-                    {'' if st.session_state['current_view'] == "Explorar Obras" else 'background: rgba(255, 255, 255, 0.3) !important; border: 1px solid rgba(255, 255, 255, 0.6) !important; backdrop-filter: blur(10px) !important; -webkit-backdrop-filter: blur(10px) !important; color: #1e293b !important; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1) !important;'}
-                    border-radius: 12px !important; padding: 1rem 2.5rem !important; font-weight: 600 !important; font-size: 1.1rem !important; transition: all 0.3s ease !important;
-                }}
-                div[data-testid="stButton"] > button[kind="secondary"][data-testid="stFormSubmitButton"]:has(span:contains("Explorar Obras")):hover {{
-                    background: rgba(255, 255, 255, 0.5) !important; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15) !important; transform: translateY(-3px) scale(1.02) !important; border-color: rgba(255, 255, 255, 0.8) !important;
-                }}
-                div[data-testid="stButton"] > button[kind="primary"][data-testid="stFormSubmitButton"]:has(span:contains("Explorar Obras")) {{
-                    background: #475569 !important; color: white !important; border: none !important; border-radius: 12px !important; padding: 1rem 2.5rem !important; font-weight: 600 !important; font-size: 1.1rem !important; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1) !important; transition: all 0.3s ease !important;
-                }}
-                div[data-testid="stButton"] > button[kind="primary"][data-testid="stFormSubmitButton"]:has(span:contains("Explorar Obras")):hover {{
-                    background: #334155 !important; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15) !important; transform: translateY(-3px) scale(1.02) !important;
-                }}
-            </style>
-        """, unsafe_allow_html=True)
-        # Botão Área Administrativa
-        if st.button("Área Administrativa", key="nav_area_admin", help="Acessar o painel administrativo", 
-                             use_container_width=False, 
-                             type="secondary" if st.session_state['current_view'] != "Área Administrativa" else "primary"):
-            st.session_state['current_view'] = "Área Administrativa"
-            st.rerun()
-        # Injetar o CSS do liquid glass diretamente no botão Streamlit
-        st.markdown(f"""
-            <style>
-                div[data-testid="stButton"] > button[kind="secondary"][data-testid="stFormSubmitButton"]:has(span:contains("Área Administrativa")) {{
-                    {'' if st.session_state['current_view'] == "Área Administrativa" else 'background: rgba(255, 255, 255, 0.3) !important; border: 1px solid rgba(255, 255, 255, 0.6) !important; backdrop-filter: blur(10px) !important; -webkit-backdrop-filter: blur(10px) !important; color: #1e293b !important; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1) !important;'}
-                    border-radius: 12px !important; padding: 1rem 2.5rem !important; font-weight: 600 !important; font-size: 1.1rem !important; transition: all 0.3s ease !important;
-                }}
-                div[data-testid="stButton"] > button[kind="secondary"][data-testid="stFormSubmitButton"]:has(span:contains("Área Administrativa")):hover {{
-                    background: rgba(255, 255, 255, 0.5) !important; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15) !important; transform: translateY(-3px) scale(1.02) !important; border-color: rgba(255, 255, 255, 0.8) !important;
-                }}
-                div[data-testid="stButton"] > button[kind="primary"][data-testid="stFormSubmitButton"]:has(span:contains("Área Administrativa")) {{
-                    background: #475569 !important; color: white !important; border: none !important; border-radius: 12px !important; padding: 1rem 2.5rem !important; font-weight: 600 !important; font-size: 1.1rem !important; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1) !important; transition: all 0.3s ease !important;
-                }}
-                div[data-testid="stButton"] > button[kind="primary"][data-testid="stFormSubmitButton"]:has(span:contains("Área Administrativa")):hover {{
-                    background: #334155 !important; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15) !important; transform: translateY(-3px) scale(1.02) !important;
-                }}
-            </style>
-        """, unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True) # Fecha a div dos botões
 
-        if st.session_state['current_view'] == "Explorar Obras":
+        # Nova navegação principal usando st.tabs, como na imagem
+        main_tabs = st.tabs(["Explorar Obras", "Área Administrativa"])
+
+        with main_tabs[0]:
             show_obras()
-        elif st.session_state['current_view'] == "Área Administrativa":
+        with main_tabs[1]:
             show_admin()
+
         st.markdown("</div>", unsafe_allow_html=True)
 
 def show_intro():
@@ -693,12 +620,12 @@ def show_intro():
         col1, col2 = st.columns([1, 1])
         with col1:
             q1 = st.selectbox("1. Qual é o seu nível de familiaridade com museus?",
-                              ["Nunca visito museus", "Visito raramente", "Visito ocasionalmente", "Visito frequentemente"])
+                ["Nunca visito museus", "Visito raramente", "Visito ocasionalmente", "Visito frequentemente"])
             q2 = st.selectbox("2. Você já ouviu falar sobre documentação museológica?",
-                              ["Nunca ouvi falar", "Já ouvi, mas não sei o que é", "Tenho uma ideia básica", "Conheço bem o tema"])
+                ["Nunca ouvi falar", "Já ouvi, mas não sei o que é", "Tenho uma ideia básica", "Conheço bem o tema"])
         with col2:
             q3 = st.text_area("3. O que você entende por 'tags' ou etiquetas digitais aplicadas a acervo?",
-                              max_chars=500, height=200, placeholder="Descreva sua compreensão sobre o conceito...")
+                max_chars=500, height=200, placeholder="Descreva sua compreensão sobre o conceito...")
         col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 1])
         with col_btn2:
             submit = st.form_submit_button("Acessar Plataforma", use_container_width=True)
@@ -722,6 +649,8 @@ def show_obras():
         st.info("Nenhuma obra cadastrada no momento.")
         return
 
+    # REMOVIDA A SEÇÃO DE EXPORTAR DADOS DO USUÁRIO DA ÁREA PÚBLICA
+
     # Filtros
     st.markdown("<div class='professional-card'>", unsafe_allow_html=True)
     col1, col2 = st.columns([2, 1])
@@ -734,7 +663,6 @@ def show_obras():
     filtered = obras
     if search:
         filtered = [o for o in obras if search.lower() in o['titulo'].lower() or search.lower() in o['artista'].lower()]
-
     if sort_by == "Título":
         filtered = sorted(filtered, key=lambda x: x['titulo'])
     elif sort_by == "Artista":
@@ -752,8 +680,8 @@ def show_obras():
                 <img src='{obra['imagem']}' alt='{obra['titulo']}' />
                 <div style='padding: 1.5rem;'>
                     <h3 style='color: #1e293b; font-size: 1.2rem; font-weight: 700; margin-bottom: 0.5rem;'>{obra['titulo']}</h3>
-                    <p style='color: #64748b; font-size: 0.9rem; margin: 0.3rem 0;'><span>Artista:</span> {obra['artista']}</p>
-                    <p style='color: #94a3b8; font-size: 0.85rem;'><span>Ano:</span> {obra['ano']}</p>
+                    <p style='color: #64748b; font-size: 0.9rem; margin: 0.3rem 0;'><span style='font-weight: 600;'>Artista:</span> {obra['artista']}</p>
+                    <p style='color: #94a3b8; font-size: 0.85rem;'><span style='font-weight: 600;'>Ano:</span> {obra['ano']}</p>
                 </div>
             </div>
             """, unsafe_allow_html=True)
@@ -777,7 +705,6 @@ def show_obras():
                     if cancel:
                         del st.session_state['selected_obra']
                         st.rerun()
-
             # Mostrar apenas tags do usuário
             tags = get_tags_for_obra_by_user(obra['id'], st.session_state['user_id'])
             if not tags.empty:
@@ -816,8 +743,10 @@ def show_admin():
             st.markdown("</div>", unsafe_allow_html=True)
     else:
         st.markdown(f"<h1 class='main-title'>Dashboard Administrativo</h1><p class='subtitle'>Bem-vindo, <strong style='color: #475569;'>{st.session_state.get('admin_username', 'Admin')}</strong></p>", unsafe_allow_html=True)
+
         # Tabs da área administrativa
         tabs = st.tabs(["Visão Geral", "Análises", "Dados", "Obras", "Exportar Completo", "Exportar Usuários"])
+
         with tabs[0]:
             show_overview()
         with tabs[1]:
@@ -878,31 +807,26 @@ def show_overview():
 def show_analysis():
     st.markdown("### Análises Gerais")
     tags_df = load_all_tags()
-
     if tags_df.empty:
         st.info("Não há dados suficientes para análises.")
         return
 
     col1, col2 = st.columns(2)
+
     with col1:
         st.markdown("#### Distribuição de Tags (Top 15)")
+        # Gráfico de barras para distribuição de tags
         counts = tags_df['tag'].value_counts().head(15)
-        if not counts.empty:
-            fig = px.pie(counts, values=counts.values, names=counts.index, title='Distribuição de Tags', hole=0.3)
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("Não há tags para exibir a distribuição.")
+        st.bar_chart(counts)
+
     with col2:
         st.markdown("#### Obras Mais Tagueadas (Top 10)")
+        # Gráfico de barras para obras mais tagueadas
         per_obra = tags_df.groupby('obra_id').size()
         obras = load_obras()
         od = {o['id']: o['titulo'] for o in obras}
         per_obra_named = per_obra.rename(index=od).sort_values(ascending=False).head(10)
-        if not per_obra_named.empty:
-            fig = px.pie(per_obra_named, values=per_obra_named.values, names=per_obra_named.index, title='Obras Mais Tagueadas', hole=0.3)
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("Não há obras tagueadas para exibir a distribuição.")
+        st.bar_chart(per_obra_named)
 
     st.markdown("#### Tags Raras (Top 10 menos usadas)")
     rare_tags = tags_df['tag'].value_counts().tail(10).reset_index()
@@ -942,22 +866,16 @@ def show_data_analysis(): # Função renomeada e reestruturada
         if not tags_df.empty:
             st.markdown("#### Distribuição das 10 Tags Mais Frequentes")
             top_tags_counts = tags_df['tag'].value_counts().head(10)
-            if not top_tags_counts.empty:
-                fig_top_tags = px.pie(top_tags_counts, values=top_tags_counts.values, names=top_tags_counts.index, title='Top 10 Tags Mais Frequentes', hole=0.3)
-                st.plotly_chart(fig_top_tags, use_container_width=True)
-            else:
-                st.info("Não há tags para exibir a distribuição.")
+            # Substituído px.pie por st.bar_chart
+            st.bar_chart(top_tags_counts)
 
             st.markdown("#### Distribuição das 10 Obras Mais Tagueadas")
             ot = tags_df.groupby('obra_id').size().reset_index(name='Total')
             od = {o['id']: o['titulo'] for o in obras}
             ot['Obra'] = ot['obra_id'].map(od)
-            top_obras_counts = ot[['Obra', 'Total']].sort_values('Total', ascending=False).head(10)
-            if not top_obras_counts.empty:
-                fig_top_obras = px.pie(top_obras_counts, values='Total', names='Obra', title='Top 10 Obras Mais Tagueadas', hole=0.3)
-                st.plotly_chart(fig_top_obras, use_container_width=True)
-            else:
-                st.info("Não há obras tagueadas para exibir a distribuição.")
+            top_obras_counts = ot[['Obra', 'Total']].sort_values('Total', ascending=False).head(10).set_index('Obra')
+            # Substituído px.pie por st.bar_chart
+            st.bar_chart(top_obras_counts)
         else:
             st.info("Não há tags para exibir rankings e distribuições.")
 
@@ -972,32 +890,29 @@ def show_data_analysis(): # Função renomeada e reestruturada
             tags_per_obra_unique.columns = ['obra_id', 'Tags Únicas']
             obras_dict = {o['id']: o['titulo'] for o in obras}
             tags_per_obra_unique['Obra'] = tags_per_obra_unique['obra_id'].map(obras_dict)
-            # Gráfico de pizza para tags únicas por obra (Top 10)
-            top_unique_obra_tags = tags_per_obra_unique.sort_values('Tags Únicas', ascending=False).head(10)
-            if not top_unique_obra_tags.empty:
-                fig_unique_obra = px.pie(top_unique_obra_tags, values='Tags Únicas', names='Obra', title='Top 10 Obras por Diversidade de Tags', hole=0.3)
-                st.plotly_chart(fig_unique_obra, use_container_width=True)
-            else:
-                st.info("Não há tags únicas por obra para exibir a distribuição.")
+
+            # Gráfico de barras para tags únicas por obra (Top 10)
+            top_unique_obra_tags = tags_per_obra_unique.sort_values('Tags Únicas', ascending=False).head(10).set_index('Obra')
+            st.bar_chart(top_unique_obra_tags)
             st.dataframe(tags_per_obra_unique[['Obra', 'Tags Únicas']].sort_values('Tags Únicas', ascending=False), use_container_width=True, hide_index=True)
+
 
             st.markdown("##### Distribuição de Tags Únicas por Usuário")
             tags_per_user_unique = tags_df.groupby('user_id')['tag'].nunique().reset_index()
             tags_per_user_unique.columns = ['user_id', 'Tags Únicas']
             tags_per_user_unique['Nome do Usuário'] = tags_per_user_unique['user_id'].apply(get_user_name_by_id)
-            # Gráfico de pizza para tags únicas por usuário (Top 10)
-            top_unique_user_tags = tags_per_user_unique.sort_values('Tags Únicas', ascending=False).head(10)
-            if not top_unique_user_tags.empty:
-                fig_unique_user = px.pie(top_unique_user_tags, values='Tags Únicas', names='Nome do Usuário', title='Top 10 Usuários por Diversidade de Tags', hole=0.3)
-                st.plotly_chart(fig_unique_user, use_container_width=True)
-            else:
-                st.info("Não há tags únicas por usuário para exibir a distribuição.")
+
+            # Gráfico de barras para tags únicas por usuário (Top 10)
+            top_unique_user_tags = tags_per_user_unique.sort_values('Tags Únicas', ascending=False).head(10).set_index('Nome do Usuário')
+            st.bar_chart(top_unique_user_tags)
             st.dataframe(tags_per_user_unique[['Nome do Usuário', 'Tags Únicas']].sort_values('Tags Únicas', ascending=False), use_container_width=True, hide_index=True)
 
             st.markdown("##### Análise de Co-ocorrência de Tags (Padrões de Ligação)")
             st.info("Esta análise mostra quais tags tendem a aparecer juntas nas mesmas obras. Isso ajuda a identificar padrões e 'bases' de tagueamento.")
+
             # Criar uma lista de sets de tags por obra para co-ocorrência
             tags_by_obra = tags_df.groupby('obra_id')['tag'].apply(lambda x: set(x.tolist())).tolist()
+
             co_occurrence = {}
             for i in range(len(tags_by_obra)):
                 for tag1 in tags_by_obra[i]:
@@ -1005,6 +920,7 @@ def show_data_analysis(): # Função renomeada e reestruturada
                         if tag1 != tag2:
                             pair = tuple(sorted((tag1, tag2)))
                             co_occurrence[pair] = co_occurrence.get(pair, 0) + 1
+
             if co_occurrence:
                 co_occurrence_df = pd.DataFrame(co_occurrence.items(), columns=['Par de Tags', 'Frequência'])
                 co_occurrence_df['Tag 1'] = co_occurrence_df['Par de Tags'].apply(lambda x: x[0])
@@ -1021,6 +937,7 @@ def show_data_analysis(): # Função renomeada e reestruturada
                 st.write(f"Desvio padrão do comprimento das tags: {tags_df['tag_length'].std():.2f} caracteres")
             else:
                 st.info("Não há tags para analisar o comprimento.")
+
         else:
             st.info("Não há tags para análise detalhada.")
 
@@ -1029,19 +946,13 @@ def show_data_analysis(): # Função renomeada e reestruturada
         if not users_df.empty:
             st.markdown("##### Distribuição das Respostas (Q1: Familiaridade com Museus)")
             q1_counts = users_df['q1'].value_counts()
-            if not q1_counts.empty:
-                fig_q1 = px.pie(q1_counts, values=q1_counts.values, names=q1_counts.index, title='Familiaridade com Museus', hole=0.3)
-                st.plotly_chart(fig_q1, use_container_width=True)
-            else:
-                st.info("Não há respostas para Q1 para exibir a distribuição.")
+            # Substituído px.pie por st.bar_chart
+            st.bar_chart(q1_counts)
 
             st.markdown("##### Distribuição das Respostas (Q2: Conhecimento sobre Documentação Museológica)")
             q2_counts = users_df['q2'].value_counts()
-            if not q2_counts.empty:
-                fig_q2 = px.pie(q2_counts, values=q2_counts.values, names=q2_counts.index, title='Conhecimento sobre Documentação Museológica', hole=0.3)
-                st.plotly_chart(fig_q2, use_container_width=True)
-            else:
-                st.info("Não há respostas para Q2 para exibir a distribuição.")
+            # Substituído px.pie por st.bar_chart
+            st.bar_chart(q2_counts)
 
             st.markdown("##### Cruzamento de Dados: Familiaridade com Museus vs. Número de Tags Criadas")
             if not tags_df.empty:
@@ -1074,7 +985,6 @@ def show_data_analysis(): # Função renomeada e reestruturada
 def show_manage_obras():
     st.markdown("### Gestão de Obras")
     obras = load_obras()
-
     tab1, tab2 = st.tabs(["Listar Obras", "Adicionar Nova"])
 
     with tab1:
@@ -1150,7 +1060,6 @@ def show_export_users():
         user_options.append(f"{user_name} (ID: {user_id})")
 
     selected_option = st.selectbox("Selecione o usuário:", user_options)
-
     # Extrair o user_id da string selecionada
     selected_user = selected_option.split('(ID: ')[-1].replace(')', '') if selected_option else None
 
