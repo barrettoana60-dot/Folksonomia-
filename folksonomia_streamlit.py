@@ -382,7 +382,8 @@ def save_tag(user_id, obra_id, tag):
 def get_user_tags(user_id):
     """Retorna apenas tags do usuário atual"""
     tags = load_json_file(TAGS_FILE, [])
-    user_tags = [t for t t in tags if t['user_id'] == user_id]
+    # CORREÇÃO AQUI: Removido o 't' duplicado
+    user_tags = [t for t in tags if t['user_id'] == user_id] 
     return pd.DataFrame(user_tags) if user_tags else pd.DataFrame()
 
 def get_tags_for_obra_by_user(obra_id, user_id):
@@ -564,24 +565,22 @@ def generate_user_tags_report(user_id, obras):
     html += """
                 </tbody>
             </table>
-            <h2 style="color: #1e293b; margin-top: 40px; margin-bottom: 20px; font-size: 1.5rem;">Suas Tags Mais Utilizadas</h2>
+            <h2 style="color: #1e293b; margin-top: 40px; margin-bottom: 20px; font-size: 1.5rem;">Top 10 Tags Mais Usadas por Este Usuário</h2>
             <table>
                 <thead>
                     <tr>
-                        <th>Posição</th>
                         <th>Tag</th>
                         <th>Frequência</th>
                     </tr>
                 </thead>
                 <tbody>
     """
-    for idx, (tag, count) in enumerate(top_tags.items(), 1):
+    for tag, count in top_tags.items():
         html += f"""
-                        <tr>
-                            <td>{idx}</td>
-                            <td><span class="tag-highlight">{tag}</span></td>
-                            <td>{count}</td>
-                        </tr>
+                    <tr>
+                        <td><span class="tag-highlight">{tag}</span></td>
+                        <td>{count}</td>
+                    </tr>
         """
     html += """
                 </tbody>
@@ -596,600 +595,96 @@ def generate_user_tags_report(user_id, obras):
     """
     return html
 
-# ==================== INTERFACE ====================
-def show_header():
-    st.markdown("""
-    <div class='top-navbar'>
-        <div class='navbar-logo'>Sistema Folksonomia Digital</div>
-    </div>
-    """, unsafe_allow_html=True)
-    # A navegação principal agora é feita via botões estilizados no main()
-
+# ==================== PÁGINAS DO APP ====================
 def main():
     load_custom_css()
-    try:
-        check_and_init_admin()
-    except Exception as e:
-        st.error(f"Erro ao inicializar admin: {e}")
-        pass
+    check_and_init_admin()
 
     if 'user_id' not in st.session_state:
         st.session_state['user_id'] = generate_user_id()
-    if 'step' not in st.session_state:
-        st.session_state['step'] = 'intro'
-    if 'answers' not in st.session_state:
-        st.session_state['answers'] = {}
-    if 'current_view' not in st.session_state: # Renomeado de 'current_page' para 'current_view'
-        st.session_state['current_view'] = "Explorar Obras"
+        st.session_state['step'] = 'intro' # 'intro', 'questionnaire', 'completed'
 
-    if st.session_state['step'] != 'completed':
+    # Header fixo com logo
+    st.markdown(f"""
+    <div class='top-navbar'>
+        <span class='navbar-logo'>Sistema Folksonomia Digital</span>
+        <div>
+            {f"<span style='color: #475569; font-weight: 600; margin-right: 1rem;'>Olá, {st.session_state.get('answers', {}).get('nome', 'Visitante')}!</span>" if st.session_state.get('step') == 'completed' else ''}
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Conteúdo principal
+    st.markdown("<div class='main-content'>", unsafe_allow_html=True)
+
+    # Navegação principal abaixo da barra branca
+    if st.session_state.get('step') == 'completed' or st.session_state.get('admin_logged_in'):
+        col_nav1, col_nav2, col_nav3 = st.columns([1, 1, 4]) # Ajuste para centralizar e dar espaço
+        with col_nav1:
+            if st.button("Explorar Obras", key="nav_obras", use_container_width=True, help="Ver e taguear obras de arte", type="secondary"):
+                st.session_state['current_page'] = 'obras'
+                st.rerun()
+        with col_nav2:
+            if st.button("Área Administrativa", key="nav_admin", use_container_width=True, help="Gerenciar obras e analisar dados", type="secondary"):
+                st.session_state['current_page'] = 'admin'
+                st.rerun()
+        # Adicionar o estilo liquid-glass-button aos botões de navegação
+        st.markdown("""
+        <style>
+            [data-testid="stButton"] > button[aria-label="Explorar Obras"] {
+                background: rgba(255, 255, 255, 0.3) !important;
+                border: 1px solid rgba(255, 255, 255, 0.6) !important;
+                backdrop-filter: blur(10px) !important;
+                -webkit-backdrop-filter: blur(10px) !important;
+                color: #1e293b !important;
+                border-radius: 12px !important;
+                padding: 1rem 2.5rem !important;
+                font-weight: 600 !important;
+                font-size: 1.1rem !important;
+                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1) !important;
+                transition: all 0.3s ease !important;
+            }
+            [data-testid="stButton"] > button[aria-label="Explorar Obras"]:hover {
+                background: rgba(255, 255, 255, 0.5) !important;
+                box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15) !important;
+                transform: translateY(-3px) scale(1.02) !important;
+                border-color: rgba(255, 255, 255, 0.8) !important;
+            }
+            [data-testid="stButton"] > button[aria-label="Área Administrativa"] {
+                background: rgba(255, 255, 255, 0.3) !important;
+                border: 1px solid rgba(255, 255, 255, 0.6) !important;
+                backdrop-filter: blur(10px) !important;
+                -webkit-backdrop-filter: blur(10px) !important;
+                color: #1e293b !important;
+                border-radius: 12px !important;
+                padding: 1rem 2.5rem !important;
+                font-weight: 600 !important;
+                font-size: 1.1rem !important;
+                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1) !important;
+                transition: all 0.3s ease !important;
+            }
+            [data-testid="stButton"] > button[aria-label="Área Administrativa"]:hover {
+                background: rgba(255, 255, 255, 0.5) !important;
+                box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15) !important;
+                transform: translateY(-3px) scale(1.02) !important;
+                border-color: rgba(255, 255, 255, 0.8) !important;
+            }
+        </style>
+        """, unsafe_allow_html=True)
+        st.markdown("<div style='margin-top: 2rem;'></div>", unsafe_allow_html=True) # Espaçamento abaixo dos botões
+
+    if st.session_state['step'] == 'intro':
         show_intro()
-    else:
-        show_header()
-        st.markdown("<div class='main-content'>", unsafe_allow_html=True)
+    elif st.session_state['step'] == 'completed':
+        if 'current_page' not in st.session_state:
+            st.session_state['current_page'] = 'obras' # Página padrão após o questionário
 
-        # Botões de navegação principais abaixo da barra branca
-        st.markdown("<div style='display: flex; justify-content: center; gap: 2rem; margin-bottom: 3rem;'>", unsafe_allow_html=True)
-
-        # Botão Explorar Obras
-        if st.button("Explorar Obras", key="nav_explorar_obras", help="Navegar para a galeria de obras", 
-                     use_container_width=False, 
-                     type="secondary" if st.session_state['current_view'] != "Explorar Obras" else "primary"):
-            st.session_state['current_view'] = "Explorar Obras"
-            st.rerun()
-        # Injetar o CSS do liquid glass diretamente no botão Streamlit
-        st.markdown(f"""
-            <style>
-                div[data-testid="stButton"] > button[kind="secondary"][data-testid="stFormSubmitButton"]:has(span:contains("Explorar Obras")) {{
-                    {'' if st.session_state['current_view'] == "Explorar Obras" else 'background: rgba(255, 255, 255, 0.3) !important; border: 1px solid rgba(255, 255, 255, 0.6) !important; backdrop-filter: blur(10px) !important; -webkit-backdrop-filter: blur(10px) !important; color: #1e293b !important; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1) !important;'}
-                    border-radius: 12px !important; padding: 1rem 2.5rem !important; font-weight: 600 !important; font-size: 1.1rem !important; transition: all 0.3s ease !important;
-                }}
-                div[data-testid="stButton"] > button[kind="secondary"][data-testid="stFormSubmitButton"]:has(span:contains("Explorar Obras")):hover {{
-                    background: rgba(255, 255, 255, 0.5) !important; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15) !important; transform: translateY(-3px) scale(1.02) !important; border-color: rgba(255, 255, 255, 0.8) !important;
-                }}
-                div[data-testid="stButton"] > button[kind="primary"][data-testid="stFormSubmitButton"]:has(span:contains("Explorar Obras")) {{
-                    background: #475569 !important; color: white !important; border: none !important; border-radius: 12px !important; padding: 1rem 2.5rem !important; font-weight: 600 !important; font-size: 1.1rem !important; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1) !important; transition: all 0.3s ease !important;
-                }}
-                div[data-testid="stButton"] > button[kind="primary"][data-testid="stFormSubmitButton"]:has(span:contains("Explorar Obras")):hover {{
-                    background: #334155 !important; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15) !important; transform: translateY(-3px) scale(1.02) !important;
-                }}
-            </style>
-        """, unsafe_allow_html=True)
-
-        # Botão Área Administrativa
-        if st.button("Área Administrativa", key="nav_area_admin", help="Acessar o painel administrativo", 
-                     use_container_width=False, 
-                     type="secondary" if st.session_state['current_view'] != "Área Administrativa" else "primary"):
-            st.session_state['current_view'] = "Área Administrativa"
-            st.rerun()
-        # Injetar o CSS do liquid glass diretamente no botão Streamlit
-        st.markdown(f"""
-            <style>
-                div[data-testid="stButton"] > button[kind="secondary"][data-testid="stFormSubmitButton"]:has(span:contains("Área Administrativa")) {{
-                    {'' if st.session_state['current_view'] == "Área Administrativa" else 'background: rgba(255, 255, 255, 0.3) !important; border: 1px solid rgba(255, 255, 255, 0.6) !important; backdrop-filter: blur(10px) !important; -webkit-backdrop-filter: blur(10px) !important; color: #1e293b !important; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1) !important;'}
-                    border-radius: 12px !important; padding: 1rem 2.5rem !important; font-weight: 600 !important; font-size: 1.1rem !important; transition: all 0.3s ease !important;
-                }}
-                div[data-testid="stButton"] > button[kind="secondary"][data-testid="stFormSubmitButton"]:has(span:contains("Área Administrativa")):hover {{
-                    background: rgba(255, 255, 255, 0.5) !important; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15) !important; transform: translateY(-3px) scale(1.02) !important; border-color: rgba(255, 255, 255, 0.8) !important;
-                }}
-                div[data-testid="stButton"] > button[kind="primary"][data-testid="stFormSubmitButton"]:has(span:contains("Área Administrativa")) {{
-                    background: #475569 !important; color: white !important; border: none !important; border-radius: 12px !important; padding: 1rem 2.5rem !important; font-weight: 600 !important; font-size: 1.1rem !important; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1) !important; transition: all 0.3s ease !important;
-                }}
-                div[data-testid="stButton"] > button[kind="primary"][data-testid="stFormSubmitButton"]:has(span:contains("Área Administrativa")):hover {{
-                    background: #334155 !important; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15) !important; transform: translateY(-3px) scale(1.02) !important;
-                }}
-            </style>
-        """, unsafe_allow_html=True)
-
-        st.markdown("</div>", unsafe_allow_html=True) # Fecha a div dos botões
-
-        if st.session_state['current_view'] == "Explorar Obras":
+        if st.session_state['current_page'] == 'obras':
             show_obras()
-        elif st.session_state['current_view'] == "Área Administrativa":
+        elif st.session_state['current_page'] == 'admin':
             show_admin()
 
-        st.markdown("</div>", unsafe_allow_html=True)
-
-def show_intro():
-    st.markdown("<div class='main-content'>", unsafe_allow_html=True)
-    st.markdown("<h1 class='main-title'>Sistema Folksonomia Digital</h1>", unsafe_allow_html=True)
-    st.markdown("<p class='subtitle'>Sistema de catalogação colaborativa de obras de arte<br>Complete o questionário para acessar a plataforma</p>", unsafe_allow_html=True)
-    st.markdown("<div class='professional-card'>", unsafe_allow_html=True)
-    st.markdown("<h2 style='color: #1e293b; text-align: center; margin-bottom: 2rem; font-size: 1.5rem;'>Questionário de Acesso</h2>", unsafe_allow_html=True)
-    with st.form("intro_form"):
-        nome_usuario = st.text_input("Seu Nome:", placeholder="Digite seu nome completo")
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            q1 = st.selectbox("1. Qual é o seu nível de familiaridade com museus?",
-                ["Nunca visito museus", "Visito raramente", "Visito ocasionalmente", "Visito frequentemente"])
-            q2 = st.selectbox("2. Você já ouviu falar sobre documentação museológica?",
-                ["Nunca ouvi falar", "Já ouvi, mas não sei o que é", "Tenho uma ideia básica", "Conheço bem o tema"])
-        with col2:
-            q3 = st.text_area("3. O que você entende por 'tags' ou etiquetas digitais aplicadas a acervo?",
-                max_chars=500, height=200, placeholder="Descreva sua compreensão sobre o conceito...")
-        col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 1])
-        with col_btn2:
-            submit = st.form_submit_button("Acessar Plataforma", use_container_width=True)
-        if submit:
-            if not nome_usuario.strip() or not q3.strip():
-                st.error("Por favor, preencha seu nome e responda todas as perguntas para continuar!")
-            else:
-                st.session_state['answers'] = {"nome": nome_usuario, "q1": q1, "q2": q2, "q3": q3}
-                save_user_answers(st.session_state['user_id'], st.session_state['answers'])
-                st.session_state['step'] = 'completed'
-                st.success("Questionário completo! Acesso liberado.")
-                st.balloons()
-                st.rerun()
-    st.markdown("</div></div>", unsafe_allow_html=True)
-
-def show_obras():
-    st.markdown("<h1 class='main-title'>Galeria de Obras de Arte</h1>", unsafe_allow_html=True)
-    st.markdown("<p class='subtitle'>Explore obras de arte e contribua com tags colaborativas</p>", unsafe_allow_html=True)
-    obras = load_obras()
-    if not obras:
-        st.info("Nenhuma obra cadastrada no momento.")
-        return
-
-    # Filtros
-    st.markdown("<div class='professional-card'>", unsafe_allow_html=True)
-    col1, col2 = st.columns([2, 1])
-    with col1:
-        search = st.text_input("Buscar obra", "", placeholder="Digite título ou artista...")
-    with col2:
-        sort_by = st.selectbox("Ordenar por:", ["Título", "Artista", "Ano"])
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    filtered = obras
-    if search:
-        filtered = [o for o in obras if search.lower() in o['titulo'].lower() or search.lower() in o['artista'].lower()]
-    if sort_by == "Título":
-        filtered = sorted(filtered, key=lambda x: x['titulo'])
-    elif sort_by == "Artista":
-        filtered = sorted(filtered, key=lambda x: x['artista'])
-    else:
-        filtered = sorted(filtered, key=lambda x: x['ano'])
-
-    st.markdown(f"<div style='text-align: center; color: #64748b; margin: 2rem 0; font-size: 1.1rem;'>Exibindo <strong style='color: #475569;'>{len(filtered)}</strong> obra(s)</div>", unsafe_allow_html=True)
-
-    cols = st.columns(3)
-    for i, obra in enumerate(filtered):
-        with cols[i % 3]:
-            st.markdown(f"""
-            <div class='obra-card'>
-                <img src='{obra['imagem']}' alt='{obra['titulo']}' />
-                <div style='padding: 1.5rem;'>
-                    <h3 style='color: #1e293b; font-size: 1.2rem; font-weight: 700; margin-bottom: 0.5rem;'>{obra['titulo']}</h3>
-                    <p style='color: #64748b; font-size: 0.9rem; margin: 0.3rem 0;'><span style='font-weight: 600;'>Artista:</span> {obra['artista']}</p>
-                    <p style='color: #94a3b8; font-size: 0.85rem;'><span style='font-weight: 600;'>Ano:</span> {obra['ano']}</p>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-            if st.button(f"Adicionar Tag", key=f"btn_{obra['id']}", use_container_width=True):
-                st.session_state['selected_obra'] = obra
-                st.rerun()
-
-            if 'selected_obra' in st.session_state and st.session_state['selected_obra']['id'] == obra['id']:
-                with st.form(f"tag_form_{obra['id']}"):
-                    tag = st.text_input("Sua tag:", key=f"tag_{obra['id']}", placeholder="Ex: impressionismo")
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        submitted = st.form_submit_button("Enviar", use_container_width=True)
-                    with col2:
-                        cancel = st.form_submit_button("Cancelar", use_container_width=True)
-                    if submitted and tag:
-                        save_tag(st.session_state['user_id'], obra['id'], tag)
-                        st.success(f"Tag '{tag}' adicionada com sucesso!")
-                        del st.session_state['selected_obra']
-                        st.rerun()
-                    if cancel:
-                        del st.session_state['selected_obra']
-                        st.rerun()
-            # Mostrar apenas tags do usuário
-            tags = get_tags_for_obra_by_user(obra['id'], st.session_state['user_id'])
-            if not tags.empty:
-                st.markdown("**Suas Tags:**")
-                html = ""
-                for _, row in tags.iterrows():
-                    html += f"<span class='tag-badge'>{row['tag']} ({row['count']})</span>"
-                st.markdown(html, unsafe_allow_html=True)
-            else:
-                st.info("Você ainda não criou tags para esta obra")
-
-def show_admin():
-    if 'admin_logged_in' not in st.session_state:
-        st.session_state['admin_logged_in'] = False
-
-    if not st.session_state['admin_logged_in']:
-        st.markdown("<h1 class='main-title'>Área Administrativa</h1>", unsafe_allow_html=True)
-        st.markdown("<p class='subtitle'>Acesso restrito</p>", unsafe_allow_html=True)
-        col1, col2, col3 = st.columns([1, 1, 1])
-        with col2:
-            st.markdown("<div class='professional-card'>", unsafe_allow_html=True)
-            st.markdown("<h2 style='color: #1e293b; text-align: center; margin-bottom: 2rem;'>Login Administrativo</h2>", unsafe_allow_html=True)
-            with st.form("login"):
-                username = st.text_input("Usuário:", placeholder="Digite seu usuário")
-                password = st.text_input("Senha:", type="password", placeholder="Digite sua senha")
-                submitted = st.form_submit_button("Entrar no Sistema", use_container_width=True)
-                if submitted:
-                    if check_admin_credentials(username, password):
-                        st.session_state['admin_logged_in'] = True
-                        st.session_state['admin_username'] = username
-                        st.success("Login realizado com sucesso!")
-                        st.balloons()
-                        st.rerun()
-                    else:
-                        st.error("Credenciais inválidas. Acesso negado.")
-            st.markdown("</div>", unsafe_allow_html=True)
-    else:
-        st.markdown(f"<h1 class='main-title'>Dashboard Administrativo</h1><p class='subtitle'>Bem-vindo, <strong style='color: #475569;'>{st.session_state.get('admin_username', 'Admin')}</strong></p>", unsafe_allow_html=True)
-
-        # Tabs da área administrativa
-        tabs = st.tabs(["Visão Geral", "Análises", "Dados", "Obras", "Exportar Completo", "Exportar Usuários"])
-
-        with tabs[0]:
-            show_overview()
-        with tabs[1]:
-            show_analysis()
-        with tabs[2]: # Chamando a nova função show_data_analysis
-            show_data_analysis()
-        with tabs[3]:
-            show_manage_obras()
-        with tabs[4]:
-            show_export_complete()
-        with tabs[5]:
-            show_export_users()
-
-        col1, col2, col3 = st.columns([1, 1, 1])
-        with col2:
-            if st.button("Sair do Sistema", use_container_width=True):
-                st.session_state['admin_logged_in'] = False
-                st.rerun()
-
-def show_overview():
-    tags_df = load_all_tags()
-    users_df = load_all_users()
-    obras = load_obras()
-
-    st.markdown("### Métricas Principais")
-    col1, col2, col3, col4 = st.columns(4)
-    metrics = [
-        ("Usuários", len(users_df['user_id'].unique()) if not users_df.empty else 0),
-        ("Total Tags", len(tags_df) if not tags_df.empty else 0),
-        ("Tags Únicas", len(tags_df['tag'].unique()) if not tags_df.empty else 0),
-        ("Obras", len(obras))
-    ]
-    for col, (label, value) in zip([col1, col2, col3, col4], metrics):
-        with col:
-            st.markdown(f"""
-            <div class='metric-card'>
-                <div class='metric-label'>{label}</div>
-                <div class='metric-value'>{value}</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-    if not tags_df.empty:
-        st.markdown("### Rankings")
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown("#### Top 15 Tags Mais Utilizadas")
-            top = tags_df['tag'].value_counts().head(15).reset_index()
-            top.columns = ['Tag', 'Quantidade']
-            st.dataframe(top, use_container_width=True, hide_index=True)
-        with col2:
-            st.markdown("#### Obras Mais Tagueadas")
-            ot = tags_df.groupby('obra_id').size().reset_index(name='Total')
-            od = {o['id']: o['titulo'] for o in obras}
-            ot['Obra'] = ot['obra_id'].map(od)
-            st.dataframe(ot[['Obra', 'Total']].sort_values('Total', ascending=False).head(10),
-                         use_container_width=True, hide_index=True)
-
-def show_analysis():
-    st.markdown("### Análises Gerais")
-    tags_df = load_all_tags()
-    if tags_df.empty:
-        st.info("Não há dados suficientes para análises.")
-        return
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.markdown("#### Distribuição de Tags (Top 15)")
-        counts = tags_df['tag'].value_counts().head(15)
-        if not counts.empty:
-            fig = px.pie(counts, values=counts.values, names=counts.index, title='Distribuição de Tags', hole=0.3)
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("Não há tags para exibir a distribuição.")
-
-    with col2:
-        st.markdown("#### Obras Mais Tagueadas (Top 10)")
-        per_obra = tags_df.groupby('obra_id').size()
-        obras = load_obras()
-        od = {o['id']: o['titulo'] for o in obras}
-        per_obra_named = per_obra.rename(index=od).sort_values(ascending=False).head(10)
-        if not per_obra_named.empty:
-            fig = px.pie(per_obra_named, values=per_obra_named.values, names=per_obra_named.index, title='Obras Mais Tagueadas', hole=0.3)
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("Não há obras tagueadas para exibir a distribuição.")
-
-    st.markdown("#### Tags Raras (Top 10 menos usadas)")
-    rare_tags = tags_df['tag'].value_counts().tail(10).reset_index()
-    rare_tags.columns = ['Tag', 'Quantidade']
-    st.dataframe(rare_tags, use_container_width=True, hide_index=True)
-
-def show_data_analysis(): # Função renomeada e reestruturada
-    st.markdown("### Análise Detalhada de Dados") # Novo título
-    tags_df = load_all_tags()
-    users_df = load_all_users()
-    obras = load_obras()
-
-    if tags_df.empty and users_df.empty:
-        st.info("Sem dados suficientes para análise detalhada.")
-        return
-
-    tab_overview, tab_tags_detail, tab_questionnaire_analysis = st.tabs(["Visão Geral dos Dados", "Análise de Tags Detalhada", "Análise do Questionário"])
-
-    with tab_overview:
-        st.markdown("#### Resumo dos Dados Coletados")
-        col1, col2, col3, col4 = st.columns(4)
-        metrics = [
-            ("Total de Usuários", len(users_df['user_id'].unique()) if not users_df.empty else 0),
-            ("Total de Tags", len(tags_df) if not tags_df.empty else 0),
-            ("Tags Únicas", len(tags_df['tag'].unique()) if not tags_df.empty else 0),
-            ("Total de Obras", len(obras))
-        ]
-        for col, (label, value) in zip([col1, col2, col3, col4], metrics):
-            with col:
-                st.markdown(f"""
-                <div class='metric-card'>
-                    <div class='metric-label'>{label}</div>
-                    <div class='metric-value'>{value}</div>
-                </div>
-                """, unsafe_allow_html=True)
-
-        if not tags_df.empty:
-            st.markdown("#### Distribuição das 10 Tags Mais Frequentes")
-            top_tags_counts = tags_df['tag'].value_counts().head(10)
-            if not top_tags_counts.empty:
-                fig_top_tags = px.pie(top_tags_counts, values=top_tags_counts.values, names=top_tags_counts.index, title='Top 10 Tags Mais Frequentes', hole=0.3)
-                st.plotly_chart(fig_top_tags, use_container_width=True)
-            else:
-                st.info("Não há tags para exibir a distribuição.")
-
-            st.markdown("#### Distribuição das 10 Obras Mais Tagueadas")
-            ot = tags_df.groupby('obra_id').size().reset_index(name='Total')
-            od = {o['id']: o['titulo'] for o in obras}
-            ot['Obra'] = ot['obra_id'].map(od)
-            top_obras_counts = ot[['Obra', 'Total']].sort_values('Total', ascending=False).head(10)
-            if not top_obras_counts.empty:
-                fig_top_obras = px.pie(top_obras_counts, values='Total', names='Obra', title='Top 10 Obras Mais Tagueadas', hole=0.3)
-                st.plotly_chart(fig_top_obras, use_container_width=True)
-            else:
-                st.info("Não há obras tagueadas para exibir a distribuição.")
-        else:
-            st.info("Não há tags para exibir rankings e distribuições.")
-
-    with tab_tags_detail:
-        st.markdown("#### Análise Aprofundada das Tags")
-        if not tags_df.empty:
-            st.markdown("##### Todas as Tags e Suas Frequências")
-            st.dataframe(tags_df['tag'].value_counts().reset_index().rename(columns={'index': 'Tag', 'tag': 'Frequência Total'}), use_container_width=True, hide_index=True)
-
-            st.markdown("##### Distribuição de Tags Únicas por Obra")
-            tags_per_obra_unique = tags_df.groupby('obra_id')['tag'].nunique().reset_index()
-            tags_per_obra_unique.columns = ['obra_id', 'Tags Únicas']
-            obras_dict = {o['id']: o['titulo'] for o in obras}
-            tags_per_obra_unique['Obra'] = tags_per_obra_unique['obra_id'].map(obras_dict)
-
-            # Gráfico de pizza para tags únicas por obra (Top 10)
-            top_unique_obra_tags = tags_per_obra_unique.sort_values('Tags Únicas', ascending=False).head(10)
-            if not top_unique_obra_tags.empty:
-                fig_unique_obra = px.pie(top_unique_obra_tags, values='Tags Únicas', names='Obra', title='Top 10 Obras por Diversidade de Tags', hole=0.3)
-                st.plotly_chart(fig_unique_obra, use_container_width=True)
-            else:
-                st.info("Não há tags únicas por obra para exibir a distribuição.")
-            st.dataframe(tags_per_obra_unique[['Obra', 'Tags Únicas']].sort_values('Tags Únicas', ascending=False), use_container_width=True, hide_index=True)
-
-
-            st.markdown("##### Distribuição de Tags Únicas por Usuário")
-            tags_per_user_unique = tags_df.groupby('user_id')['tag'].nunique().reset_index()
-            tags_per_user_unique.columns = ['user_id', 'Tags Únicas']
-            tags_per_user_unique['Nome do Usuário'] = tags_per_user_unique['user_id'].apply(get_user_name_by_id)
-
-            # Gráfico de pizza para tags únicas por usuário (Top 10)
-            top_unique_user_tags = tags_per_user_unique.sort_values('Tags Únicas', ascending=False).head(10)
-            if not top_unique_user_tags.empty:
-                fig_unique_user = px.pie(top_unique_user_tags, values='Tags Únicas', names='Nome do Usuário', title='Top 10 Usuários por Diversidade de Tags', hole=0.3)
-                st.plotly_chart(fig_unique_user, use_container_width=True)
-            else:
-                st.info("Não há tags únicas por usuário para exibir a distribuição.")
-            st.dataframe(tags_per_user_unique[['Nome do Usuário', 'Tags Únicas']].sort_values('Tags Únicas', ascending=False), use_container_width=True, hide_index=True)
-
-            st.markdown("##### Análise de Co-ocorrência de Tags (Padrões de Ligação)")
-            st.info("Esta análise mostra quais tags tendem a aparecer juntas nas mesmas obras. Isso ajuda a identificar padrões e 'bases' de tagueamento.")
-
-            # Criar uma lista de sets de tags por obra para co-ocorrência
-            tags_by_obra = tags_df.groupby('obra_id')['tag'].apply(lambda x: set(x.tolist())).tolist()
-
-            co_occurrence = {}
-            for i in range(len(tags_by_obra)):
-                for tag1 in tags_by_obra[i]:
-                    for tag2 in tags_by_obra[i]:
-                        if tag1 != tag2:
-                            pair = tuple(sorted((tag1, tag2)))
-                            co_occurrence[pair] = co_occurrence.get(pair, 0) + 1
-
-            if co_occurrence:
-                co_occurrence_df = pd.DataFrame(co_occurrence.items(), columns=['Par de Tags', 'Frequência'])
-                co_occurrence_df['Tag 1'] = co_occurrence_df['Par de Tags'].apply(lambda x: x[0])
-                co_occurrence_df['Tag 2'] = co_occurrence_df['Par de Tags'].apply(lambda x: x[1])
-                st.dataframe(co_occurrence_df[['Tag 1', 'Tag 2', 'Frequência']].sort_values('Frequência', ascending=False).head(20), use_container_width=True, hide_index=True)
-            else:
-                st.info("Não há tags suficientes para analisar co-ocorrência.")
-
-            st.markdown("##### Distribuição do Comprimento das Tags")
-            if not tags_df.empty:
-                tags_df['tag_length'] = tags_df['tag'].str.len()
-                st.bar_chart(tags_df['tag_length'].value_counts().sort_index())
-                st.write(f"Média de comprimento das tags: {tags_df['tag_length'].mean():.2f} caracteres")
-                st.write(f"Desvio padrão do comprimento das tags: {tags_df['tag_length'].std():.2f} caracteres")
-            else:
-                st.info("Não há tags para analisar o comprimento.")
-
-        else:
-            st.info("Não há tags para análise detalhada.")
-
-    with tab_questionnaire_analysis:
-        st.markdown("#### Análise do Questionário de Usuários")
-        if not users_df.empty:
-            st.markdown("##### Distribuição das Respostas (Q1: Familiaridade com Museus)")
-            q1_counts = users_df['q1'].value_counts()
-            if not q1_counts.empty:
-                fig_q1 = px.pie(q1_counts, values=q1_counts.values, names=q1_counts.index, title='Familiaridade com Museus', hole=0.3)
-                st.plotly_chart(fig_q1, use_container_width=True)
-            else:
-                st.info("Não há respostas para Q1 para exibir a distribuição.")
-
-            st.markdown("##### Distribuição das Respostas (Q2: Conhecimento sobre Documentação Museológica)")
-            q2_counts = users_df['q2'].value_counts()
-            if not q2_counts.empty:
-                fig_q2 = px.pie(q2_counts, values=q2_counts.values, names=q2_counts.index, title='Conhecimento sobre Documentação Museológica', hole=0.3)
-                st.plotly_chart(fig_q2, use_container_width=True)
-            else:
-                st.info("Não há respostas para Q2 para exibir a distribuição.")
-
-            st.markdown("##### Cruzamento de Dados: Familiaridade com Museus vs. Número de Tags Criadas")
-            if not tags_df.empty:
-                user_tag_counts = tags_df.groupby('user_id').size().reset_index(name='Total_Tags')
-                merged_df = pd.merge(users_df, user_tag_counts, on='user_id', how='left').fillna(0)
-                avg_tags_by_familiarity = merged_df.groupby('q1')['Total_Tags'].mean().sort_values(ascending=False)
-                st.bar_chart(avg_tags_by_familiarity)
-                st.write("Média de tags criadas por nível de familiaridade com museus:")
-                st.dataframe(avg_tags_by_familiarity.reset_index(), use_container_width=True, hide_index=True)
-            else:
-                st.info("Não há tags para cruzar com os dados do questionário.")
-
-            st.markdown("##### Cruzamento de Dados: Familiaridade com Museus vs. Diversidade de Tags Criadas")
-            if not tags_df.empty:
-                user_unique_tag_counts = tags_df.groupby('user_id')['tag'].nunique().reset_index(name='Tags_Unicas')
-                merged_df_unique = pd.merge(users_df, user_unique_tag_counts, on='user_id', how='left').fillna(0)
-                avg_unique_tags_by_familiarity = merged_df_unique.groupby('q1')['Tags_Unicas'].mean().sort_values(ascending=False)
-                st.bar_chart(avg_unique_tags_by_familiarity)
-                st.write("Média de tags únicas criadas por nível de familiaridade com museus:")
-                st.dataframe(avg_unique_tags_by_familiarity.reset_index(), use_container_width=True, hide_index=True)
-            else:
-                st.info("Não há tags para cruzar com os dados do questionário.")
-
-            st.markdown("##### Respostas Abertas (Q3: O que você entende por 'tags'?)")
-            st.dataframe(users_df[['user_id', 'nome', 'q3', 'timestamp']].sort_values('timestamp', ascending=False), use_container_width=True, hide_index=True)
-            st.info("Para uma análise mais profunda das respostas abertas, seria necessário processamento de linguagem natural (NLP) para identificar temas e padrões.")
-        else:
-            st.info("Nenhum usuário respondeu ao questionário ainda.")
-
-def show_manage_obras():
-    st.markdown("### Gestão de Obras")
-    obras = load_obras()
-    tab1, tab2 = st.tabs(["Listar Obras", "Adicionar Nova"])
-
-    with tab1:
-        if obras:
-            for obra in obras:
-                col1, col2, col3 = st.columns([1, 2, 1])
-                with col1:
-                    st.image(obra['imagem'], use_container_width=True)
-                with col2:
-                    st.markdown(f"**{obra['titulo']}**")
-                    st.markdown(f"*{obra['artista']} - {obra['ano']}*")
-                with col3:
-                    if st.button("Remover", key=f"del_{obra['id']}"):
-                        obras.remove(obra)
-                        save_json_file(OBRAS_FILE, obras)
-                        st.success("Obra removida!")
-                        st.cache_data.clear()
-                        st.rerun()
-                st.divider()
-        else:
-            st.info("Nenhuma obra cadastrada")
-
-    with tab2:
-        with st.form("add"):
-            titulo = st.text_input("Título da Obra")
-            artista = st.text_input("Artista")
-            ano = st.text_input("Ano")
-            imagem = st.text_input("URL da Imagem")
-            if st.form_submit_button("Adicionar Obra"):
-                if titulo and artista and ano and imagem:
-                    new_id = max([o['id'] for o in obras]) + 1 if obras else 1
-                    obras.append({"id": new_id, "titulo": titulo, "artista": artista, "ano": ano, "imagem": imagem})
-                    save_json_file(OBRAS_FILE, obras)
-                    st.success("Obra adicionada com sucesso!")
-                    st.cache_data.clear()
-                    st.rerun()
-                else:
-                    st.error("Preencha todos os campos!")
-
-def show_export_complete():
-    st.markdown("### Exportação Completa do Sistema")
-    tags_df = load_all_tags()
-    users_df = load_all_users()
-    obras = load_obras()
-
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown("#### Exportar CSV")
-        if not tags_df.empty:
-            csv = tags_df.to_csv(index=False).encode('utf-8')
-            st.download_button("Baixar Todas as Tags (CSV)", csv, f"tags_completo_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv", use_container_width=True)
-        if not users_df.empty:
-            csv = users_df.to_csv(index=False).encode('utf-8')
-            st.download_button("Baixar Todos os Usuários (CSV)", csv, f"usuarios_completo_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv", use_container_width=True)
-        if obras:
-            csv = pd.DataFrame(obras).to_csv(index=False).encode('utf-8')
-            st.download_button("Baixar Todas as Obras (CSV)", csv, f"obras_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv", use_container_width=True)
-
-def show_export_users():
-    st.markdown("### Exportar Dados por Usuário")
-    users_df = load_all_users()
-    obras = load_obras()
-
-    if users_df.empty:
-        st.info("Nenhum usuário cadastrado.")
-        return
-
-    user_ids = users_df['user_id'].unique().tolist()
-    # Adicionando o nome do usuário ao selectbox para facilitar a identificação
-    user_options = []
-    for user_id in user_ids:
-        user_name = get_user_name_by_id(user_id)
-        user_options.append(f"{user_name} (ID: {user_id})")
-
-    selected_option = st.selectbox("Selecione o usuário:", user_options)
-    # Extrair o user_id da string selecionada
-    selected_user = selected_option.split('(ID: ')[-1].replace(')', '') if selected_option else None
-
-    if selected_user:
-        user_name_display = selected_option.split(' (ID:')[0]
-        st.markdown(f"#### Dados para o Usuário: **{user_name_display}**")
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown("##### Questionário")
-            html = generate_user_questionnaire_report(selected_user)
-            if html:
-                st.download_button("Baixar Respostas (HTML/PDF)", html, f"questionario_{selected_user}.html", "text/html", use_container_width=True)
-            user_data = users_df[users_df['user_id'] == selected_user]
-            if not user_data.empty:
-                csv = user_data.to_csv(index=False).encode('utf-8')
-                st.download_button("Baixar Respostas (CSV)", csv, f"questionario_{selected_user}.csv", "text/csv", use_container_width=True)
-        with col2:
-            st.markdown("##### Tags Criadas")
-            html = generate_user_tags_report(selected_user, obras)
-            if html:
-                st.download_button("Baixar Tags (HTML/PDF)", html, f"tags_{selected_user}.html", "text/html", use_container_width=True)
-            user_tags = get_user_tags(selected_user)
-            if not user_tags.empty:
-                csv = user_tags.to_csv(index=False).encode('utf-8')
-                st.download_button("Baixar Tags (CSV)", csv, f"tags_{selected_user}.csv", "text/csv", use_container_width=True)
+    st.markdown("</div>", unsafe_allow_html=True) # Fecha main-content
 
 if __name__ == "__main__":
     main()
