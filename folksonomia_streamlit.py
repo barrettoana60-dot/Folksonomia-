@@ -11,7 +11,7 @@ warnings.filterwarnings('ignore')
 
 # ==================== CONFIGURAÇÃO ====================
 st.set_page_config(
-    page_title="Folksonomia", # Título da aba do navegador
+    page_title="Sistema Folksonomia Digital",
     layout="wide",
     initial_sidebar_state="collapsed",
     page_icon="📚" 
@@ -59,7 +59,6 @@ def load_custom_css():
     st.markdown(f"""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap');
-    @import url('https://fonts.googleapis.com/css2?family=Times+New+Roman&display=swap'); /* Importa Times New Roman */
 
     * {{ 
         margin: 0; 
@@ -74,6 +73,10 @@ def load_custom_css():
         100% {{ background-position: 0% 50%; }}
     }}
 
+    /* Mantendo float e pulse comentados, pois foram removidos anteriormente */
+    /* @keyframes float */
+    /* @keyframes pulse */
+
     .stApp {{
         background: linear-gradient(-45deg, #000000 0%, #001F3F 25%, #000000 50%, #001F3F 75%, #000000 100%); /* Gradiente animado: Preto e Azul Marinho Escuro */
         background-size: 400% 400%;
@@ -81,15 +84,10 @@ def load_custom_css():
         color: #e0e0e0; /* Cor de texto padrão mais clara para contraste */
     }}
 
-    /* REMOVENDO A BARRA DE TÍTULO PADRÃO DO STREAMLIT */
-    header {{
-        visibility: hidden;
-        height: 0px !important;
-        display: none !important;
-    }}
+    /* Removido .top-navbar e .navbar-logo */
 
     .main-content {{
-        margin-top: 0px; /* Ajustado para 0, já que a barra de título foi removida */
+        margin-top: 0px; /* Ajustado para 0, já que a navbar foi removida */
         padding: 2rem 3rem;
         max-width: 1600px;
         margin-left: auto;
@@ -184,7 +182,7 @@ def load_custom_css():
         margin: 2rem 0 1rem 0;
         letter-spacing: -2px;
         text-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-        font-family: 'Times New Roman', serif !important; /* Fonte Times New Roman */
+        /* animation: float 3s ease-in-out infinite; Removido */
     }}
 
     .subtitle {{
@@ -221,7 +219,6 @@ def load_custom_css():
     .metric-card {{
         background: rgba(255, 255, 255, 0.2);
         backdrop-filter: blur(20px) saturate(180%);
-        -webkit-backdrop-filter: blur(20px) saturate(180%);
         border: 1px solid rgba(255, 255, 255, 0.3);
         border-radius: 20px;
         padding: 2.5rem;
@@ -241,6 +238,7 @@ def load_custom_css():
         width: 200%;
         height: 200%;
         background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, transparent 70%);
+        /* animation: pulse 3s ease-in-out infinite; Removido */
     }}
 
     .metric-card:hover {{
@@ -397,7 +395,7 @@ def load_custom_css():
     .stAlert.warning {{ border-left-color: #f59e0b !important; }}
     .stAlert.error {{ border-left-color: #ef4444 !important; }}
 
-    #MainMenu, footer {{visibility: hidden;}} /* Esconde o menu e o footer padrão do Streamlit */
+    #MainMenu, footer, header {{visibility: hidden;}}
     .stDeployButton {{display: none;}}
     [data-testid="stSidebar"] {{display: none;}} 
 
@@ -427,7 +425,7 @@ def load_custom_css():
 
     @media (max-width: 768px) {{
         .main-title {{ font-size: 2.5rem; }}
-        .main-content {{ margin-top: 0px; padding: 1rem; }} 
+        .main-content {{ margin-top: 0px; padding: 1rem; }} /* Ajustado para 0 */
     }}
     </style>
     """, unsafe_allow_html=True)
@@ -559,7 +557,7 @@ def generate_user_questionnaire_report(user_id):
                 <div class="answer">{user_info.get('q3', 'N/A')}</div>
             </div>
             <div class="footer">
-                <p>Folksonomia</p>
+                <p>Sistema Folksonomia Digital</p>
                 <p style="margin-top: 10px;">Para salvar como PDF: Use Ctrl+P e selecione "Salvar como PDF"</p>
             </div>
         </div>
@@ -671,7 +669,7 @@ def generate_user_tags_report(user_id, obras):
                 </tbody>
             </table>
             <div class="footer">
-                <p>Folksonomia</p>
+                <p>Sistema Folksonomia Digital</p>
                 <p style="margin-top: 10px;">Para salvar como PDF: Use Ctrl+P e selecione "Salvar como PDF"</p>
             </div>
         </div>
@@ -681,6 +679,7 @@ def generate_user_tags_report(user_id, obras):
     return html
 
 # ==================== INTERFACE ====================
+# A função show_header() foi removida, pois a barra de navegação será eliminada.
 
 def main():
     load_custom_css()
@@ -700,10 +699,8 @@ def main():
     if st.session_state['step'] != 'completed':
         show_intro()
     else:
+        # show_header() # Removido
         st.markdown("<div class='main-content'>", unsafe_allow_html=True)
-        st.markdown("<h1 class='main-title'>Folksonomia</h1>", unsafe_allow_html=True) # Título principal adicionado aqui
-        st.markdown("<p class='subtitle'>Explore e colabore com tags para obras de arte</p>", unsafe_allow_html=True) # Subtítulo adicionado
-
         main_tabs = st.tabs(["Explorar Obras", "Area Administrativa"]) 
         with main_tabs[0]:
             show_obras()
@@ -713,8 +710,8 @@ def main():
 
 def show_intro():
     st.markdown("<div class='main-content'>", unsafe_allow_html=True)
-    st.markdown("<h1 class='main-title'>Folksonomia</h1>", unsafe_allow_html=True) # Título principal adicionado aqui
-    st.markdown("<p class='subtitle'>Sistema colaborativo de catalogação de obras de arte<br>Complete o questionário para acessar a plataforma</p>", unsafe_allow_html=True) # Subtítulo adicionado
+    st.markdown("<h1 class='main-title'>Sistema Folksonomia Digital</h1>", unsafe_allow_html=True) 
+    st.markdown("<p class='subtitle'>Sistema colaborativo de catalogação de obras de arte<br>Complete o questionário para acessar a plataforma</p>", unsafe_allow_html=True)
 
     st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
     st.markdown("<h2 style='text-align: center; margin-bottom: 2.5rem; font-size: 1.8rem;'>Questionário de Acesso</h2>", unsafe_allow_html=True) 
@@ -828,9 +825,8 @@ def show_admin():
         st.session_state['admin_logged_in'] = False
 
     if not st.session_state['admin_logged_in']:
-        st.markdown("<div class='main-content'>", unsafe_allow_html=True) 
-        st.markdown("<h1 class='main-title'>Folksonomia</h1>", unsafe_allow_html=True) # Título principal adicionado aqui
-        st.markdown("<p class='subtitle'>Acesso restrito à área administrativa</p>", unsafe_allow_html=True) # Subtítulo adicionado
+        st.markdown("<h1 class='main-title'>Area Administrativa</h1>", unsafe_allow_html=True) 
+        st.markdown("<p class='subtitle'>Acesso restrito</p>", unsafe_allow_html=True)
 
         col1, col2, col3 = st.columns([1, 1, 1])
         with col2:
@@ -853,9 +849,8 @@ def show_admin():
                         st.error("Credenciais invalidas. Acesso negado.") 
 
             st.markdown("</div>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True) 
     else:
-        st.markdown(f"<h1 class='main-title'>Dashboard Administrativo Folksonomia</h1><p class='subtitle'>Bem-vindo, <strong>{st.session_state.get('admin_username', 'Admin')}</strong></p>", unsafe_allow_html=True) 
+        st.markdown(f"<h1 class='main-title'>Dashboard Administrativo</h1><p class='subtitle'>Bem-vindo, <strong>{st.session_state.get('admin_username', 'Admin')}</strong></p>", unsafe_allow_html=True) 
 
         tabs = st.tabs(["Visao Geral", "Analises", "Dados", "Obras", "Exportar Completo", "Exportar Usuarios"]) 
 
@@ -1077,7 +1072,7 @@ def show_data_analysis():
             st.dataframe(users_df[['user_id', 'q3', 'timestamp']].sort_values('timestamp', ascending=False), use_container_width=True, hide_index=True)
             st.info("Para analise mais profunda das respostas abertas, seria necessario processamento de linguagem natural (NLP).") 
         else:
-            st.info("Nenhum usuario respondeu ao questionário ainda.")
+            st.info("Nenhum usuario respondeu ao questionario ainda.")
 
 def show_manage_obras():
     st.markdown("### Gestao de Obras") 
