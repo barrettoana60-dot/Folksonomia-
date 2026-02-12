@@ -11,7 +11,7 @@ warnings.filterwarnings('ignore')
 
 # ==================== CONFIGURAÇÃO ====================
 st.set_page_config(
-    page_title=" Folksonomia ",
+    page_title="Sistema Folksonomia Digital",
     layout="wide",
     initial_sidebar_state="collapsed",
     page_icon="📚" 
@@ -84,36 +84,10 @@ def load_custom_css():
         color: #e0e0e0; /* Cor de texto padrão mais clara para contraste */
     }}
 
-    .top-navbar {{
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        z-index: 9999;
-        background: rgba(255, 255, 255, 0.1);
-        backdrop-filter: blur(20px) saturate(180%);
-        -webkit-backdrop-filter: blur(20px) saturate(180%);
-        border-bottom: 1px solid rgba(255, 255, 255, 0.2);
-        padding: 1.5rem 3rem;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-    }}
-
-    .navbar-logo {{
-        font-size: 1.8rem;
-        font-weight: 800;
-        background: linear-gradient(135deg, #a7e6ff 0%, #d1baff 100%); /* Gradiente mais claro para o logo */
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-        letter-spacing: -1px;
-        /* animation: pulse 2s ease-in-out infinite; Removido */
-    }}
+    /* Removido .top-navbar e .navbar-logo */
 
     .main-content {{
-        margin-top: 120px;
+        margin-top: 0px; /* Ajustado para 0, já que a navbar foi removida */
         padding: 2rem 3rem;
         max-width: 1600px;
         margin-left: auto;
@@ -451,8 +425,7 @@ def load_custom_css():
 
     @media (max-width: 768px) {{
         .main-title {{ font-size: 2.5rem; }}
-        .main-content {{ margin-top: 140px; padding: 1rem; }}
-        .top-navbar {{ padding: 1rem 1.5rem; }}
+        .main-content {{ margin-top: 0px; padding: 1rem; }} /* Ajustado para 0 */
     }}
     </style>
     """, unsafe_allow_html=True)
@@ -706,12 +679,7 @@ def generate_user_tags_report(user_id, obras):
     return html
 
 # ==================== INTERFACE ====================
-def show_header():
-    st.markdown("""
-    <div class='top-navbar'>
-        <div class='navbar-logo'>Sistema Folksonomia Digital</div>
-    </div>
-    """, unsafe_allow_html=True)
+# A função show_header() foi removida, pois a barra de navegação será eliminada.
 
 def main():
     load_custom_css()
@@ -731,7 +699,7 @@ def main():
     if st.session_state['step'] != 'completed':
         show_intro()
     else:
-        show_header()
+        # show_header() # Removido
         st.markdown("<div class='main-content'>", unsafe_allow_html=True)
         main_tabs = st.tabs(["Explorar Obras", "Area Administrativa"]) 
         with main_tabs[0]:
