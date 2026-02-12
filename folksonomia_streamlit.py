@@ -11,7 +11,7 @@ warnings.filterwarnings('ignore')
 
 # ==================== CONFIGURAÇÃO ====================
 st.set_page_config(
-    page_title="Sistema Folksonomia Digital",
+    page_title=" Folksonomia ",
     layout="wide",
     initial_sidebar_state="collapsed",
     page_icon="📚" 
