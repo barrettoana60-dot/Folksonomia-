@@ -11,7 +11,7 @@ warnings.filterwarnings('ignore')
 
 # ==================== CONFIGURAÇÃO ====================
 st.set_page_config(
-    page_title="Sistema Folksonomia Digital",
+    page_title="Folksonomia", # Título da página alterado
     layout="wide",
     initial_sidebar_state="collapsed",
     page_icon="📚" 
@@ -182,6 +182,7 @@ def load_custom_css():
         margin: 2rem 0 1rem 0;
         letter-spacing: -2px;
         text-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        font-family: 'Times New Roman', serif !important; /* Fonte Times New Roman */
         /* animation: float 3s ease-in-out infinite; Removido */
     }}
 
@@ -557,7 +558,7 @@ def generate_user_questionnaire_report(user_id):
                 <div class="answer">{user_info.get('q3', 'N/A')}</div>
             </div>
             <div class="footer">
-                <p>Sistema Folksonomia Digital</p>
+                <p>Folksonomia</p>
                 <p style="margin-top: 10px;">Para salvar como PDF: Use Ctrl+P e selecione "Salvar como PDF"</p>
             </div>
         </div>
@@ -669,7 +670,7 @@ def generate_user_tags_report(user_id, obras):
                 </tbody>
             </table>
             <div class="footer">
-                <p>Sistema Folksonomia Digital</p>
+                <p>Folksonomia</p>
                 <p style="margin-top: 10px;">Para salvar como PDF: Use Ctrl+P e selecione "Salvar como PDF"</p>
             </div>
         </div>
@@ -679,7 +680,7 @@ def generate_user_tags_report(user_id, obras):
     return html
 
 # ==================== INTERFACE ====================
-# A função show_header() foi removida, pois a barra de navegação será eliminada.
+# A função show_header() foi removida, pois a barra de navegação foi eliminada.
 
 def main():
     load_custom_css()
@@ -710,11 +711,11 @@ def main():
 
 def show_intro():
     st.markdown("<div class='main-content'>", unsafe_allow_html=True)
-    st.markdown("<h1 class='main-title'>Sistema Folksonomia Digital</h1>", unsafe_allow_html=True) 
-    st.markdown("<p class='subtitle'>Sistema colaborativo de catalogação de obras de arte<br>Complete o questionário para acessar a plataforma</p>", unsafe_allow_html=True)
+    # st.markdown("<h1 class='main-title'>Sistema Folksonomia Digital</h1>", unsafe_allow_html=True) # Removido
+    # st.markdown("<p class='subtitle'>Sistema colaborativo de catalogação de obras de arte<br>Complete o questionário para acessar a plataforma</p>", unsafe_allow_html=True) # Removido
 
     st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-    st.markdown("<h2 style='text-align: center; margin-bottom: 2.5rem; font-size: 1.8rem;'>Questionário de Acesso</h2>", unsafe_allow_html=True) 
+    st.markdown("<h2 style='text-align: center; margin-bottom: 2.5rem; font-size: 1.8rem;'>Questionário de Acesso à Folksonomia</h2>", unsafe_allow_html=True) # Título do questionário ajustado
 
     with st.form("intro_form"):
         col1, col2 = st.columns([1, 1])
@@ -825,13 +826,14 @@ def show_admin():
         st.session_state['admin_logged_in'] = False
 
     if not st.session_state['admin_logged_in']:
-        st.markdown("<h1 class='main-title'>Area Administrativa</h1>", unsafe_allow_html=True) 
-        st.markdown("<p class='subtitle'>Acesso restrito</p>", unsafe_allow_html=True)
+        st.markdown("<div class='main-content'>", unsafe_allow_html=True) # Adicionado main-content para centralizar
+        # st.markdown("<h1 class='main-title'>Area Administrativa</h1>", unsafe_allow_html=True) # Removido
+        # st.markdown("<p class='subtitle'>Acesso restrito</p>", unsafe_allow_html=True) # Removido
 
         col1, col2, col3 = st.columns([1, 1, 1])
         with col2:
             st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-            st.markdown("<h2 style='text-align: center; margin-bottom: 2rem;'>Login Administrativo</h2>", unsafe_allow_html=True) 
+            st.markdown("<h2 style='text-align: center; margin-bottom: 2rem;'>Login Administrativo Folksonomia</h2>", unsafe_allow_html=True) # Título do login ajustado
 
             with st.form("login"):
                 username = st.text_input("Usuario:", placeholder="Digite seu usuario") 
@@ -849,8 +851,9 @@ def show_admin():
                         st.error("Credenciais invalidas. Acesso negado.") 
 
             st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True) # Fechando main-content
     else:
-        st.markdown(f"<h1 class='main-title'>Dashboard Administrativo</h1><p class='subtitle'>Bem-vindo, <strong>{st.session_state.get('admin_username', 'Admin')}</strong></p>", unsafe_allow_html=True) 
+        st.markdown(f"<h1 class='main-title'>Dashboard Administrativo Folksonomia</h1><p class='subtitle'>Bem-vindo, <strong>{st.session_state.get('admin_username', 'Admin')}</strong></p>", unsafe_allow_html=True) # Título do dashboard ajustado
 
         tabs = st.tabs(["Visao Geral", "Analises", "Dados", "Obras", "Exportar Completo", "Exportar Usuarios"]) 
 
