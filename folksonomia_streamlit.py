@@ -545,6 +545,7 @@ def load_all_users():
     return pd.DataFrame(users) if users else pd.DataFrame()
 
 def get_user_name_by_id(user_id):
+    # Removido o campo 'nome' do questionário, então o nome do usuário será o ID truncado
     return f"Usuário {user_id[:8]}"
 
 # ==================== EXPORTAÇÃO ====================
@@ -759,6 +760,7 @@ def show_intro():
     st.markdown("<h2 style='text-align: center; margin-bottom: 2.5rem; font-size: 1.8rem;'>📋 Questionário de Acesso</h2>", unsafe_allow_html=True)
 
     with st.form("intro_form"):
+        # Removido o campo 'nome_usuario' conforme solicitado
         col1, col2 = st.columns([1, 1])
         with col1:
             q1 = st.selectbox("1. Qual é o seu nível de familiaridade com museus?",
@@ -774,10 +776,10 @@ def show_intro():
             submit = st.form_submit_button("🚀 Acessar Plataforma", use_container_width=True)
 
         if submit:
-            if not q3.strip():
+            if not q3.strip(): # Apenas q3 é obrigatório agora
                 st.error("⚠️ Por favor, responda todas as perguntas para continuar!")
             else:
-                st.session_state['answers'] = {"q1": q1, "q2": q2, "q3": q3}
+                st.session_state['answers'] = {"q1": q1, "q2": q2, "q3": q3} # 'nome' não é mais salvo
                 save_user_answers(st.session_state['user_id'], st.session_state['answers'])
                 st.session_state['step'] = 'completed'
                 st.success("✅ Questionário completo! Acesso liberado.")
@@ -1131,4 +1133,102 @@ def show_manage_obras():
                 with col2:
                     st.markdown(f"**{obra['titulo']}**")
                     st.markdown(f"*{obra['artista']} - {obra['ano']}*")
-                with col3
+                with col3: # <-- Onde o erro estava, agora corrigido
+                    if st.button("🗑️ Remover", key=f"del_{obra['id']}"):
+                        obras.remove(obra)
+                        save_json_file(OBRAS_FILE, obras)
+                        st.success("✅ Obra removida!")
+                        st.cache_data.clear()
+                        st.rerun()
+                st.divider()
+        else:
+            st.info("Nenhuma obra cadastrada")
+
+    with tab2:
+        with st.form("add"):
+            titulo = st.text_input("📝 Título da Obra")
+            artista = st.text_input("🎭 Artista")
+            ano = st.text_input("📅 Ano")
+            imagem = st.text_input("🖼️ URL da Imagem")
+
+            if st.form_submit_button("✅ Adicionar Obra"):
+                if titulo and artista and ano and imagem:
+                    new_id = max([o['id'] for o in obras]) + 1 if obras else 1
+                    obras.append({"id": new_id, "titulo": titulo, "artista": artista, "ano": ano, "imagem": imagem})
+                    save_json_file(OBRAS_FILE, obras)
+                    st.success("✅ Obra adicionada com sucesso!")
+                    st.cache_data.clear()
+                    st.rerun()
+                else:
+                    st.error("⚠️ Preencha todos os campos!")
+
+def show_export_complete():
+    st.markdown("### 📦 Exportação Completa do Sistema")
+    tags_df = load_all_tags()
+    users_df = load_all_users()
+    obras = load_obras()
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("#### 📊 Exportar CSV")
+        if not tags_df.empty:
+            csv = tags_df.to_csv(index=False).encode('utf-8')
+            st.download_button("⬇️ Baixar Todas as Tags (CSV)", csv, f"tags_completo_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv", use_container_width=True)
+
+        if not users_df.empty:
+            csv = users_df.to_csv(index=False).encode('utf-8')
+            st.download_button("⬇️ Baixar Todos os Usuários (CSV)", csv, f"usuarios_completo_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv", use_container_width=True)
+
+        if obras:
+            csv = pd.DataFrame(obras).to_csv(index=False).encode('utf-8')
+            st.download_button("⬇️ Baixar Todas as Obras (CSV)", csv, f"obras_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv", use_container_width=True)
+
+def show_export_users():
+    st.markdown("### 👥 Exportar Dados por Usuário")
+    users_df = load_all_users()
+    obras = load_obras()
+
+    if users_df.empty:
+        st.info("Nenhum usuário cadastrado.")
+        return
+
+    user_ids = users_df['user_id'].unique().tolist()
+    user_options = []
+    for user_id in user_ids:
+        user_name = get_user_name_by_id(user_id)
+        user_options.append(f"{user_name} (ID: {user_id})")
+
+    selected_option = st.selectbox("Selecione o usuário:", user_options)
+    selected_user = selected_option.split('(ID: ')[-1].replace(')', '') if selected_option else None
+
+    if selected_user:
+        user_name_display = selected_option.split(' (ID:')[0]
+        st.markdown(f"#### Dados para o Usuário: **{user_name_display}**")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.markdown("##### 📋 Questionário")
+            html = generate_user_questionnaire_report(selected_user)
+            if html:
+                st.download_button("⬇️ Baixar Respostas (HTML/PDF)", html, f"questionario_{selected_user}.html", "text/html", use_container_width=True)
+
+            user_data = users_df[users_df['user_id'] == selected_user]
+            if not user_data.empty:
+                csv = user_data.to_csv(index=False).encode('utf-8')
+                st.download_button("⬇️ Baixar Respostas (CSV)", csv, f"questionario_{selected_user}.csv", "text/csv", use_container_width=True)
+
+        with col2:
+            st.markdown("##### 🏷️ Tags Criadas")
+            html = generate_user_tags_report(selected_user, obras)
+            if html:
+                st.download_button("⬇️ Baixar Tags (HTML/PDF)", html, f"tags_{selected_user}.html", "text/html", use_container_width=True)
+
+            user_tags = get_user_tags(selected_user)
+            if not user_tags.empty:
+                csv = user_tags.to_csv(index=False).encode('utf-8')
+                st.download_button("⬇️ Baixar Tags (CSV)", csv, f"tags_{selected_user}.csv", "text/csv", use_container_width=True)
+
+if __name__ == "__main__":
+    main()
