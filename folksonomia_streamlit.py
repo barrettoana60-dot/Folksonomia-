@@ -78,7 +78,7 @@ def load_custom_css():
     /* @keyframes pulse */
 
     .stApp {{
-        background: linear-gradient(-45deg, #001122 0%, #1A004D 25%, #001122 50%, #1A004D 75%, #001122 100%); /* Gradiente animado com as novas cores mais escuras */
+        background: linear-gradient(-45deg, #000000 0%, #001F3F 25%, #000000 50%, #001F3F 75%, #000000 100%); /* Gradiente animado: Preto e Azul Marinho Escuro */
         background-size: 400% 400%;
         animation: gradient 15s ease infinite;
         color: #e0e0e0; /* Cor de texto padrão mais clara para contraste */
@@ -174,7 +174,7 @@ def load_custom_css():
         left: 0;
         right: 0;
         bottom: 0;
-        background: linear-gradient(135deg, rgba(0, 17, 34, 0.3), rgba(26, 0, 77, 0.3)); /* Cores do gradiente do fundo */
+        background: linear-gradient(135deg, rgba(0, 0, 0, 0.3), rgba(0, 31, 63, 0.3)); /* Cores do gradiente do fundo */
         opacity: 0;
         transition: opacity 0.4s;
     }}
@@ -185,7 +185,7 @@ def load_custom_css():
 
     .obra-card:hover {{
         transform: translateY(-12px) scale(1.03);
-        box-shadow: 0 20px 60px rgba(0, 17, 34, 0.4); /* Sombra com cor do gradiente */
+        box-shadow: 0 20px 60px rgba(0, 31, 63, 0.4); /* Sombra com cor do gradiente */
         border-color: rgba(255, 255, 255, 0.6);
     }}
 
@@ -239,7 +239,7 @@ def load_custom_css():
     .tag-badge:hover {{
         background: rgba(255, 255, 255, 0.4);
         transform: translateY(-3px) scale(1.05);
-        box-shadow: 0 8px 25px rgba(0, 17, 34, 0.4); /* Sombra com cor do gradiente */
+        box-shadow: 0 8px 25px rgba(0, 31, 63, 0.4); /* Sombra com cor do gradiente */
     }}
 
     .metric-card {{
@@ -269,7 +269,7 @@ def load_custom_css():
 
     .metric-card:hover {{
         transform: translateY(-8px) scale(1.05);
-        box-shadow: 0 16px 48px rgba(0, 17, 34, 0.3); /* Sombra com cor do gradiente */
+        box-shadow: 0 16px 48px rgba(0, 31, 63, 0.3); /* Sombra com cor do gradiente */
         border-color: rgba(255, 255, 255, 0.5);
     }}
 
@@ -309,7 +309,7 @@ def load_custom_css():
 
     .stButton button:hover {{
         background: rgba(255, 255, 255, 0.4) !important;
-        box-shadow: 0 12px 40px rgba(0, 17, 34, 0.4) !important; /* Sombra com cor do gradiente */
+        box-shadow: 0 12px 40px rgba(0, 31, 63, 0.4) !important; /* Sombra com cor do gradiente */
         transform: translateY(-4px) scale(1.05) !important;
         border-color: rgba(255, 255, 255, 0.6) !important;
     }}
@@ -375,7 +375,7 @@ def load_custom_css():
     .stTabs [aria-selected="true"] {{
         background: rgba(255, 255, 255, 0.35) !important;
         border-color: rgba(255, 255, 255, 0.5) !important;
-        box-shadow: 0 8px 25px rgba(0, 17, 34, 0.3) !important; /* Sombra com cor do gradiente */
+        box-shadow: 0 8px 25px rgba(0, 31, 63, 0.3) !important; /* Sombra com cor do gradiente */
     }}
 
     .status-badge {{
@@ -554,7 +554,7 @@ def generate_user_questionnaire_report(user_id):
         <title>Respostas do Questionário</title>
         <style>
             * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-            body {{ font-family: 'Poppins', sans-serif; background: linear-gradient(135deg, #001122 0%, #1A004D 100%); padding: 40px; color: white; }}
+            body {{ font-family: 'Poppins', sans-serif; background: linear-gradient(135deg, #000000 0%, #001F3F 100%); padding: 40px; color: white; }}
             .container {{ max-width: 900px; margin: 0 auto; background: rgba(255, 255, 255, 0.15); backdrop-filter: blur(20px); padding: 50px; border-radius: 24px; box-shadow: 0 8px 32px rgba(0,0,0,0.2); border: 1px solid rgba(255, 255, 255, 0.3); }}
             h1 {{ text-align: center; margin-bottom: 15px; font-size: 2.5rem; text-shadow: 0 4px 20px rgba(0, 0, 0, 0.3); }}
             .header-info {{ text-align: center; margin-bottom: 40px; font-size: 1rem; opacity: 0.9; }}
@@ -607,7 +607,7 @@ def generate_user_tags_report(user_id, obras):
         <title>Relatório de Tags</title>
         <style>
             * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-            body {{ font-family: 'Poppins', sans-serif; background: linear-gradient(135deg, #001122 0%, #1A004D 100%); padding: 40px; color: white; }}
+            body {{ font-family: 'Poppins', sans-serif; background: linear-gradient(135deg, #000000 0%, #001F3F 100%); padding: 40px; color: white; }}
             .container {{ max-width: 1200px; margin: 0 auto; background: rgba(255, 255, 255, 0.15); backdrop-filter: blur(20px); padding: 50px; border-radius: 24px; box-shadow: 0 8px 32px rgba(0,0,0,0.2); border: 1px solid rgba(255, 255, 255, 0.3); }}
             h1 {{ text-align: center; margin-bottom: 15px; font-size: 2.5rem; text-shadow: 0 4px 20px rgba(0, 0, 0, 0.3); }}
             .header-info {{ text-align: center; margin-bottom: 40px; font-size: 1rem; opacity: 0.9; }}
@@ -1119,7 +1119,6 @@ def show_manage_obras():
                 with col1:
                     st.image(obra['imagem'], use_container_width=True)
                 with col2:
-                    # CORREÇÃO AQUI: Removido o '}' extra
                     st.markdown(f"**{obra['titulo']}**")
                     st.markdown(f"*{obra['artista']} - {obra['ano']}*") 
                 with col3:
