@@ -14,7 +14,7 @@ st.set_page_config(
     page_title="Sistema Folksonomia Digital",
     layout="wide",
     initial_sidebar_state="collapsed",
-    page_icon="📚"
+    page_icon="📚" # Mantendo o ícone da página, pois não é um emoji no texto
 )
 
 DATA_DIR = "data"
@@ -54,48 +54,30 @@ def save_json_file(filepath, data):
         st.error(f"Erro ao salvar o arquivo {filepath}: {e}")
         return False
 
-# ==================== CSS GLASSMORPHISM MODERNO ====================
+# ==================== CSS GLASSMORPHISM MODERNO (AJUSTADO) ====================
 def load_custom_css():
-    st.markdown("""
+    st.markdown(f"""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap');
 
-    * { 
+    * {{ 
         margin: 0; 
         padding: 0; 
         box-sizing: border-box; 
         font-family: 'Poppins', sans-serif !important; 
-    }
+    }}
 
-    @keyframes gradient {
-        0% { background-position: 0% 50%; }
-        50% { background-position: 100% 50%; }
-        100% { background-position: 0% 50%; }
-    }
+    /* Removendo animações de gradiente e float/pulse */
+    /* @keyframes gradient */
+    /* @keyframes float */
+    /* @keyframes pulse */
 
-    @keyframes float {
-        0%, 100% { transform: translateY(0px); }
-        50% { transform: translateY(-20px); }
-    }
+    .stApp {{
+        background: linear-gradient(135deg, #00295A 0%, #4700AD 100%); /* Gradiente fixo com as cores solicitadas */
+        color: #e0e0e0; /* Cor de texto padrão mais clara para contraste */
+    }}
 
-    @keyframes pulse {
-        0%, 100% { transform: scale(1); }
-        50% { transform: scale(1.05); }
-    }
-
-    @keyframes shimmer {
-        0% { background-position: -1000px 0; }
-        100% { background-position: 1000px 0; }
-    }
-
-    .stApp {
-        background: linear-gradient(-45deg, #667eea 0%, #764ba2 25%, #f093fb 50%, #4facfe 75%, #00f2fe 100%);
-        background-size: 400% 400%;
-        animation: gradient 15s ease infinite;
-        color: #1e293b;
-    }
-
-    .top-navbar {
+    .top-navbar {{
         position: fixed;
         top: 0;
         left: 0;
@@ -110,28 +92,28 @@ def load_custom_css():
         justify-content: space-between;
         align-items: center;
         box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-    }
+    }}
 
-    .navbar-logo {
+    .navbar-logo {{
         font-size: 1.8rem;
         font-weight: 800;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(135deg, #a7e6ff 0%, #d1baff 100%); /* Gradiente mais claro para o logo */
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
         letter-spacing: -1px;
-        animation: pulse 2s ease-in-out infinite;
-    }
+        /* animation: pulse 2s ease-in-out infinite; Removido */
+    }}
 
-    .main-content {
+    .main-content {{
         margin-top: 120px;
         padding: 2rem 3rem;
         max-width: 1600px;
         margin-left: auto;
         margin-right: auto;
-    }
+    }}
 
-    .glass-card {
+    .glass-card {{
         background: rgba(255, 255, 255, 0.15);
         backdrop-filter: blur(20px) saturate(180%);
         -webkit-backdrop-filter: blur(20px) saturate(180%);
@@ -143,9 +125,9 @@ def load_custom_css():
         transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
         position: relative;
         overflow: hidden;
-    }
+    }}
 
-    .glass-card::before {
+    .glass-card::before {{
         content: '';
         position: absolute;
         top: 0;
@@ -154,19 +136,19 @@ def load_custom_css():
         height: 100%;
         background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
         transition: left 0.5s;
-    }
+    }}
 
-    .glass-card:hover::before {
+    .glass-card:hover::before {{
         left: 100%;
-    }
+    }}
 
-    .glass-card:hover {
+    .glass-card:hover {{
         transform: translateY(-8px) scale(1.02);
         box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
         border-color: rgba(255, 255, 255, 0.5);
-    }
+    }}
 
-    .obra-card {
+    .obra-card {{
         background: rgba(255, 255, 255, 0.2);
         backdrop-filter: blur(15px) saturate(180%);
         -webkit-backdrop-filter: blur(15px) saturate(180%);
@@ -176,42 +158,42 @@ def load_custom_css():
         transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
         cursor: pointer;
         position: relative;
-    }
+    }}
 
-    .obra-card::after {
+    .obra-card::after {{
         content: '';
         position: absolute;
         top: 0;
         left: 0;
         right: 0;
         bottom: 0;
-        background: linear-gradient(135deg, rgba(102, 126, 234, 0.3), rgba(118, 75, 162, 0.3));
+        background: linear-gradient(135deg, rgba(0, 41, 90, 0.3), rgba(71, 0, 173, 0.3)); /* Cores do gradiente do fundo */
         opacity: 0;
         transition: opacity 0.4s;
-    }
+    }}
 
-    .obra-card:hover::after {
+    .obra-card:hover::after {{
         opacity: 1;
-    }
+    }}
 
-    .obra-card:hover {
+    .obra-card:hover {{
         transform: translateY(-12px) scale(1.03);
-        box-shadow: 0 20px 60px rgba(102, 126, 234, 0.4);
+        box-shadow: 0 20px 60px rgba(0, 41, 90, 0.4); /* Sombra com cor do gradiente */
         border-color: rgba(255, 255, 255, 0.6);
-    }
+    }}
 
-    .obra-card img {
+    .obra-card img {{
         width: 100%;
         height: 280px;
         object-fit: cover;
         transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
-    }
+    }}
 
-    .obra-card:hover img {
+    .obra-card:hover img {{
         transform: scale(1.15) rotate(2deg);
-    }
+    }}
 
-    .main-title {
+    .main-title {{
         color: white;
         font-size: 3.5rem;
         font-weight: 800;
@@ -219,10 +201,10 @@ def load_custom_css():
         margin: 2rem 0 1rem 0;
         letter-spacing: -2px;
         text-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-        animation: float 3s ease-in-out infinite;
-    }
+        /* animation: float 3s ease-in-out infinite; Removido */
+    }}
 
-    .subtitle {
+    .subtitle {{
         color: rgba(255, 255, 255, 0.95);
         font-size: 1.3rem;
         text-align: center;
@@ -230,9 +212,9 @@ def load_custom_css():
         line-height: 1.8;
         font-weight: 300;
         text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-    }
+    }}
 
-    .tag-badge {
+    .tag-badge {{
         display: inline-block;
         background: rgba(255, 255, 255, 0.25);
         backdrop-filter: blur(10px);
@@ -245,15 +227,15 @@ def load_custom_css():
         font-weight: 600;
         transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-    }
+    }}
 
-    .tag-badge:hover {
+    .tag-badge:hover {{
         background: rgba(255, 255, 255, 0.4);
         transform: translateY(-3px) scale(1.05);
-        box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
-    }
+        box-shadow: 0 8px 25px rgba(0, 41, 90, 0.4); /* Sombra com cor do gradiente */
+    }}
 
-    .metric-card {
+    .metric-card {{
         background: rgba(255, 255, 255, 0.2);
         backdrop-filter: blur(20px) saturate(180%);
         border: 1px solid rgba(255, 255, 255, 0.3);
@@ -265,9 +247,9 @@ def load_custom_css():
         transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
         position: relative;
         overflow: hidden;
-    }
+    }}
 
-    .metric-card::before {
+    .metric-card::before {{
         content: '';
         position: absolute;
         top: -50%;
@@ -275,25 +257,25 @@ def load_custom_css():
         width: 200%;
         height: 200%;
         background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, transparent 70%);
-        animation: pulse 3s ease-in-out infinite;
-    }
+        /* animation: pulse 3s ease-in-out infinite; Removido */
+    }}
 
-    .metric-card:hover {
+    .metric-card:hover {{
         transform: translateY(-8px) scale(1.05);
-        box-shadow: 0 16px 48px rgba(102, 126, 234, 0.3);
+        box-shadow: 0 16px 48px rgba(0, 41, 90, 0.3); /* Sombra com cor do gradiente */
         border-color: rgba(255, 255, 255, 0.5);
-    }
+    }}
 
-    .metric-value {
+    .metric-value {{
         font-size: 3.5rem;
         font-weight: 800;
         margin: 1rem 0;
         text-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
         position: relative;
         z-index: 1;
-    }
+    }}
 
-    .metric-label {
+    .metric-label {{
         font-size: 1rem;
         text-transform: uppercase;
         letter-spacing: 2px;
@@ -301,9 +283,9 @@ def load_custom_css():
         opacity: 0.95;
         position: relative;
         z-index: 1;
-    }
+    }}
 
-    .stButton button {
+    .stButton button {{
         background: rgba(255, 255, 255, 0.25) !important;
         backdrop-filter: blur(15px) !important;
         color: white !important;
@@ -316,20 +298,20 @@ def load_custom_css():
         box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15) !important;
         text-transform: uppercase;
         letter-spacing: 1px;
-    }
+    }}
 
-    .stButton button:hover {
+    .stButton button:hover {{
         background: rgba(255, 255, 255, 0.4) !important;
-        box-shadow: 0 12px 40px rgba(102, 126, 234, 0.4) !important;
+        box-shadow: 0 12px 40px rgba(0, 41, 90, 0.4) !important; /* Sombra com cor do gradiente */
         transform: translateY(-4px) scale(1.05) !important;
         border-color: rgba(255, 255, 255, 0.6) !important;
-    }
+    }}
 
-    .stButton button:active {
+    .stButton button:active {{
         transform: translateY(-2px) scale(1.02) !important;
-    }
+    }}
 
-    .stTextInput input, .stTextArea textarea, .stSelectbox select {
+    .stTextInput input, .stTextArea textarea, .stSelectbox select {{
         background: rgba(255, 255, 255, 0.2) !important;
         backdrop-filter: blur(10px) !important;
         border: 1px solid rgba(255, 255, 255, 0.3) !important;
@@ -338,36 +320,36 @@ def load_custom_css():
         padding: 1rem !important;
         transition: all 0.3s ease !important;
         font-weight: 500 !important;
-    }
+    }}
 
-    .stTextInput input::placeholder, .stTextArea textarea::placeholder {
+    .stTextInput input::placeholder, .stTextArea textarea::placeholder {{
         color: rgba(255, 255, 255, 0.6) !important;
-    }
+    }}
 
-    .stTextInput input:focus, .stTextArea textarea:focus, .stSelectbox select:focus {
+    .stTextInput input:focus, .stTextArea textarea:focus, .stSelectbox select:focus {{
         border-color: rgba(255, 255, 255, 0.6) !important;
         box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.2) !important;
         background: rgba(255, 255, 255, 0.3) !important;
-    }
+    }}
 
-    label {
+    label {{
         color: white !important;
         font-weight: 700 !important;
         font-size: 1rem !important;
         margin-bottom: 0.8rem !important;
         text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
         letter-spacing: 0.5px;
-    }
+    }}
 
-    .stTabs [data-baseweb="tab-list"] {
+    .stTabs [data-baseweb="tab-list"] {{
         gap: 1rem;
         background: rgba(255, 255, 255, 0.1);
         backdrop-filter: blur(10px);
         padding: 0.5rem;
         border-radius: 16px;
-    }
+    }}
 
-    .stTabs [data-baseweb="tab"] {
+    .stTabs [data-baseweb="tab"] {{
         background: rgba(255, 255, 255, 0.15);
         backdrop-filter: blur(10px);
         border: 1px solid rgba(255, 255, 255, 0.2);
@@ -376,20 +358,20 @@ def load_custom_css():
         padding: 1rem 2rem;
         font-weight: 700;
         transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    }
+    }}
 
-    .stTabs [data-baseweb="tab"]:hover {
+    .stTabs [data-baseweb="tab"]:hover {{
         background: rgba(255, 255, 255, 0.25);
         transform: translateY(-2px);
-    }
+    }}
 
-    .stTabs [aria-selected="true"] {
+    .stTabs [aria-selected="true"] {{
         background: rgba(255, 255, 255, 0.35) !important;
         border-color: rgba(255, 255, 255, 0.5) !important;
-        box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3) !important;
-    }
+        box-shadow: 0 8px 25px rgba(0, 41, 90, 0.3) !important; /* Sombra com cor do gradiente */
+    }}
 
-    .status-badge {
+    .status-badge {{
         display: inline-block;
         padding: 0.6rem 1.2rem;
         border-radius: 50px;
@@ -398,73 +380,73 @@ def load_custom_css():
         text-transform: uppercase;
         letter-spacing: 1px;
         backdrop-filter: blur(10px);
-    }
+    }}
 
-    .status-high {
+    .status-high {{
         background: rgba(34, 197, 94, 0.3);
         border: 1px solid rgba(34, 197, 94, 0.5);
         color: #dcfce7;
-    }
+    }}
 
-    .status-medium {
+    .status-medium {{
         background: rgba(245, 158, 11, 0.3);
         border: 1px solid rgba(245, 158, 11, 0.5);
         color: #fef3c7;
-    }
+    }}
 
-    .status-low {
+    .status-low {{
         background: rgba(239, 68, 68, 0.3);
         border: 1px solid rgba(239, 68, 68, 0.5);
         color: #fee2e2;
-    }
+    }}
 
-    .stAlert {
+    .stAlert {{
         background: rgba(255, 255, 255, 0.2) !important;
         backdrop-filter: blur(15px) !important;
         border-radius: 16px !important;
         border-left: 4px solid !important;
         color: white !important;
         font-weight: 500 !important;
-    }
+    }}
 
-    .stAlert.info { border-left-color: #3b82f6 !important; }
-    .stAlert.success { border-left-color: #22c55e !important; }
-    .stAlert.warning { border-left-color: #f59e0b !important; }
-    .stAlert.error { border-left-color: #ef4444 !important; }
+    .stAlert.info {{ border-left-color: #3b82f6 !important; }}
+    .stAlert.success {{ border-left-color: #22c55e !important; }}
+    .stAlert.warning {{ border-left-color: #f59e0b !important; }}
+    .stAlert.error {{ border-left-color: #ef4444 !important; }}
 
-    #MainMenu, footer, header {visibility: hidden;}
-    .stDeployButton {display: none;}
-    [data-testid="stSidebar"] {display: none;} 
+    #MainMenu, footer, header {{visibility: hidden;}}
+    .stDeployButton {{display: none;}}
+    [data-testid="stSidebar"] {{display: none;}} 
 
-    h1, h2, h3, h4, h5, h6 {
+    h1, h2, h3, h4, h5, h6 {{
         color: white;
         font-weight: 700;
         text-shadow: 0 2px 15px rgba(0, 0, 0, 0.3);
-    }
+    }}
 
-    .dataframe {
+    .dataframe {{
         background: rgba(255, 255, 255, 0.15) !important;
         backdrop-filter: blur(10px) !important;
         border: 1px solid rgba(255, 255, 255, 0.2) !important;
         border-radius: 16px !important;
         color: white !important;
-    }
+    }}
 
-    .dataframe th {
+    .dataframe th {{
         background: rgba(255, 255, 255, 0.25) !important;
         color: white !important;
         font-weight: 700 !important;
-    }
+    }}
 
-    .dataframe td {
+    .dataframe td {{
         color: white !important;
-    }
+    }}
 
-    @media (max-width: 768px) {
-        .main-title { font-size: 2.5rem; }
-        .main-content { margin-top: 140px; padding: 1rem; }
-        .top-navbar { padding: 1rem 1.5rem; }
-    }
+    @media (max-width: 768px) {{
+        .main-title {{ font-size: 2.5rem; }}
+        .main-content {{ margin-top: 140px; padding: 1rem; }}
+        .top-navbar {{ padding: 1rem 1.5rem; }}
+    }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -565,7 +547,7 @@ def generate_user_questionnaire_report(user_id):
         <title>Respostas do Questionário</title>
         <style>
             * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-            body {{ font-family: 'Poppins', sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px; color: white; }}
+            body {{ font-family: 'Poppins', sans-serif; background: linear-gradient(135deg, #00295A 0%, #4700AD 100%); padding: 40px; color: white; }}
             .container {{ max-width: 900px; margin: 0 auto; background: rgba(255, 255, 255, 0.15); backdrop-filter: blur(20px); padding: 50px; border-radius: 24px; box-shadow: 0 8px 32px rgba(0,0,0,0.2); border: 1px solid rgba(255, 255, 255, 0.3); }}
             h1 {{ text-align: center; margin-bottom: 15px; font-size: 2.5rem; text-shadow: 0 4px 20px rgba(0, 0, 0, 0.3); }}
             .header-info {{ text-align: center; margin-bottom: 40px; font-size: 1rem; opacity: 0.9; }}
@@ -577,7 +559,7 @@ def generate_user_questionnaire_report(user_id):
     </head>
     <body>
         <div class="container">
-            <h1>📋 Respostas do Questionário</h1>
+            <h1>Respostas do Questionário</h1>
             <div class="header-info">
                 <p><strong>ID do Usuário:</strong> {user_id}</p>
                 <p><strong>Data de Resposta:</strong> {user_info.get('timestamp', 'N/A')}</p>
@@ -618,7 +600,7 @@ def generate_user_tags_report(user_id, obras):
         <title>Relatório de Tags</title>
         <style>
             * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-            body {{ font-family: 'Poppins', sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px; color: white; }}
+            body {{ font-family: 'Poppins', sans-serif; background: linear-gradient(135deg, #00295A 0%, #4700AD 100%); padding: 40px; color: white; }}
             .container {{ max-width: 1200px; margin: 0 auto; background: rgba(255, 255, 255, 0.15); backdrop-filter: blur(20px); padding: 50px; border-radius: 24px; box-shadow: 0 8px 32px rgba(0,0,0,0.2); border: 1px solid rgba(255, 255, 255, 0.3); }}
             h1 {{ text-align: center; margin-bottom: 15px; font-size: 2.5rem; text-shadow: 0 4px 20px rgba(0, 0, 0, 0.3); }}
             .header-info {{ text-align: center; margin-bottom: 40px; font-size: 1rem; opacity: 0.9; }}
@@ -637,7 +619,7 @@ def generate_user_tags_report(user_id, obras):
     </head>
     <body>
         <div class="container">
-            <h1>🏷️ Relatório de Tags Criadas</h1>
+            <h1>Relatório de Tags Criadas</h1>
             <div class="header-info">
                 <p><strong>Usuário:</strong> {user_name}</p>
                 <p><strong>Data de Geração:</strong> {datetime.now().strftime('%d/%m/%Y %H:%M')}</p>
@@ -656,7 +638,7 @@ def generate_user_tags_report(user_id, obras):
                     <div class="stat-label">Obras Etiquetadas</div>
                 </div>
             </div>
-            <h2 style="margin-top: 40px; margin-bottom: 20px; font-size: 1.8rem;">📊 Tags Detalhadas</h2>
+            <h2 style="margin-top: 40px; margin-bottom: 20px; font-size: 1.8rem;">Tags Detalhadas</h2>
             <table>
                 <thead>
                     <tr>
@@ -684,7 +666,7 @@ def generate_user_tags_report(user_id, obras):
     html += """
                 </tbody>
             </table>
-            <h2 style="margin-top: 40px; margin-bottom: 20px; font-size: 1.8rem;">⭐ Suas Tags Mais Utilizadas</h2>
+            <h2 style="margin-top: 40px; margin-bottom: 20px; font-size: 1.8rem;">Suas Tags Mais Utilizadas</h2>
             <table>
                 <thead>
                     <tr>
@@ -720,7 +702,7 @@ def generate_user_tags_report(user_id, obras):
 def show_header():
     st.markdown("""
     <div class='top-navbar'>
-        <div class='navbar-logo'>✨ Folksonomia Digital</div>
+        <div class='navbar-logo'>Sistema Folksonomia Digital</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -744,7 +726,7 @@ def main():
     else:
         show_header()
         st.markdown("<div class='main-content'>", unsafe_allow_html=True)
-        main_tabs = st.tabs(["🎨 Explorar Obras", "⚙️ Área Administrativa"])
+        main_tabs = st.tabs(["Explorar Obras", "Area Administrativa"]) # Emojis removidos
         with main_tabs[0]:
             show_obras()
         with main_tabs[1]:
@@ -753,14 +735,13 @@ def main():
 
 def show_intro():
     st.markdown("<div class='main-content'>", unsafe_allow_html=True)
-    st.markdown("<h1 class='main-title'>✨ Folksonomia Digital</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 class='main-title'>Sistema Folksonomia Digital</h1>", unsafe_allow_html=True) # Emoji removido
     st.markdown("<p class='subtitle'>Sistema colaborativo de catalogação de obras de arte<br>Complete o questionário para acessar a plataforma</p>", unsafe_allow_html=True)
 
     st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-    st.markdown("<h2 style='text-align: center; margin-bottom: 2.5rem; font-size: 1.8rem;'>📋 Questionário de Acesso</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center; margin-bottom: 2.5rem; font-size: 1.8rem;'>Questionário de Acesso</h2>", unsafe_allow_html=True) # Emoji removido
 
     with st.form("intro_form"):
-        # Removido o campo 'nome_usuario' conforme solicitado
         col1, col2 = st.columns([1, 1])
         with col1:
             q1 = st.selectbox("1. Qual é o seu nível de familiaridade com museus?",
@@ -773,23 +754,23 @@ def show_intro():
 
         col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 1])
         with col_btn2:
-            submit = st.form_submit_button("🚀 Acessar Plataforma", use_container_width=True)
+            submit = st.form_submit_button("Acessar Plataforma", use_container_width=True) # Emoji removido
 
         if submit:
-            if not q3.strip(): # Apenas q3 é obrigatório agora
-                st.error("⚠️ Por favor, responda todas as perguntas para continuar!")
+            if not q3.strip():
+                st.error("Por favor, responda todas as perguntas para continuar!") # Emoji removido
             else:
-                st.session_state['answers'] = {"q1": q1, "q2": q2, "q3": q3} # 'nome' não é mais salvo
+                st.session_state['answers'] = {"q1": q1, "q2": q2, "q3": q3}
                 save_user_answers(st.session_state['user_id'], st.session_state['answers'])
                 st.session_state['step'] = 'completed'
-                st.success("✅ Questionário completo! Acesso liberado.")
+                st.success("Questionário completo! Acesso liberado.") # Emoji removido
                 st.balloons()
                 st.rerun()
 
     st.markdown("</div></div>", unsafe_allow_html=True)
 
 def show_obras():
-    st.markdown("<h1 class='main-title'>🎨 Galeria de Obras de Arte</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 class='main-title'>Galeria de Obras de Arte</h1>", unsafe_allow_html=True) # Emoji removido
     st.markdown("<p class='subtitle'>Explore obras de arte e contribua com tags colaborativas</p>", unsafe_allow_html=True)
 
     obras = load_obras()
@@ -800,9 +781,9 @@ def show_obras():
     st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
     col1, col2 = st.columns([2, 1])
     with col1:
-        search = st.text_input("🔍 Buscar obra", "", placeholder="Digite título ou artista...")
+        search = st.text_input("Buscar obra", "", placeholder="Digite título ou artista...") # Emoji removido
     with col2:
-        sort_by = st.selectbox("📊 Ordenar por:", ["Título", "Artista", "Ano"])
+        sort_by = st.selectbox("Ordenar por:", ["Título", "Artista", "Ano"]) # Emoji removido
     st.markdown("</div>", unsafe_allow_html=True)
 
     filtered = obras
@@ -826,13 +807,13 @@ def show_obras():
                 <img src='{obra['imagem']}' alt='{obra['titulo']}' />
                 <div style='padding: 1.8rem;'>
                     <h3 style='font-size: 1.3rem; font-weight: 700; margin-bottom: 0.8rem;'>{obra['titulo']}</h3>
-                    <p style='font-size: 1rem; margin: 0.5rem 0; opacity: 0.9;'>🎭 {obra['artista']}</p>
-                    <p style='font-size: 0.95rem; opacity: 0.8;'>📅 {obra['ano']}</p>
+                    <p style='font-size: 1rem; margin: 0.5rem 0; opacity: 0.9;'>Artista: {obra['artista']}</p>
+                    <p style='font-size: 0.95rem; opacity: 0.8;'>Ano: {obra['ano']}</p>
                 </div>
             </div>
             """, unsafe_allow_html=True)
 
-            if st.button(f"🏷️ Adicionar Tag", key=f"btn_{obra['id']}", use_container_width=True):
+            if st.button(f"Adicionar Tag", key=f"btn_{obra['id']}", use_container_width=True): # Emoji removido
                 st.session_state['selected_obra'] = obra
                 st.rerun()
 
@@ -841,13 +822,13 @@ def show_obras():
                     tag = st.text_input("Sua tag:", key=f"tag_{obra['id']}", placeholder="Ex: impressionismo")
                     col1, col2 = st.columns(2)
                     with col1:
-                        submitted = st.form_submit_button("✅ Enviar", use_container_width=True)
+                        submitted = st.form_submit_button("Enviar", use_container_width=True) # Emoji removido
                     with col2:
-                        cancel = st.form_submit_button("❌ Cancelar", use_container_width=True)
+                        cancel = st.form_submit_button("Cancelar", use_container_width=True) # Emoji removido
 
                     if submitted and tag:
                         save_tag(st.session_state['user_id'], obra['id'], tag)
-                        st.success(f"✨ Tag '{tag}' adicionada com sucesso!")
+                        st.success(f"Tag '{tag}' adicionada com sucesso!") # Emoji removido
                         del st.session_state['selected_obra']
                         st.rerun()
                     if cancel:
@@ -856,7 +837,7 @@ def show_obras():
 
             tags = get_tags_for_obra_by_user(obra['id'], st.session_state['user_id'])
             if not tags.empty:
-                st.markdown("**🏷️ Suas Tags:**")
+                st.markdown("**Suas Tags:**") # Emoji removido
                 html = ""
                 for _, row in tags.iterrows():
                     html += f"<span class='tag-badge'>{row['tag']} ({row['count']})</span>"
@@ -869,34 +850,34 @@ def show_admin():
         st.session_state['admin_logged_in'] = False
 
     if not st.session_state['admin_logged_in']:
-        st.markdown("<h1 class='main-title'>⚙️ Área Administrativa</h1>", unsafe_allow_html=True)
+        st.markdown("<h1 class='main-title'>Area Administrativa</h1>", unsafe_allow_html=True) # Emoji removido
         st.markdown("<p class='subtitle'>Acesso restrito</p>", unsafe_allow_html=True)
 
         col1, col2, col3 = st.columns([1, 1, 1])
         with col2:
             st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-            st.markdown("<h2 style='text-align: center; margin-bottom: 2rem;'>🔐 Login Administrativo</h2>", unsafe_allow_html=True)
+            st.markdown("<h2 style='text-align: center; margin-bottom: 2rem;'>Login Administrativo</h2>", unsafe_allow_html=True) # Emoji removido
 
             with st.form("login"):
-                username = st.text_input("👤 Usuário:", placeholder="Digite seu usuário")
-                password = st.text_input("🔑 Senha:", type="password", placeholder="Digite sua senha")
-                submitted = st.form_submit_button("🚀 Entrar no Sistema", use_container_width=True)
+                username = st.text_input("Usuario:", placeholder="Digite seu usuario") # Emoji removido
+                password = st.text_input("Senha:", type="password", placeholder="Digite sua senha") # Emoji removido
+                submitted = st.form_submit_button("Entrar no Sistema", use_container_width=True) # Emoji removido
 
                 if submitted:
                     if check_admin_credentials(username, password):
                         st.session_state['admin_logged_in'] = True
                         st.session_state['admin_username'] = username
-                        st.success("✅ Login realizado com sucesso!")
+                        st.success("Login realizado com sucesso!") # Emoji removido
                         st.balloons()
                         st.rerun()
                     else:
-                        st.error("❌ Credenciais inválidas. Acesso negado.")
+                        st.error("Credenciais invalidas. Acesso negado.") # Emoji removido
 
             st.markdown("</div>", unsafe_allow_html=True)
     else:
-        st.markdown(f"<h1 class='main-title'>📊 Dashboard Administrativo</h1><p class='subtitle'>Bem-vindo, <strong>{st.session_state.get('admin_username', 'Admin')}</strong></p>", unsafe_allow_html=True)
+        st.markdown(f"<h1 class='main-title'>Dashboard Administrativo</h1><p class='subtitle'>Bem-vindo, <strong>{st.session_state.get('admin_username', 'Admin')}</strong></p>", unsafe_allow_html=True) # Emoji removido
 
-        tabs = st.tabs(["📈 Visão Geral", "🔍 Análises", "📊 Dados", "🎨 Obras", "📦 Exportar Completo", "👥 Exportar Usuários"])
+        tabs = st.tabs(["Visao Geral", "Analises", "Dados", "Obras", "Exportar Completo", "Exportar Usuarios"]) # Emojis removidos
 
         with tabs[0]:
             show_overview()
@@ -913,7 +894,7 @@ def show_admin():
 
         col1, col2, col3 = st.columns([1, 1, 1])
         with col2:
-            if st.button("🚪 Sair do Sistema", use_container_width=True):
+            if st.button("Sair do Sistema", use_container_width=True): # Emoji removido
                 st.session_state['admin_logged_in'] = False
                 st.rerun()
 
@@ -922,14 +903,14 @@ def show_overview():
     users_df = load_all_users()
     obras = load_obras()
 
-    st.markdown("### 📊 Métricas Principais")
+    st.markdown("### Metricas Principais") # Emoji removido
     col1, col2, col3, col4 = st.columns(4)
 
     metrics = [
-        ("👥 Usuários", len(users_df['user_id'].unique()) if not users_df.empty else 0),
-        ("🏷️ Total Tags", len(tags_df) if not tags_df.empty else 0),
-        ("✨ Tags Únicas", len(tags_df['tag'].unique()) if not tags_df.empty else 0),
-        ("🎨 Obras", len(obras))
+        ("Usuarios", len(users_df['user_id'].unique()) if not users_df.empty else 0), # Emoji removido
+        ("Total Tags", len(tags_df) if not tags_df.empty else 0), # Emoji removido
+        ("Tags Unicas", len(tags_df['tag'].unique()) if not tags_df.empty else 0), # Emoji removido
+        ("Obras", len(obras)) # Emoji removido
     ]
 
     for col, (label, value) in zip([col1, col2, col3, col4], metrics):
@@ -942,17 +923,17 @@ def show_overview():
             """, unsafe_allow_html=True)
 
     if not tags_df.empty:
-        st.markdown("### 🏆 Rankings")
+        st.markdown("### Rankings") # Emoji removido
         col1, col2 = st.columns(2)
 
         with col1:
-            st.markdown("#### 🔝 Top 15 Tags Mais Utilizadas")
+            st.markdown("#### Top 15 Tags Mais Utilizadas") # Emoji removido
             top = tags_df['tag'].value_counts().head(15).reset_index()
             top.columns = ['Tag', 'Quantidade']
             st.dataframe(top, use_container_width=True, hide_index=True)
 
         with col2:
-            st.markdown("#### 🎨 Obras Mais Tagueadas")
+            st.markdown("#### Obras Mais Tagueadas") # Emoji removido
             ot = tags_df.groupby('obra_id').size().reset_index(name='Total')
             od = {o['id']: o['titulo'] for o in obras}
             ot['Obra'] = ot['obra_id'].map(od)
@@ -960,53 +941,53 @@ def show_overview():
                          use_container_width=True, hide_index=True)
 
 def show_analysis():
-    st.markdown("### 📈 Análises Gerais")
+    st.markdown("### Analises Gerais") # Emoji removido
     tags_df = load_all_tags()
 
     if tags_df.empty:
-        st.info("Não há dados suficientes para análises.")
+        st.info("Nao ha dados suficientes para analises.")
         return
 
     col1, col2 = st.columns(2)
 
     with col1:
-        st.markdown("#### 📊 Distribuição de Tags (Top 15)")
+        st.markdown("#### Distribuicao de Tags (Top 15)") # Emoji removido
         counts = tags_df['tag'].value_counts().head(15)
         st.bar_chart(counts)
 
     with col2:
-        st.markdown("#### 🎨 Obras Mais Tagueadas (Top 10)")
+        st.markdown("#### Obras Mais Tagueadas (Top 10)") # Emoji removido
         per_obra = tags_df.groupby('obra_id').size()
         obras = load_obras()
         od = {o['id']: o['titulo'] for o in obras}
         per_obra_named = per_obra.rename(index=od).sort_values(ascending=False).head(10)
         st.bar_chart(per_obra_named)
 
-    st.markdown("#### 🔍 Tags Raras (Top 10 menos usadas)")
+    st.markdown("#### Tags Raras (Top 10 menos usadas)") # Emoji removido
     rare_tags = tags_df['tag'].value_counts().tail(10).reset_index()
     rare_tags.columns = ['Tag', 'Quantidade']
     st.dataframe(rare_tags, use_container_width=True, hide_index=True)
 
 def show_data_analysis():
-    st.markdown("### 📊 Análise Detalhada de Dados")
+    st.markdown("### Analise Detalhada de Dados") # Emoji removido
     tags_df = load_all_tags()
     users_df = load_all_users()
     obras = load_obras()
 
     if tags_df.empty and users_df.empty:
-        st.info("Sem dados suficientes para análise detalhada.")
+        st.info("Sem dados suficientes para analise detalhada.")
         return
 
-    tab_overview, tab_tags_detail, tab_questionnaire_analysis = st.tabs(["📋 Visão Geral", "🏷️ Análise de Tags", "📝 Análise do Questionário"])
+    tab_overview, tab_tags_detail, tab_questionnaire_analysis = st.tabs(["Visao Geral", "Analise de Tags", "Analise do Questionario"]) # Emojis removidos
 
     with tab_overview:
-        st.markdown("#### 📊 Resumo dos Dados Coletados")
+        st.markdown("#### Resumo dos Dados Coletados") # Emoji removido
         col1, col2, col3, col4 = st.columns(4)
 
         metrics = [
-            ("Total de Usuários", len(users_df['user_id'].unique()) if not users_df.empty else 0),
+            ("Total de Usuarios", len(users_df['user_id'].unique()) if not users_df.empty else 0),
             ("Total de Tags", len(tags_df) if not tags_df.empty else 0),
-            ("Tags Únicas", len(tags_df['tag'].unique()) if not tags_df.empty else 0),
+            ("Tags Unicas", len(tags_df['tag'].unique()) if not tags_df.empty else 0),
             ("Total de Obras", len(obras))
         ]
 
@@ -1020,11 +1001,11 @@ def show_data_analysis():
                 """, unsafe_allow_html=True)
 
         if not tags_df.empty:
-            st.markdown("#### 📊 Distribuição das 10 Tags Mais Frequentes")
+            st.markdown("#### Distribuicao das 10 Tags Mais Frequentes") # Emoji removido
             top_tags_counts = tags_df['tag'].value_counts().head(10)
             st.bar_chart(top_tags_counts)
 
-            st.markdown("#### 🎨 Distribuição das 10 Obras Mais Tagueadas")
+            st.markdown("#### Distribuicao das 10 Obras Mais Tagueadas") # Emoji removido
             ot = tags_df.groupby('obra_id').size().reset_index(name='Total')
             od = {o['id']: o['titulo'] for o in obras}
             ot['Obra'] = ot['obra_id'].map(od)
@@ -1032,33 +1013,33 @@ def show_data_analysis():
             st.bar_chart(top_obras_counts)
 
     with tab_tags_detail:
-        st.markdown("#### 🔍 Análise Aprofundada das Tags")
+        st.markdown("#### Analise Aprofundada das Tags") # Emoji removido
 
         if not tags_df.empty:
-            st.markdown("##### 📋 Todas as Tags e Suas Frequências")
+            st.markdown("##### Todas as Tags e Suas Frequencias") # Emoji removido
             all_tags_freq = tags_df['tag'].value_counts().reset_index()
-            all_tags_freq.columns = ['Tag', 'Frequência Total']
+            all_tags_freq.columns = ['Tag', 'Frequencia Total']
             st.dataframe(all_tags_freq, use_container_width=True, hide_index=True)
 
-            st.markdown("##### 🎨 Distribuição de Tags Únicas por Obra")
+            st.markdown("##### Distribuicao de Tags Unicas por Obra") # Emoji removido
             tags_per_obra_unique = tags_df.groupby('obra_id')['tag'].nunique().reset_index()
-            tags_per_obra_unique.columns = ['obra_id', 'Tags Únicas']
+            tags_per_obra_unique.columns = ['obra_id', 'Tags Unicas']
             obras_dict = {o['id']: o['titulo'] for o in obras}
             tags_per_obra_unique['Obra'] = tags_per_obra_unique['obra_id'].map(obras_dict)
-            top_unique_obra_tags = tags_per_obra_unique.sort_values('Tags Únicas', ascending=False).head(10).set_index('Obra')
+            top_unique_obra_tags = tags_per_obra_unique.sort_values('Tags Unicas', ascending=False).head(10).set_index('Obra')
             st.bar_chart(top_unique_obra_tags)
-            st.dataframe(tags_per_obra_unique[['Obra', 'Tags Únicas']].sort_values('Tags Únicas', ascending=False), use_container_width=True, hide_index=True)
+            st.dataframe(tags_per_obra_unique[['Obra', 'Tags Unicas']].sort_values('Tags Unicas', ascending=False), use_container_width=True, hide_index=True)
 
-            st.markdown("##### 👥 Distribuição de Tags Únicas por Usuário")
+            st.markdown("##### Distribuicao de Tags Unicas por Usuario") # Emoji removido
             tags_per_user_unique = tags_df.groupby('user_id')['tag'].nunique().reset_index()
-            tags_per_user_unique.columns = ['user_id', 'Tags Únicas']
-            tags_per_user_unique['Nome do Usuário'] = tags_per_user_unique['user_id'].apply(get_user_name_by_id)
-            top_unique_user_tags = tags_per_user_unique.sort_values('Tags Únicas', ascending=False).head(10).set_index('Nome do Usuário')
+            tags_per_user_unique.columns = ['user_id', 'Tags Unicas']
+            tags_per_user_unique['Nome do Usuario'] = tags_per_user_unique['user_id'].apply(get_user_name_by_id)
+            top_unique_user_tags = tags_per_user_unique.sort_values('Tags Unicas', ascending=False).head(10).set_index('Nome do Usuario')
             st.bar_chart(top_unique_user_tags)
-            st.dataframe(tags_per_user_unique[['Nome do Usuário', 'Tags Únicas']].sort_values('Tags Únicas', ascending=False), use_container_width=True, hide_index=True)
+            st.dataframe(tags_per_user_unique[['Nome do Usuario', 'Tags Unicas']].sort_values('Tags Unicas', ascending=False), use_container_width=True, hide_index=True)
 
-            st.markdown("##### 🔗 Análise de Co-ocorrência de Tags")
-            st.info("Esta análise mostra quais tags tendem a aparecer juntas nas mesmas obras.")
+            st.markdown("##### Analise de Co-ocorrencia de Tags") # Emoji removido
+            st.info("Esta analise mostra quais tags tendem a aparecer juntas nas mesmas obras.")
             tags_by_obra = tags_df.groupby('obra_id')['tag'].apply(lambda x: set(x.tolist())).tolist()
             co_occurrence = {}
             for i in range(len(tags_by_obra)):
@@ -1069,60 +1050,60 @@ def show_data_analysis():
                             co_occurrence[pair] = co_occurrence.get(pair, 0) + 1
 
             if co_occurrence:
-                co_occurrence_df = pd.DataFrame(co_occurrence.items(), columns=['Par de Tags', 'Frequência'])
+                co_occurrence_df = pd.DataFrame(co_occurrence.items(), columns=['Par de Tags', 'Frequencia'])
                 co_occurrence_df['Tag 1'] = co_occurrence_df['Par de Tags'].apply(lambda x: x[0])
                 co_occurrence_df['Tag 2'] = co_occurrence_df['Par de Tags'].apply(lambda x: x[1])
-                st.dataframe(co_occurrence_df[['Tag 1', 'Tag 2', 'Frequência']].sort_values('Frequência', ascending=False).head(20), use_container_width=True, hide_index=True)
+                st.dataframe(co_occurrence_df[['Tag 1', 'Tag 2', 'Frequencia']].sort_values('Frequencia', ascending=False).head(20), use_container_width=True, hide_index=True)
             else:
-                st.info("Não há tags suficientes para analisar co-ocorrência.")
+                st.info("Nao ha tags suficientes para analisar co-ocorrencia.")
 
-            st.markdown("##### 📏 Distribuição do Comprimento das Tags")
+            st.markdown("##### Distribuicao do Comprimento das Tags") # Emoji removido
             if not tags_df.empty:
                 tags_df['tag_length'] = tags_df['tag'].str.len()
                 st.bar_chart(tags_df['tag_length'].value_counts().sort_index())
-                st.write(f"**Média de comprimento das tags:** {tags_df['tag_length'].mean():.2f} caracteres")
-                st.write(f"**Desvio padrão do comprimento das tags:** {tags_df['tag_length'].std():.2f} caracteres")
+                st.write(f"**Media de comprimento das tags:** {tags_df['tag_length'].mean():.2f} caracteres")
+                st.write(f"**Desvio padrao do comprimento das tags:** {tags_df['tag_length'].std():.2f} caracteres")
 
     with tab_questionnaire_analysis:
-        st.markdown("#### 📝 Análise do Questionário de Usuários")
+        st.markdown("#### Analise do Questionario de Usuarios") # Emoji removido
 
         if not users_df.empty:
-            st.markdown("##### 📊 Distribuição das Respostas (Q1: Familiaridade com Museus)")
+            st.markdown("##### Distribuicao das Respostas (Q1: Familiaridade com Museus)") # Emoji removido
             q1_counts = users_df['q1'].value_counts()
             st.bar_chart(q1_counts)
 
-            st.markdown("##### 📊 Distribuição das Respostas (Q2: Conhecimento sobre Documentação Museológica)")
+            st.markdown("##### Distribuicao das Respostas (Q2: Conhecimento sobre Documentacao Museologica)") # Emoji removido
             q2_counts = users_df['q2'].value_counts()
             st.bar_chart(q2_counts)
 
             if not tags_df.empty:
-                st.markdown("##### 🔄 Cruzamento: Familiaridade com Museus vs. Número de Tags Criadas")
+                st.markdown("##### Cruzamento: Familiaridade com Museus vs. Numero de Tags Criadas") # Emoji removido
                 user_tag_counts = tags_df.groupby('user_id').size().reset_index(name='Total_Tags')
                 merged_df = pd.merge(users_df, user_tag_counts, on='user_id', how='left').fillna(0)
                 avg_tags_by_familiarity = merged_df.groupby('q1')['Total_Tags'].mean().sort_values(ascending=False)
                 st.bar_chart(avg_tags_by_familiarity)
-                st.write("**Média de tags criadas por nível de familiaridade com museus:**")
+                st.write("**Media de tags criadas por nivel de familiaridade com museus:**")
                 st.dataframe(avg_tags_by_familiarity.reset_index(), use_container_width=True, hide_index=True)
 
-                st.markdown("##### 🔄 Cruzamento: Familiaridade com Museus vs. Diversidade de Tags")
+                st.markdown("##### Cruzamento: Familiaridade com Museus vs. Diversidade de Tags") # Emoji removido
                 user_unique_tag_counts = tags_df.groupby('user_id')['tag'].nunique().reset_index(name='Tags_Unicas')
                 merged_df_unique = pd.merge(users_df, user_unique_tag_counts, on='user_id', how='left').fillna(0)
                 avg_unique_tags_by_familiarity = merged_df_unique.groupby('q1')['Tags_Unicas'].mean().sort_values(ascending=False)
                 st.bar_chart(avg_unique_tags_by_familiarity)
-                st.write("**Média de tags únicas criadas por nível de familiaridade com museus:**")
+                st.write("**Media de tags unicas criadas por nivel de familiaridade com museus:**")
                 st.dataframe(avg_unique_tags_by_familiarity.reset_index(), use_container_width=True, hide_index=True)
 
-            st.markdown("##### 📝 Respostas Abertas (Q3: O que você entende por 'tags'?)")
+            st.markdown("##### Respostas Abertas (Q3: O que voce entende por 'tags'?)") # Emoji removido
             st.dataframe(users_df[['user_id', 'q3', 'timestamp']].sort_values('timestamp', ascending=False), use_container_width=True, hide_index=True)
-            st.info("💡 Para análise mais profunda das respostas abertas, seria necessário processamento de linguagem natural (NLP).")
+            st.info("Para analise mais profunda das respostas abertas, seria necessario processamento de linguagem natural (NLP).") # Emoji removido
         else:
-            st.info("Nenhum usuário respondeu ao questionário ainda.")
+            st.info("Nenhum usuario respondeu ao questionario ainda.")
 
 def show_manage_obras():
-    st.markdown("### 🎨 Gestão de Obras")
+    st.markdown("### Gestao de Obras") # Emoji removido
     obras = load_obras()
 
-    tab1, tab2 = st.tabs(["📋 Listar Obras", "➕ Adicionar Nova"])
+    tab1, tab2 = st.tabs(["Listar Obras", "Adicionar Nova"]) # Emojis removidos
 
     with tab1:
         if obras:
@@ -1133,11 +1114,11 @@ def show_manage_obras():
                 with col2:
                     st.markdown(f"**{obra['titulo']}**")
                     st.markdown(f"*{obra['artista']} - {obra['ano']}*")
-                with col3: # <-- Onde o erro estava, agora corrigido
-                    if st.button("🗑️ Remover", key=f"del_{obra['id']}"):
+                with col3:
+                    if st.button("Remover", key=f"del_{obra['id']}"): # Emoji removido
                         obras.remove(obra)
                         save_json_file(OBRAS_FILE, obras)
-                        st.success("✅ Obra removida!")
+                        st.success("Obra removida!") # Emoji removido
                         st.cache_data.clear()
                         st.rerun()
                 st.divider()
@@ -1146,24 +1127,24 @@ def show_manage_obras():
 
     with tab2:
         with st.form("add"):
-            titulo = st.text_input("📝 Título da Obra")
-            artista = st.text_input("🎭 Artista")
-            ano = st.text_input("📅 Ano")
-            imagem = st.text_input("🖼️ URL da Imagem")
+            titulo = st.text_input("Titulo da Obra") # Emoji removido
+            artista = st.text_input("Artista") # Emoji removido
+            ano = st.text_input("Ano") # Emoji removido
+            imagem = st.text_input("URL da Imagem") # Emoji removido
 
-            if st.form_submit_button("✅ Adicionar Obra"):
+            if st.form_submit_button("Adicionar Obra"): # Emoji removido
                 if titulo and artista and ano and imagem:
                     new_id = max([o['id'] for o in obras]) + 1 if obras else 1
                     obras.append({"id": new_id, "titulo": titulo, "artista": artista, "ano": ano, "imagem": imagem})
                     save_json_file(OBRAS_FILE, obras)
-                    st.success("✅ Obra adicionada com sucesso!")
+                    st.success("Obra adicionada com sucesso!") # Emoji removido
                     st.cache_data.clear()
                     st.rerun()
                 else:
-                    st.error("⚠️ Preencha todos os campos!")
+                    st.error("Preencha todos os campos!") # Emoji removido
 
 def show_export_complete():
-    st.markdown("### 📦 Exportação Completa do Sistema")
+    st.markdown("### Exportacao Completa do Sistema") # Emoji removido
     tags_df = load_all_tags()
     users_df = load_all_users()
     obras = load_obras()
@@ -1171,26 +1152,26 @@ def show_export_complete():
     col1, col2 = st.columns(2)
 
     with col1:
-        st.markdown("#### 📊 Exportar CSV")
+        st.markdown("#### Exportar CSV") # Emoji removido
         if not tags_df.empty:
             csv = tags_df.to_csv(index=False).encode('utf-8')
-            st.download_button("⬇️ Baixar Todas as Tags (CSV)", csv, f"tags_completo_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv", use_container_width=True)
+            st.download_button("Baixar Todas as Tags (CSV)", csv, f"tags_completo_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv", use_container_width=True) # Emoji removido
 
         if not users_df.empty:
             csv = users_df.to_csv(index=False).encode('utf-8')
-            st.download_button("⬇️ Baixar Todos os Usuários (CSV)", csv, f"usuarios_completo_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv", use_container_width=True)
+            st.download_button("Baixar Todos os Usuarios (CSV)", csv, f"usuarios_completo_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv", use_container_width=True) # Emoji removido
 
         if obras:
             csv = pd.DataFrame(obras).to_csv(index=False).encode('utf-8')
-            st.download_button("⬇️ Baixar Todas as Obras (CSV)", csv, f"obras_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv", use_container_width=True)
+            st.download_button("Baixar Todas as Obras (CSV)", csv, f"obras_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv", use_container_width=True) # Emoji removido
 
 def show_export_users():
-    st.markdown("### 👥 Exportar Dados por Usuário")
+    st.markdown("### Exportar Dados por Usuario") # Emoji removido
     users_df = load_all_users()
     obras = load_obras()
 
     if users_df.empty:
-        st.info("Nenhum usuário cadastrado.")
+        st.info("Nenhum usuario cadastrado.")
         return
 
     user_ids = users_df['user_id'].unique().tolist()
@@ -1199,36 +1180,36 @@ def show_export_users():
         user_name = get_user_name_by_id(user_id)
         user_options.append(f"{user_name} (ID: {user_id})")
 
-    selected_option = st.selectbox("Selecione o usuário:", user_options)
+    selected_option = st.selectbox("Selecione o usuario:", user_options)
     selected_user = selected_option.split('(ID: ')[-1].replace(')', '') if selected_option else None
 
     if selected_user:
         user_name_display = selected_option.split(' (ID:')[0]
-        st.markdown(f"#### Dados para o Usuário: **{user_name_display}**")
+        st.markdown(f"#### Dados para o Usuario: **{user_name_display}**")
 
         col1, col2 = st.columns(2)
 
         with col1:
-            st.markdown("##### 📋 Questionário")
+            st.markdown("##### Questionario") # Emoji removido
             html = generate_user_questionnaire_report(selected_user)
             if html:
-                st.download_button("⬇️ Baixar Respostas (HTML/PDF)", html, f"questionario_{selected_user}.html", "text/html", use_container_width=True)
+                st.download_button("Baixar Respostas (HTML/PDF)", html, f"questionario_{selected_user}.html", "text/html", use_container_width=True) # Emoji removido
 
             user_data = users_df[users_df['user_id'] == selected_user]
             if not user_data.empty:
                 csv = user_data.to_csv(index=False).encode('utf-8')
-                st.download_button("⬇️ Baixar Respostas (CSV)", csv, f"questionario_{selected_user}.csv", "text/csv", use_container_width=True)
+                st.download_button("Baixar Respostas (CSV)", csv, f"questionario_{selected_user}.csv", "text/csv", use_container_width=True) # Emoji removido
 
         with col2:
-            st.markdown("##### 🏷️ Tags Criadas")
+            st.markdown("##### Tags Criadas") # Emoji removido
             html = generate_user_tags_report(selected_user, obras)
             if html:
-                st.download_button("⬇️ Baixar Tags (HTML/PDF)", html, f"tags_{selected_user}.html", "text/html", use_container_width=True)
+                st.download_button("Baixar Tags (HTML/PDF)", html, f"tags_{selected_user}.html", "text/html", use_container_width=True) # Emoji removido
 
             user_tags = get_user_tags(selected_user)
             if not user_tags.empty:
                 csv = user_tags.to_csv(index=False).encode('utf-8')
-                st.download_button("⬇️ Baixar Tags (CSV)", csv, f"tags_{selected_user}.csv", "text/csv", use_container_width=True)
+                st.download_button("Baixar Tags (CSV)", csv, f"tags_{selected_user}.csv", "text/csv", use_container_width=True) # Emoji removido
 
 if __name__ == "__main__":
     main()
