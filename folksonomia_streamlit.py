@@ -1119,8 +1119,9 @@ def show_manage_obras():
                 with col1:
                     st.image(obra['imagem'], use_container_width=True)
                 with col2:
+                    # CORREÇÃO AQUI: Removido o '}' extra
                     st.markdown(f"**{obra['titulo']}**")
-                    st.markdown(f"*{obra['artista']} - {obra['ano']}*}")
+                    st.markdown(f"*{obra['artista']} - {obra['ano']}*") 
                 with col3:
                     if st.button("Remover", key=f"del_{obra['id']}"): 
                         obras.remove(obra)
