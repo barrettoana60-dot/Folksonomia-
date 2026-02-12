@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -1035,7 +1034,9 @@ def show_data_analysis():
 
         if not tags_df.empty:
             st.markdown("##### 📋 Todas as Tags e Suas Frequências")
-            st.dataframe(tags_df['tag'].value_counts().reset_index().rename(columns={'index': 'Tag', 'tag': 'Frequência Total'}), use_container_width=True, hide_index=True)
+            all_tags_freq = tags_df['tag'].value_counts().reset_index()
+            all_tags_freq.columns = ['Tag', 'Frequência Total']
+            st.dataframe(all_tags_freq, use_container_width=True, hide_index=True)
 
             st.markdown("##### 🎨 Distribuição de Tags Únicas por Obra")
             tags_per_obra_unique = tags_df.groupby('obra_id')['tag'].nunique().reset_index()
@@ -1044,6 +1045,7 @@ def show_data_analysis():
             tags_per_obra_unique['Obra'] = tags_per_obra_unique['obra_id'].map(obras_dict)
             top_unique_obra_tags = tags_per_obra_unique.sort_values('Tags Únicas', ascending=False).head(10).set_index('Obra')
             st.bar_chart(top_unique_obra_tags)
+            st.dataframe(tags_per_obra_unique[['Obra', 'Tags Únicas']].sort_values('Tags Únicas', ascending=False), use_container_width=True, hide_index=True)
 
             st.markdown("##### 👥 Distribuição de Tags Únicas por Usuário")
             tags_per_user_unique = tags_df.groupby('user_id')['tag'].nunique().reset_index()
@@ -1051,6 +1053,33 @@ def show_data_analysis():
             tags_per_user_unique['Nome do Usuário'] = tags_per_user_unique['user_id'].apply(get_user_name_by_id)
             top_unique_user_tags = tags_per_user_unique.sort_values('Tags Únicas', ascending=False).head(10).set_index('Nome do Usuário')
             st.bar_chart(top_unique_user_tags)
+            st.dataframe(tags_per_user_unique[['Nome do Usuário', 'Tags Únicas']].sort_values('Tags Únicas', ascending=False), use_container_width=True, hide_index=True)
+
+            st.markdown("##### 🔗 Análise de Co-ocorrência de Tags")
+            st.info("Esta análise mostra quais tags tendem a aparecer juntas nas mesmas obras.")
+            tags_by_obra = tags_df.groupby('obra_id')['tag'].apply(lambda x: set(x.tolist())).tolist()
+            co_occurrence = {}
+            for i in range(len(tags_by_obra)):
+                for tag1 in tags_by_obra[i]:
+                    for tag2 in tags_by_obra[i]:
+                        if tag1 != tag2:
+                            pair = tuple(sorted((tag1, tag2)))
+                            co_occurrence[pair] = co_occurrence.get(pair, 0) + 1
+
+            if co_occurrence:
+                co_occurrence_df = pd.DataFrame(co_occurrence.items(), columns=['Par de Tags', 'Frequência'])
+                co_occurrence_df['Tag 1'] = co_occurrence_df['Par de Tags'].apply(lambda x: x[0])
+                co_occurrence_df['Tag 2'] = co_occurrence_df['Par de Tags'].apply(lambda x: x[1])
+                st.dataframe(co_occurrence_df[['Tag 1', 'Tag 2', 'Frequência']].sort_values('Frequência', ascending=False).head(20), use_container_width=True, hide_index=True)
+            else:
+                st.info("Não há tags suficientes para analisar co-ocorrência.")
+
+            st.markdown("##### 📏 Distribuição do Comprimento das Tags")
+            if not tags_df.empty:
+                tags_df['tag_length'] = tags_df['tag'].str.len()
+                st.bar_chart(tags_df['tag_length'].value_counts().sort_index())
+                st.write(f"**Média de comprimento das tags:** {tags_df['tag_length'].mean():.2f} caracteres")
+                st.write(f"**Desvio padrão do comprimento das tags:** {tags_df['tag_length'].std():.2f} caracteres")
 
     with tab_questionnaire_analysis:
         st.markdown("#### 📝 Análise do Questionário de Usuários")
@@ -1064,8 +1093,28 @@ def show_data_analysis():
             q2_counts = users_df['q2'].value_counts()
             st.bar_chart(q2_counts)
 
+            if not tags_df.empty:
+                st.markdown("##### 🔄 Cruzamento: Familiaridade com Museus vs. Número de Tags Criadas")
+                user_tag_counts = tags_df.groupby('user_id').size().reset_index(name='Total_Tags')
+                merged_df = pd.merge(users_df, user_tag_counts, on='user_id', how='left').fillna(0)
+                avg_tags_by_familiarity = merged_df.groupby('q1')['Total_Tags'].mean().sort_values(ascending=False)
+                st.bar_chart(avg_tags_by_familiarity)
+                st.write("**Média de tags criadas por nível de familiaridade com museus:**")
+                st.dataframe(avg_tags_by_familiarity.reset_index(), use_container_width=True, hide_index=True)
+
+                st.markdown("##### 🔄 Cruzamento: Familiaridade com Museus vs. Diversidade de Tags")
+                user_unique_tag_counts = tags_df.groupby('user_id')['tag'].nunique().reset_index(name='Tags_Unicas')
+                merged_df_unique = pd.merge(users_df, user_unique_tag_counts, on='user_id', how='left').fillna(0)
+                avg_unique_tags_by_familiarity = merged_df_unique.groupby('q1')['Tags_Unicas'].mean().sort_values(ascending=False)
+                st.bar_chart(avg_unique_tags_by_familiarity)
+                st.write("**Média de tags únicas criadas por nível de familiaridade com museus:**")
+                st.dataframe(avg_unique_tags_by_familiarity.reset_index(), use_container_width=True, hide_index=True)
+
             st.markdown("##### 📝 Respostas Abertas (Q3: O que você entende por 'tags'?)")
             st.dataframe(users_df[['user_id', 'q3', 'timestamp']].sort_values('timestamp', ascending=False), use_container_width=True, hide_index=True)
+            st.info("💡 Para análise mais profunda das respostas abertas, seria necessário processamento de linguagem natural (NLP).")
+        else:
+            st.info("Nenhum usuário respondeu ao questionário ainda.")
 
 def show_manage_obras():
     st.markdown("### 🎨 Gestão de Obras")
@@ -1082,86 +1131,4 @@ def show_manage_obras():
                 with col2:
                     st.markdown(f"**{obra['titulo']}**")
                     st.markdown(f"*{obra['artista']} - {obra['ano']}*")
-                with col3:
-                    if st.button("🗑️ Remover", key=f"del_{obra['id']}"):
-                        obras.remove(obra)
-                        save_json_file(OBRAS_FILE, obras)
-                        st.success("✅ Obra removida!")
-                        st.cache_data.clear()
-                        st.rerun()
-                st.divider()
-        else:
-            st.info("Nenhuma obra cadastrada")
-
-    with tab2:
-        with st.form("add"):
-            titulo = st.text_input("📝 Título da Obra")
-            artista = st.text_input("🎭 Artista")
-            ano = st.text_input("📅 Ano")
-            imagem = st.text_input("🖼️ URL da Imagem")
-
-            if st.form_submit_button("✅ Adicionar Obra"):
-                if titulo and artista and ano and imagem:
-                    new_id = max([o['id'] for o in obras]) + 1 if obras else 1
-                    obras.append({"id": new_id, "titulo": titulo, "artista": artista, "ano": ano, "imagem": imagem})
-                    save_json_file(OBRAS_FILE, obras)
-                    st.success("✅ Obra adicionada com sucesso!")
-                    st.cache_data.clear()
-                    st.rerun()
-                else:
-                    st.error("⚠️ Preencha todos os campos!")
-
-def show_export_complete():
-    st.markdown("### 📦 Exportação Completa do Sistema")
-    tags_df = load_all_tags()
-    users_df = load_all_users()
-    obras = load_obras()
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.markdown("#### 📊 Exportar CSV")
-        if not tags_df.empty:
-            csv = tags_df.to_csv(index=False).encode('utf-8')
-            st.download_button("⬇️ Baixar Todas as Tags (CSV)", csv, f"tags_completo_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv", use_container_width=True)
-
-        if not users_df.empty:
-            csv = users_df.to_csv(index=False).encode('utf-8')
-            st.download_button("⬇️ Baixar Todos os Usuários (CSV)", csv, f"usuarios_completo_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv", use_container_width=True)
-
-        if obras:
-            csv = pd.DataFrame(obras).to_csv(index=False).encode('utf-8')
-            st.download_button("⬇️ Baixar Todas as Obras (CSV)", csv, f"obras_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv", use_container_width=True)
-
-def show_export_users():
-    st.markdown("### 👥 Exportar Dados por Usuário")
-    users_df = load_all_users()
-    obras = load_obras()
-
-    if users_df.empty:
-        st.info("Nenhum usuário cadastrado.")
-        return
-
-    user_ids = users_df['user_id'].unique().tolist()
-    user_options = []
-    for user_id in user_ids:
-        user_name = get_user_name_by_id(user_id)
-        user_options.append(f"{user_name} (ID: {user_id})")
-
-    selected_option = st.selectbox("Selecione o usuário:", user_options)
-    selected_user = selected_option.split('(ID: ')[-1].replace(')', '') if selected_option else None
-
-    if selected_user:
-        user_name_display = selected_option.split(' (ID:')[0]
-        st.markdown(f"#### Dados para o Usuário: **{user_name_display}**")
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            st.markdown("##### 📋 Questionário")
-            html = generate_user_questionnaire_report(selected_user)
-            if html:
-                st.download_button("⬇️ Baixar Respostas (HTML/PDF)", html, f"questionario_{selected_user}.html", "text/html", use_container_width=True)
-
-            user_data =
-
+                with col3
