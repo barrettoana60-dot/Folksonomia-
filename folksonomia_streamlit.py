@@ -449,10 +449,32 @@ def load_custom_css():
         color: white !important;
     }}
 
+    /* Regras para responsividade */
     @media (max-width: 768px) {{
         .main-title {{ font-size: 2.5rem; }}
         .main-content {{ margin-top: 140px; padding: 1rem; }}
         .top-navbar {{ padding: 1rem 1.5rem; }}
+    }}
+
+    /* ==== ADIÇÃO PARA REMOVER A "BARRA ENORME" NO TOPO ====
+       Alvo: esconder elementos de banner/search que podem gerar
+       aquela grande barra arredondada sobre o conteúdo.
+       Essas regras são conservadoras e apenas escondem elementos
+       típicos de banner/search do Streamlit sem alterar o restante.
+    */
+    div[role="search"], div[role="banner"], input[type="search"], header > div, .css-1v3fvcr, .css-14xtw13 {{
+        display: none !important;
+        visibility: hidden !important;
+        opacity: 0 !important;
+        height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        pointer-events: none !important;
+    }}
+
+    /* Caso ainda apareça, esconder elementos muito largos e com grande border-radius na parte superior */
+    .stApp > div > div[style*="border-radius"], .stApp > div > div[style*="border-radius: 24px"] {{
+        display: none !important;
     }}
     </style>
     """, unsafe_allow_html=True)
