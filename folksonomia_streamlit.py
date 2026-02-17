@@ -449,7 +449,6 @@ def load_custom_css():
         color: white !important;
     }}
 
-    /* Regras para responsividade */
     @media (max-width: 768px) {{
         .main-title {{ font-size: 2.5rem; }}
         .main-content {{ margin-top: 140px; padding: 1rem; }}
@@ -476,6 +475,34 @@ def load_custom_css():
     .stApp > div > div[style*="border-radius"], .stApp > div > div[style*="border-radius: 24px"] {{
         display: none !important;
     }}
+
+    /* ===== REMOVER BARRA ARREDONDADA ENORME (container do text_input) ===== */
+
+    /* remove o fundo glass do container do input de busca */
+    div[data-testid="stTextInput"] > div {{
+        background: transparent !important;
+        backdrop-filter: none !important;
+        border: none !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+    }}
+
+    /* remove o container externo que cria o bloco gigante */
+    div[data-testid="stTextInput"] {{
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+    }}
+
+    /* mantém apenas o campo de input estilizado (sem caixa gigante em volta) */
+    div[data-testid="stTextInput"] input {{
+        border-radius: 12px !important;
+        background: rgba(255,255,255,0.15) !important;
+        border: 1px solid rgba(255,255,255,0.25) !important;
+        padding: 0.8rem 1rem !important;
+        color: white !important;
+    }}
+
     </style>
     """, unsafe_allow_html=True)
 
@@ -1096,7 +1123,9 @@ def show_data_analysis():
     with tab_questionnaire_analysis:
         st.markdown("#### Analise do Questionario de Usuarios") 
 
-        if not users_df.empty:
+        if users_df.empty:
+            st.info("Nenhum usuario respondeu ao questionario ainda.")
+        else:
             st.markdown("##### Distribuicao das Respostas (Q1: Familiaridade com Museus)") 
             q1_counts = users_df['q1'].value_counts()
             st.bar_chart(q1_counts)
@@ -1125,8 +1154,6 @@ def show_data_analysis():
             st.markdown("##### Respostas Abertas (Q3: O que voce entende por 'tags'?)") 
             st.dataframe(users_df[['user_id', 'q3', 'timestamp']].sort_values('timestamp', ascending=False), use_container_width=True, hide_index=True)
             st.info("Para analise mais profunda das respostas abertas, seria necessario processamento de linguagem natural (NLP).") 
-        else:
-            st.info("Nenhum usuario respondeu ao questionario ainda.")
 
 def show_manage_obras():
     st.markdown("### Gestao de Obras") 
