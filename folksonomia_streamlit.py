@@ -71,7 +71,7 @@ def ntag(tag):   return tag.lower().strip()
 def words(tag):  return set(ntag(tag).split())
 def ngrams(text, n=3):
     t = ntag(text)
-    return set([t]) if len(t) &lt; n else set(t[i:i+n] for i in range(len(t)-n+1))
+    return set([t]) if len(t) < n else set(t[i:i+n] for i in range(len(t)-n+1))
 
 def sim(t1, t2):
     a, b = ntag(t1), ntag(t2)
@@ -80,13 +80,13 @@ def sim(t1, t2):
         return 0.55 + 0.45*(min(len(a),len(b))/max(len(a),len(b)))
     w1,w2 = words(t1),words(t2)
     if w1 and w2:
-        j = len(w1&amp;w2)/len(w1|w2)
-        if j &gt;= 0.5: return j
-    if len(a)&gt;=3 and len(b)&gt;=3:
+        j = len(w1&w2)/len(w1|w2)
+        if j >= 0.5: return j
+    if len(a)>=3 and len(b)>=3:
         ng1,ng2 = ngrams(a),ngrams(b)
-        nj = len(ng1&amp;ng2)/len(ng1|ng2) if ng1|ng2 else 0
-        if nj &gt; 0:
-            wj = len(w1&amp;w2)/len(w1|w2) if w1|w2 else 0
+        nj = len(ng1&ng2)/len(ng1|ng2) if ng1|ng2 else 0
+        if nj > 0:
+            wj = len(w1&w2)/len(w1|w2) if w1|w2 else 0
             return 0.6*nj + 0.4*wj
     return 0.0
 
@@ -96,9 +96,9 @@ def tag_connections(tags_list, threshold=0.35):
     for i in range(len(uniq)):
         for j in range(i+1, len(uniq)):
             s = sim(uniq[i], uniq[j])
-            if s &gt;= threshold:
+            if s >= threshold:
                 w1,w2 = words(uniq[i]),words(uniq[j])
-                shared = w1&amp;w2
+                shared = w1&w2
                 if uniq[i] in uniq[j] or uniq[j] in uniq[i]: tipo = "Contenção"
                 elif shared: tipo = f"Palavra comum: '{', '.join(shared)}'"
                 else: tipo = "Similaridade fonética"
@@ -119,13 +119,13 @@ def tag_clusters(tags_list, threshold=0.35):
     for c in conns: union(c["tag_a"],c["tag_b"])
     cl = defaultdict(list)
     for t in uniq: cl[find(t)].append(t)
-    return [sorted(v) for v in cl.values() if len(v)&gt;1]
+    return [sorted(v) for v in cl.values() if len(v)>1]
 
 # ── CSS ───────────────────────────────────────────────────────────────
 def load_css():
     st.markdown("""
-&lt;style&gt;
-@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&amp;display=swap');
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap');
 *{margin:0;padding:0;box-sizing:border-box;font-family:'Poppins',sans-serif!important}
 @keyframes bg{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
 .stApp{background:linear-gradient(-45deg,#000 0%,#001F3F 25%,#000 50%,#001F3F 75%,#000 100%);
@@ -253,32 +253,32 @@ h1,h2,h3,h4,h5,h6{color:white;font-weight:700;text-shadow:0 2px 15px rgba(0,0,0,
   border-radius:14px!important;color:white!important}
 .dataframe th{background:rgba(255,255,255,.22)!important;color:white!important;font-weight:700!important}
 .dataframe td{color:white!important}
-div[data-testid="stTextInput"]&gt;div{background:transparent!important;border:none!important;
+div[data-testid="stTextInput"]>div{background:transparent!important;border:none!important;
   box-shadow:none!important;padding:0!important}
 div[data-testid="stTextInput"]{background:transparent!important;border:none!important}
 div[data-testid="stTextInput"] input{border-radius:11px!important;
   background:rgba(255,255,255,.14)!important;border:1px solid rgba(255,255,255,.22)!important;
   padding:.75rem 1rem!important}
 @media(max-width:768px){.main-title{font-size:2.5rem}.main-content{margin-top:140px;padding:1rem}}
-&lt;/style&gt;""", unsafe_allow_html=True)
+</style>""", unsafe_allow_html=True)
 
 # ── HELPERS ───────────────────────────────────────────────────────────
 def kpi(label, value, sub="", color="#a7e6ff"):
-    return (f"&lt;div class='kpi-card'&gt;"
-            f"&lt;div class='kpi-lbl'&gt;{label}&lt;/div&gt;"
-            f"&lt;div class='kpi-val' style='color:{color}'&gt;{value}&lt;/div&gt;"
-            f"{'&lt;div class=kpi-sub&gt;'+sub+'&lt;/div&gt;' if sub else ''}"
-            f"&lt;/div&gt;")
+    return (f"<div class='kpi-card'>"
+            f"<div class='kpi-lbl'>{label}</div>"
+            f"<div class='kpi-val' style='color:{color}'>{value}</div>"
+            f"{'<div class=kpi-sub>'+sub+'</div>' if sub else ''}"
+            f"</div>")
 
 def insight(text):
-    return f"&lt;div class='insight'&gt;{text}&lt;/div&gt;"
+    return f"<div class='insight'>{text}</div>"
 
 def divider():
-    return "&lt;div class='divider'&gt;&lt;/div&gt;"
+    return "<div class='divider'></div>"
 
 def pbar(pct, color="#60a5fa"):
     w = min(100, max(0, pct*100))
-    return f"&lt;div class='pbar-o'&gt;&lt;div class='pbar-i' style='width:{w:.1f}%;background:{color}'&gt;&lt;/div&gt;&lt;/div&gt;"
+    return f"<div class='pbar-o'><div class='pbar-i' style='width:{w:.1f}%;background:{color}'></div></div>"
 
 # ── DADOS ─────────────────────────────────────────────────────────────
 def check_admin():
@@ -353,8 +353,8 @@ def html_quest(uid, animal, users_df):
     ud = users_df[users_df['user_id']==uid]
     if ud.empty: return None
     ui = ud.iloc[0]
-    return f"""&lt;!DOCTYPE html&gt;&lt;html&gt;&lt;head&gt;&lt;meta charset="UTF-8"&gt;
-&lt;style&gt;*{{margin:0;padding:0;box-sizing:border-box}}
+    return f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
+<style>*{{margin:0;padding:0;box-sizing:border-box}}
 body{{font-family:sans-serif;background:linear-gradient(135deg,#000,#001F3F);padding:40px;color:white}}
 .c{{max-width:900px;margin:0 auto;background:rgba(255,255,255,.15);padding:50px;border-radius:24px;border:1px solid rgba(255,255,255,.3)}}
 h1{{text-align:center;margin-bottom:15px;font-size:2.2rem}}
@@ -365,38 +365,38 @@ h1{{text-align:center;margin-bottom:15px;font-size:2.2rem}}
   border-left:4px solid rgba(255,255,255,.5);border-radius:12px}}
 .q{{font-weight:700;margin-bottom:8px}}.a{{line-height:1.7;opacity:.92}}
 .ft{{text-align:center;margin-top:40px;padding-top:18px;
-  border-top:1px solid rgba(255,255,255,.2);opacity:.65;font-size:.88rem}}&lt;/style&gt;&lt;/head&gt;
-&lt;body&gt;&lt;div class="c"&gt;&lt;h1&gt;Respostas do Questionário&lt;/h1&gt;
-&lt;div class="hi"&gt;
-  &lt;p&gt;Usuário Anônimo: &lt;span class="ab"&gt;🐾 {animal}&lt;/span&gt;&lt;/p&gt;
-  &lt;p style="margin-top:6px;opacity:.65"&gt;Data: {ui.get('timestamp','N/A')}&lt;/p&gt;
-&lt;/div&gt;
-&lt;div class="qb"&gt;&lt;div class="q"&gt;1. Nível de familiaridade com museus&lt;/div&gt;
-&lt;div class="a"&gt;{ui.get('q1','N/A')}&lt;/div&gt;&lt;/div&gt;
-&lt;div class="qb"&gt;&lt;div class="q"&gt;2. Conhecimento sobre documentação museológica&lt;/div&gt;
-&lt;div class="a"&gt;{ui.get('q2','N/A')}&lt;/div&gt;&lt;/div&gt;
-&lt;div class="qb"&gt;&lt;div class="q"&gt;3. O que você entende por 'tags'?&lt;/div&gt;
-&lt;div class="a"&gt;{ui.get('q3','N/A')}&lt;/div&gt;&lt;/div&gt;
-&lt;div class="ft"&gt;Sistema Folksonomia Digital — Ctrl+P → Salvar como PDF&lt;/div&gt;
-&lt;/div&gt;&lt;/body&gt;&lt;/html&gt;"""
+  border-top:1px solid rgba(255,255,255,.2);opacity:.65;font-size:.88rem}}</style></head>
+<body><div class="c"><h1>Respostas do Questionário</h1>
+<div class="hi">
+  <p>Usuário Anônimo: <span class="ab">🐾 {animal}</span></p>
+  <p style="margin-top:6px;opacity:.65">Data: {ui.get('timestamp','N/A')}</p>
+</div>
+<div class="qb"><div class="q">1. Nível de familiaridade com museus</div>
+<div class="a">{ui.get('q1','N/A')}</div></div>
+<div class="qb"><div class="q">2. Conhecimento sobre documentação museológica</div>
+<div class="a">{ui.get('q2','N/A')}</div></div>
+<div class="qb"><div class="q">3. O que você entende por 'tags'?</div>
+<div class="a">{ui.get('q3','N/A')}</div></div>
+<div class="ft">Sistema Folksonomia Digital — Ctrl+P → Salvar como PDF</div>
+</div></body></html>"""
 
 def html_tags(uid, animal, obras, tags_df):
     ut = tags_df[tags_df['user_id']==uid] if not tags_df.empty else pd.DataFrame()
     if ut.empty: return None
     od = {o['id']:o for o in obras}
     rows = "".join(
-        f"&lt;tr&gt;&lt;td&gt;{i+1}&lt;/td&gt;"
-        f"&lt;td&gt;{od.get(r['obra_id'],{}).get('titulo','Obra '+str(r['obra_id']))}&lt;/td&gt;"
-        f"&lt;td&gt;&lt;span style='background:rgba(255,255,255,.22);padding:3px 10px;border-radius:50px'&gt;{r['tag']}&lt;/span&gt;&lt;/td&gt;"
-        f"&lt;td&gt;{r['timestamp']}&lt;/td&gt;&lt;/tr&gt;"
+        f"<tr><td>{i+1}</td>"
+        f"<td>{od.get(r['obra_id'],{}).get('titulo','Obra '+str(r['obra_id']))}</td>"
+        f"<td><span style='background:rgba(255,255,255,.22);padding:3px 10px;border-radius:50px'>{r['tag']}</span></td>"
+        f"<td>{r['timestamp']}</td></tr>"
         for i,(_,r) in enumerate(ut.iterrows())
     )
     top = "".join(
-        f"&lt;tr&gt;&lt;td&gt;{i}&lt;/td&gt;&lt;td&gt;{t}&lt;/td&gt;&lt;td&gt;{c}&lt;/td&gt;&lt;/tr&gt;"
+        f"<tr><td>{i}</td><td>{t}</td><td>{c}</td></tr>"
         for i,(t,c) in enumerate(ut['tag'].value_counts().head(10).items(),1)
     )
-    return f"""&lt;!DOCTYPE html&gt;&lt;html&gt;&lt;head&gt;&lt;meta charset="UTF-8"&gt;
-&lt;style&gt;*{{margin:0;padding:0;box-sizing:border-box}}
+    return f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
+<style>*{{margin:0;padding:0;box-sizing:border-box}}
 body{{font-family:sans-serif;background:linear-gradient(135deg,#000,#001F3F);padding:40px;color:white}}
 .c{{max-width:1100px;margin:0 auto;background:rgba(255,255,255,.15);padding:50px;border-radius:24px;border:1px solid rgba(255,255,255,.3)}}
 h1{{text-align:center;margin-bottom:15px;font-size:2.2rem}}
@@ -413,32 +413,32 @@ th,td{{padding:13px;text-align:left;border-bottom:1px solid rgba(255,255,255,.14
 th{{background:rgba(255,255,255,.18);font-weight:700;text-transform:uppercase;font-size:.82rem}}
 tr:nth-child(even){{background:rgba(255,255,255,.04)}}
 .ft{{text-align:center;margin-top:38px;padding-top:18px;
-  border-top:1px solid rgba(255,255,255,.2);opacity:.65;font-size:.88rem}}&lt;/style&gt;&lt;/head&gt;
-&lt;body&gt;&lt;div class="c"&gt;&lt;h1&gt;Relatório de Tags&lt;/h1&gt;
-&lt;div class="hi"&gt;
-  &lt;p&gt;Usuário Anônimo: &lt;span class="ab"&gt;🐾 {animal}&lt;/span&gt;&lt;/p&gt;
-  &lt;p style="margin-top:6px;opacity:.65"&gt;Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}&lt;/p&gt;
-&lt;/div&gt;
-&lt;div class="stats"&gt;
-  &lt;div class="sb"&gt;&lt;div class="sv"&gt;{len(ut)}&lt;/div&gt;&lt;div class="sl"&gt;Total de Tags&lt;/div&gt;&lt;/div&gt;
-  &lt;div class="sb"&gt;&lt;div class="sv"&gt;{ut['tag'].nunique()}&lt;/div&gt;&lt;div class="sl"&gt;Tags Únicas&lt;/div&gt;&lt;/div&gt;
-  &lt;div class="sb"&gt;&lt;div class="sv"&gt;{ut['obra_id'].nunique()}&lt;/div&gt;&lt;div class="sl"&gt;Obras Etiquetadas&lt;/div&gt;&lt;/div&gt;
-&lt;/div&gt;
-&lt;h2 style="margin:28px 0 14px;font-size:1.5rem"&gt;Todas as Tags&lt;/h2&gt;
-&lt;table&gt;&lt;thead&gt;&lt;tr&gt;&lt;th&gt;#&lt;/th&gt;&lt;th&gt;Obra&lt;/th&gt;&lt;th&gt;Tag&lt;/th&gt;&lt;th&gt;Data/Hora&lt;/th&gt;&lt;/tr&gt;&lt;/thead&gt;
-&lt;tbody&gt;{rows}&lt;/tbody&gt;&lt;/table&gt;
-&lt;h2 style="margin:28px 0 14px;font-size:1.5rem"&gt;Top 10 Tags&lt;/h2&gt;
-&lt;table&gt;&lt;thead&gt;&lt;tr&gt;&lt;th&gt;Pos.&lt;/th&gt;&lt;th&gt;Tag&lt;/th&gt;&lt;th&gt;Freq.&lt;/th&gt;&lt;/tr&gt;&lt;/thead&gt;
-&lt;tbody&gt;{top}&lt;/tbody&gt;&lt;/table&gt;
-&lt;div class="ft"&gt;Sistema Folksonomia Digital — Ctrl+P → Salvar como PDF&lt;/div&gt;
-&lt;/div&gt;&lt;/body&gt;&lt;/html&gt;"""
+  border-top:1px solid rgba(255,255,255,.2);opacity:.65;font-size:.88rem}}</style></head>
+<body><div class="c"><h1>Relatório de Tags</h1>
+<div class="hi">
+  <p>Usuário Anônimo: <span class="ab">🐾 {animal}</span></p>
+  <p style="margin-top:6px;opacity:.65">Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}</p>
+</div>
+<div class="stats">
+  <div class="sb"><div class="sv">{len(ut)}</div><div class="sl">Total de Tags</div></div>
+  <div class="sb"><div class="sv">{ut['tag'].nunique()}</div><div class="sl">Tags Únicas</div></div>
+  <div class="sb"><div class="sv">{ut['obra_id'].nunique()}</div><div class="sl">Obras Etiquetadas</div></div>
+</div>
+<h2 style="margin:28px 0 14px;font-size:1.5rem">Todas as Tags</h2>
+<table><thead><tr><th>#</th><th>Obra</th><th>Tag</th><th>Data/Hora</th></tr></thead>
+<tbody>{rows}</tbody></table>
+<h2 style="margin:28px 0 14px;font-size:1.5rem">Top 10 Tags</h2>
+<table><thead><tr><th>Pos.</th><th>Tag</th><th>Freq.</th></tr></thead>
+<tbody>{top}</tbody></table>
+<div class="ft">Sistema Folksonomia Digital — Ctrl+P → Salvar como PDF</div>
+</div></body></html>"""
 
 # ── INTERFACE PRINCIPAL ───────────────────────────────────────────────
 def show_header():
     st.markdown(
-        "&lt;div class='top-navbar'&gt;"
-        "&lt;div class='navbar-logo'&gt;Sistema Folksonomia Digital&lt;/div&gt;"
-        "&lt;/div&gt;", unsafe_allow_html=True)
+        "<div class='top-navbar'>"
+        "<div class='navbar-logo'>Sistema Folksonomia Digital</div>"
+        "</div>", unsafe_allow_html=True)
 
 def main():
     load_css()
@@ -453,21 +453,21 @@ def main():
         show_intro()
     else:
         show_header()
-        st.markdown("&lt;div class='main-content'&gt;", unsafe_allow_html=True)
+        st.markdown("<div class='main-content'>", unsafe_allow_html=True)
         t1, t2 = st.tabs([" Explorar Obras"," Área Administrativa"])
         with t1: show_obras()
         with t2: show_admin()
-        st.markdown("&lt;/div&gt;", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
 # ── INTRO ─────────────────────────────────────────────────────────────
 def show_intro():
-    st.markdown("&lt;div class='main-content'&gt;", unsafe_allow_html=True)
-    st.markdown("&lt;h1 class='main-title'&gt;Sistema Folksonomia Digital&lt;/h1&gt;", unsafe_allow_html=True)
-    st.markdown("&lt;p class='subtitle'&gt;Sistema colaborativo de catalogação de obras de arte&lt;br&gt;"
-                "Complete o questionário para acessar a plataforma&lt;/p&gt;", unsafe_allow_html=True)
-    st.markdown("&lt;div class='glass-card'&gt;", unsafe_allow_html=True)
-    st.markdown("&lt;h2 style='text-align:center;margin-bottom:2.2rem;font-size:1.7rem'&gt;"
-                "Questionário de Acesso&lt;/h2&gt;", unsafe_allow_html=True)
+    st.markdown("<div class='main-content'>", unsafe_allow_html=True)
+    st.markdown("<h1 class='main-title'>Sistema Folksonomia Digital</h1>", unsafe_allow_html=True)
+    st.markdown("<p class='subtitle'>Sistema colaborativo de catalogação de obras de arte<br>"
+                "Complete o questionário para acessar a plataforma</p>", unsafe_allow_html=True)
+    st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align:center;margin-bottom:2.2rem;font-size:1.7rem'>"
+                "Questionário de Acesso</h2>", unsafe_allow_html=True)
     with st.form("intro_form"):
         c1, c2 = st.columns(2)
         with c1:
@@ -492,41 +492,41 @@ def show_intro():
                 st.success("Questionário completo! Acesso liberado.")
                 st.balloons()
                 st.rerun()
-    st.markdown("&lt;/div&gt;&lt;/div&gt;", unsafe_allow_html=True)
+    st.markdown("</div></div>", unsafe_allow_html=True)
 
 # ── GALERIA ───────────────────────────────────────────────────────────
 def show_obras():
-    st.markdown("&lt;h1 class='main-title'&gt;Galeria de Obras de Arte&lt;/h1&gt;", unsafe_allow_html=True)
-    st.markdown("&lt;p class='subtitle'&gt;Explore as obras e contribua com suas tags descritivas&lt;/p&gt;",
+    st.markdown("<h1 class='main-title'>Galeria de Obras de Arte</h1>", unsafe_allow_html=True)
+    st.markdown("<p class='subtitle'>Explore as obras e contribua com suas tags descritivas</p>",
                 unsafe_allow_html=True)
     obras = load_obras()
     if not obras:
         st.info("Nenhuma obra cadastrada.")
         return
-    st.markdown("&lt;div class='glass-card'&gt;", unsafe_allow_html=True)
+    st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
     c1, c2 = st.columns([2,1])
     with c1:
         sid = st.text_input("Filtrar por número da obra:", "", placeholder="Ex: 1, 2, 3…")
     with c2:
         sord = st.selectbox("Ordenar por:", ["Número (crescente)","Número (decrescente)"])
-    st.markdown("&lt;/div&gt;", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
     filtered = obras
     if sid.strip().isdigit():
         filtered = [o for o in obras if str(o['id'])==sid.strip()]
     filtered = sorted(filtered, key=lambda x: x['id'], reverse=(sord=="Número (decrescente)"))
-    st.markdown(f"&lt;div style='text-align:center;color:white;margin:1.8rem 0;"
-                f"font-size:1.1rem;font-weight:600'&gt;Exibindo "
-                f"&lt;strong style='font-size:1.4rem'&gt;{len(filtered)}&lt;/strong&gt; obra(s)&lt;/div&gt;",
+    st.markdown(f"<div style='text-align:center;color:white;margin:1.8rem 0;"
+                f"font-size:1.1rem;font-weight:600'>Exibindo "
+                f"<strong style='font-size:1.4rem'>{len(filtered)}</strong> obra(s)</div>",
                 unsafe_allow_html=True)
     cols = st.columns(3)
     for i, obra in enumerate(filtered):
         with cols[i%3]:
-            st.markdown(f"""&lt;div class='obra-card'&gt;
-&lt;img src='{obra['imagem']}' alt='Obra {obra['id']}' /&gt;
-&lt;div style='padding:1.4rem'&gt;
-  &lt;h3 style='font-size:1.05rem;font-weight:700;margin-bottom:.35rem'&gt;Obra #{obra['id']}&lt;/h3&gt;
-  &lt;p style='font-size:.88rem;opacity:.65'&gt;Adicione uma tag descritiva para esta imagem&lt;/p&gt;
-&lt;/div&gt;&lt;/div&gt;""", unsafe_allow_html=True)
+            st.markdown(f"""<div class='obra-card'>
+<img src='{obra['imagem']}' alt='Obra {obra['id']}' />
+<div style='padding:1.4rem'>
+  <h3 style='font-size:1.05rem;font-weight:700;margin-bottom:.35rem'>Obra #{obra['id']}</h3>
+  <p style='font-size:.88rem;opacity:.65'>Adicione uma tag descritiva para esta imagem</p>
+</div></div>""", unsafe_allow_html=True)
             if st.button(" Adicionar Tag", key=f"btn_{obra['id']}", use_container_width=True):
                 st.session_state['selected_obra'] = obra
                 st.rerun()
@@ -550,7 +550,7 @@ def show_obras():
             if not ut.empty:
                 st.markdown("**Suas Tags:**")
                 st.markdown("".join(
-                    f"&lt;span class='tag-badge'&gt;{r['tag']} ({r['count']})&lt;/span&gt;"
+                    f"<span class='tag-badge'>{r['tag']} ({r['count']})</span>"
                     for _, r in ut.iterrows()
                 ), unsafe_allow_html=True)
             else:
@@ -561,13 +561,13 @@ def show_admin():
     if 'admin_logged_in' not in st.session_state:
         st.session_state['admin_logged_in'] = False
     if not st.session_state['admin_logged_in']:
-        st.markdown("&lt;h1 class='main-title'&gt;Área Administrativa&lt;/h1&gt;", unsafe_allow_html=True)
-        st.markdown("&lt;p class='subtitle'&gt;Acesso restrito&lt;/p&gt;", unsafe_allow_html=True)
+        st.markdown("<h1 class='main-title'>Área Administrativa</h1>", unsafe_allow_html=True)
+        st.markdown("<p class='subtitle'>Acesso restrito</p>", unsafe_allow_html=True)
         _, c2, _ = st.columns([1,1,1])
         with c2:
-            st.markdown("&lt;div class='glass-card'&gt;", unsafe_allow_html=True)
-            st.markdown("&lt;h2 style='text-align:center;margin-bottom:1.8rem'&gt;"
-                        "Login Administrativo&lt;/h2&gt;", unsafe_allow_html=True)
+            st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+            st.markdown("<h2 style='text-align:center;margin-bottom:1.8rem'>"
+                        "Login Administrativo</h2>", unsafe_allow_html=True)
             with st.form("login"):
                 username = st.text_input("Usuário:", placeholder="Digite seu usuário")
                 password = st.text_input("Senha:", type="password", placeholder="Digite sua senha")
@@ -581,18 +581,18 @@ def show_admin():
                         st.rerun()
                     else:
                         st.error("Credenciais inválidas. Acesso negado.")
-            st.markdown("&lt;/div&gt;", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
     else:
         st.markdown(
-            f"&lt;h1 class='main-title'&gt;Dashboard Administrativo&lt;/h1&gt;"
-            f"&lt;p class='subtitle'&gt;Bem-vindo, "
-            f"&lt;strong&gt;{st.session_state.get('admin_username','Admin')}&lt;/strong&gt;&lt;/p&gt;",
+            f"<h1 class='main-title'>Dashboard Administrativo</h1>"
+            f"<p class='subtitle'>Bem-vindo, "
+            f"<strong>{st.session_state.get('admin_username','Admin')}</strong></p>",
             unsafe_allow_html=True)
         tabs = st.tabs([
             " Visão Geral",
             " Análise de Tags",
             " Conexões de Tags",
-            " Usuários &amp; Questionário",
+            " Usuários & Questionário",
             " Obras",
             " Exportar"
         ])
@@ -644,18 +644,18 @@ def tab_overview():
             animal = row.get('animal_name','?')
             ts     = row.get('timestamp','N/A')
             nt, nu = int(row['tags']), int(row['unicas'])
-            p      = nu/nt if nt&gt;0 else 0
+            p      = nu/nt if nt>0 else 0
             st.markdown(
-                f"&lt;div class='sc sc-b' style='padding:.85rem 1.3rem;margin:.25rem 0'&gt;"
-                f"&lt;div style='display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px'&gt;"
-                f"&lt;div&gt;&lt;span class='animal-badge'&gt;🐾 {animal}&lt;/span&gt;"
-                f"&lt;span style='color:rgba(255,255,255,.45);font-size:.75rem;margin-left:10px'&gt;Acesso: {ts}&lt;/span&gt;&lt;/div&gt;"
-                f"&lt;div style='text-align:right;min-width:170px'&gt;"
-                f"&lt;span style='color:white;font-weight:700'&gt;{nt} tags&lt;/span&gt;"
-                f"&lt;span style='color:rgba(255,255,255,.4);font-size:.78rem'&gt; ({nu} únicas)&lt;/span&gt;"
+                f"<div class='sc sc-b' style='padding:.85rem 1.3rem;margin:.25rem 0'>"
+                f"<div style='display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px'>"
+                f"<div><span class='animal-badge'>🐾 {animal}</span>"
+                f"<span style='color:rgba(255,255,255,.45);font-size:.75rem;margin-left:10px'>Acesso: {ts}</span></div>"
+                f"<div style='text-align:right;min-width:170px'>"
+                f"<span style='color:white;font-weight:700'>{nt} tags</span>"
+                f"<span style='color:rgba(255,255,255,.4);font-size:.78rem'> ({nu} únicas)</span>"
                 f"{pbar(p,'#a7e6ff')}"
-                f"&lt;span style='color:rgba(255,255,255,.38);font-size:.7rem'&gt;riqueza: {p:.0%}&lt;/span&gt;"
-                f"&lt;/div&gt;&lt;/div&gt;&lt;/div&gt;", unsafe_allow_html=True)
+                f"<span style='color:rgba(255,255,255,.38);font-size:.7rem'>riqueza: {p:.0%}</span>"
+                f"</div></div></div>", unsafe_allow_html=True)
 
     st.markdown(divider(), unsafe_allow_html=True)
 
@@ -702,7 +702,7 @@ def tab_tags():
         )
 
         hapax  = (freq['Frequência']==1).sum()
-        lei80  = (freq['% Acumulada']&lt;=80).sum()
+        lei80  = (freq['% Acumulada']<=80).sum()
         ttr    = len(freq)/total_usos if total_usos else 0
         top1p  = freq.iloc[0]['% do Total'] if not freq.empty else 0
 
@@ -713,11 +713,11 @@ def tab_tags():
         with c4: st.markdown(kpi("Type-Token Ratio",   f"{ttr:.3f}","riqueza global","#fcd34d"), unsafe_allow_html=True)
 
         st.markdown(insight(
-            f"&lt;strong&gt;Distribuição de Zipf:&lt;/strong&gt; As {lei80} tags mais frequentes cobrem 80% de todos os usos. "
+            f"<strong>Distribuição de Zipf:</strong> As {lei80} tags mais frequentes cobrem 80% de todos os usos. "
             f"Existem {hapax} hapax legomena — termos usados somente uma vez "
             f"({hapax/len(freq):.0%} do vocabulário total). "
-            f"TTR global de &lt;strong&gt;{ttr:.3f}&lt;/strong&gt; indica "
-            f"{'alta' if ttr&gt;0.5 else 'moderada' if ttr&gt;0.25 else 'baixa'} diversidade lexical."
+            f"TTR global de <strong>{ttr:.3f}</strong> indica "
+            f"{'alta' if ttr>0.5 else 'moderada' if ttr>0.25 else 'baixa'} diversidade lexical."
         ), unsafe_allow_html=True)
 
         st.markdown(divider(), unsafe_allow_html=True)
@@ -862,10 +862,10 @@ def tab_tags():
             monthly_full.columns = ['Mês/Ano','Tags Criadas','Tags Únicas','Usuários Ativos']
             st.dataframe(monthly_full, use_container_width=True, hide_index=True)
 
-            if len(daily)&gt;1:
+            if len(daily)>1:
                 st.markdown(insight(
-                    f"&lt;strong&gt;Tendência:&lt;/strong&gt; Pico de &lt;strong&gt;{pico_val} tags&lt;/strong&gt; em {pico_dt}. "
-                    f"Média de &lt;strong&gt;{media_dia:.1f} tags/dia&lt;/strong&gt; nos {dias_ativos} dias com atividade. "
+                    f"<strong>Tendência:</strong> Pico de <strong>{pico_val} tags</strong> em {pico_dt}. "
+                    f"Média de <strong>{media_dia:.1f} tags/dia</strong> nos {dias_ativos} dias com atividade. "
                     f"Total de {len(tf)} tags distribuídas ao longo de "
                     f"{monthly['ano'].nunique()} ano(s) e {len(monthly)} mês(es) registrado(s)."
                 ), unsafe_allow_html=True)
@@ -886,10 +886,10 @@ def tab_connections():
 
     st.markdown("### Conexões e Agrupamentos de Tags")
     st.markdown(insight(
-        "&lt;strong&gt;Como funciona:&lt;/strong&gt; O algoritmo combina três métricas — "
-        "&lt;strong&gt;Contenção de substring&lt;/strong&gt; (ex: 'vaso' → 'vaso verde'), "
-        "&lt;strong&gt;Jaccard de palavras&lt;/strong&gt; (ex: 'barco preto' ↔ 'barco de barro') e "
-        "&lt;strong&gt;Jaccard de trigramas&lt;/strong&gt; (similaridade fonética). "
+        "<strong>Como funciona:</strong> O algoritmo combina três métricas — "
+        "<strong>Contenção de substring</strong> (ex: 'vaso' → 'vaso verde'), "
+        "<strong>Jaccard de palavras</strong> (ex: 'barco preto' ↔ 'barco de barro') e "
+        "<strong>Jaccard de trigramas</strong> (similaridade fonética). "
         "Score de 0 (sem relação) a 1 (idênticas)."
     ), unsafe_allow_html=True)
 
@@ -904,7 +904,7 @@ def tab_connections():
         fdf = tdf[tdf['obra_id']==oid]
 
     all_t = fdf['tag'].tolist()
-    if len(set(all_t)) &lt; 2:
+    if len(set(all_t)) < 2:
         st.warning("Necessário ao menos 2 tags distintas.")
         return
 
@@ -941,19 +941,19 @@ def tab_connections():
                 fa  = freq_map.get(c['tag_a'],0)
                 fb  = freq_map.get(c['tag_b'],0)
                 st.markdown(
-                    f"&lt;div class='conn-row'&gt;"
-                    f"&lt;div style='display:flex;align-items:center;gap:10px;flex-wrap:wrap'&gt;"
-                    f"&lt;span class='tag-badge'&gt;{c['tag_a']}&lt;/span&gt;"
-                    f"&lt;span style='color:rgba(255,255,255,.3);font-size:.72rem'&gt;({fa}×)&lt;/span&gt;"
-                    f"&lt;span style='color:rgba(255,255,255,.38)'&gt;↔&lt;/span&gt;"
-                    f"&lt;span class='tag-badge'&gt;{c['tag_b']}&lt;/span&gt;"
-                    f"&lt;span style='color:rgba(255,255,255,.3);font-size:.72rem'&gt;({fb}×)&lt;/span&gt;"
-                    f"&lt;/div&gt;"
-                    f"&lt;div style='text-align:right;min-width:195px'&gt;"
-                    f"&lt;span style='font-family:monospace;color:rgba(255,255,255,.6);font-size:.78rem'&gt;"
-                    f"{bar} {s:.3f}&lt;/span&gt;&lt;br&gt;"
-                    f"&lt;span style='font-size:.7rem;color:rgba(255,255,255,.35)'&gt;{c['tipo']}&lt;/span&gt;"
-                    f"&lt;/div&gt;&lt;/div&gt;", unsafe_allow_html=True)
+                    f"<div class='conn-row'>"
+                    f"<div style='display:flex;align-items:center;gap:10px;flex-wrap:wrap'>"
+                    f"<span class='tag-badge'>{c['tag_a']}</span>"
+                    f"<span style='color:rgba(255,255,255,.3);font-size:.72rem'>({fa}×)</span>"
+                    f"<span style='color:rgba(255,255,255,.38)'>↔</span>"
+                    f"<span class='tag-badge'>{c['tag_b']}</span>"
+                    f"<span style='color:rgba(255,255,255,.3);font-size:.72rem'>({fb}×)</span>"
+                    f"</div>"
+                    f"<div style='text-align:right;min-width:195px'>"
+                    f"<span style='font-family:monospace;color:rgba(255,255,255,.6);font-size:.78rem'>"
+                    f"{bar} {s:.3f}</span><br>"
+                    f"<span style='font-size:.7rem;color:rgba(255,255,255,.35)'>{c['tipo']}</span>"
+                    f"</div></div>", unsafe_allow_html=True)
 
             st.markdown(divider(), unsafe_allow_html=True)
             st.download_button(
@@ -978,14 +978,14 @@ def tab_connections():
                 color      = COLORS[(i-1) % len(COLORS)]
                 total_uses = sum(freq_map.get(t,0) for t in cl)
                 pills = "".join(
-                    f"&lt;span class='cluster-pill'&gt;{t} "
-                    f"&lt;span style='opacity:.5;font-size:.7rem'&gt;({freq_map.get(t,0)}×)&lt;/span&gt;&lt;/span&gt;"
+                    f"<span class='cluster-pill'>{t} "
+                    f"<span style='opacity:.5;font-size:.7rem'>({freq_map.get(t,0)}×)</span></span>"
                     for t in sorted(cl, key=lambda x: freq_map.get(x,0), reverse=True)
                 )
                 st.markdown(
-                    f"&lt;div class='cluster-wrap' style='border-left:3px solid {color}'&gt;"
-                    f"&lt;div class='cluster-title'&gt;Grupo {i} · {len(cl)} tags · {total_uses} usos totais&lt;/div&gt;"
-                    f"{pills}&lt;/div&gt;", unsafe_allow_html=True)
+                    f"<div class='cluster-wrap' style='border-left:3px solid {color}'>"
+                    f"<div class='cluster-title'>Grupo {i} · {len(cl)} tags · {total_uses} usos totais</div>"
+                    f"{pills}</div>", unsafe_allow_html=True)
 
             st.markdown(divider(), unsafe_allow_html=True)
             st.markdown("#### Resumo dos Grupos")
@@ -994,7 +994,7 @@ def tab_connections():
                 "Qtd Tags": len(cl),
                 "Total Usos": sum(freq_map.get(t,0) for t in cl),
                 "Tags": ", ".join(sorted(cl,key=lambda x:freq_map.get(x,0),reverse=True)[:6])
-                        + ("…" if len(cl)&gt;6 else "")
+                        + ("…" if len(cl)>6 else "")
             } for i,cl in enumerate(cls_sorted,1)])
             st.dataframe(summ, use_container_width=True, hide_index=True)
 
@@ -1004,7 +1004,7 @@ def tab_connections():
                 f"clusters_{datetime.now().strftime('%Y%m%d')}.csv","text/csv")
 
 # ═════════════════════════════════════════════════════════════════════
-# ABA 4 — USUÁRIOS &amp; QUESTIONÁRIO (unificado)
+# ABA 4 — USUÁRIOS & QUESTIONÁRIO (unificado)
 # ═════════════════════════════════════════════════════════════════════
 def tab_users_quest():
     tdf = all_tags()
@@ -1016,7 +1016,7 @@ def tab_users_quest():
         st.info("Nenhum dado de usuário disponível.")
         return
 
-    st.markdown("### Usuários &amp; Questionário")
+    st.markdown("### Usuários & Questionário")
 
     # ── KPIs combinados ──
     uct = tdf.groupby('user_id').size().reset_index(name='Total_Tags') if not tdf.empty else pd.DataFrame(columns=['user_id','Total_Tags'])
@@ -1106,17 +1106,17 @@ def tab_users_quest():
                     fa = freq_map.get(c['tag_a'],0)
                     fb = freq_map.get(c['tag_b'],0)
                     st.markdown(
-                        f"&lt;div class='conn-row'&gt;"
-                        f"&lt;div style='display:flex;align-items:center;gap:9px;flex-wrap:wrap'&gt;"
-                        f"&lt;span class='tag-badge'&gt;{c['tag_a']}&lt;/span&gt;"
-                        f"&lt;span style='color:rgba(255,255,255,.3);font-size:.7rem'&gt;({fa}×)&lt;/span&gt;"
-                        f"&lt;span style='color:rgba(255,255,255,.35)'&gt;↔&lt;/span&gt;"
-                        f"&lt;span class='tag-badge'&gt;{c['tag_b']}&lt;/span&gt;"
-                        f"&lt;span style='color:rgba(255,255,255,.3);font-size:.7rem'&gt;({fb}×)&lt;/span&gt;"
-                        f"&lt;/div&gt;"
-                        f"&lt;span style='color:rgba(255,255,255,.35);font-size:.75rem'&gt;"
-                        f"{c['similaridade']:.3f} · {c['tipo']}&lt;/span&gt;"
-                        f"&lt;/div&gt;", unsafe_allow_html=True)
+                        f"<div class='conn-row'>"
+                        f"<div style='display:flex;align-items:center;gap:9px;flex-wrap:wrap'>"
+                        f"<span class='tag-badge'>{c['tag_a']}</span>"
+                        f"<span style='color:rgba(255,255,255,.3);font-size:.7rem'>({fa}×)</span>"
+                        f"<span style='color:rgba(255,255,255,.35)'>↔</span>"
+                        f"<span class='tag-badge'>{c['tag_b']}</span>"
+                        f"<span style='color:rgba(255,255,255,.3);font-size:.7rem'>({fb}×)</span>"
+                        f"</div>"
+                        f"<span style='color:rgba(255,255,255,.35);font-size:.75rem'>"
+                        f"{c['similaridade']:.3f} · {c['tipo']}</span>"
+                        f"</div>", unsafe_allow_html=True)
             else:
                 st.info("Nenhuma conexão encontrada nas tags deste participante.")
 
@@ -1220,7 +1220,7 @@ def tab_users_quest():
         st.dataframe(cross, use_container_width=True, hide_index=True)
 
         st.markdown(insight(
-            "&lt;strong&gt;Interpretação:&lt;/strong&gt; Compare se participantes mais familiarizados com museus "
+            "<strong>Interpretação:</strong> Compare se participantes mais familiarizados com museus "
             "produzem mais tags, maior diversidade vocabular (TTR) ou tags mais descritivas. "
             "A riqueza vocabular (TTR) mede a proporção de termos únicos sobre o total criado — "
             "valores próximos de 1.0 indicam alta originalidade e variedade nas tags."
@@ -1365,4 +1365,4 @@ def tab_export():
                     f"tags_{uid[:8]}.csv","text/csv", use_container_width=True)
 
 if __name__ == "__main__":
-    main()  
+    main()
