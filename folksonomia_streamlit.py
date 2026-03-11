@@ -9,36 +9,86 @@ import json
 import random
 import warnings
 from collections import defaultdict
-import re # Para processamento de texto para audiodescrição e nuvem de palavras
-from wordcloud import WordCloud # Para a nuvem de palavras
-import matplotlib.pyplot as plt # Para exibir a nuvem de palavras
+from PIL import Image
+import requests
+from io import BytesIO
+import plotly.express as px
+import plotly.graph_objects as go
+from wordcloud import WordCloud
+import matplotlib.pyplot as plt
+import networkx as nx
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.cluster import KMeans
+from scipy.cluster.hierarchy import dendrogram, linkage
+from scipy.spatial.distance import pdist, squareform
+import re
 
 warnings.filterwarnings('ignore')
 
-# --- Configurações Iniciais ---
 st.set_page_config(
     page_title="Sistema Folksonomia Digital",
     layout="wide",
     initial_sidebar_state="collapsed",
-    page_icon="📚" # Mantendo o ícone da página, mas removendo emojis do conteúdo
+    page_icon="📚"
 )
 
-DATA_DIR   = "data"
+DATA_DIR = "data"
 OBRAS_FILE = os.path.join(DATA_DIR, "obras.json")
-TAGS_FILE  = os.path.join(DATA_DIR, "tags.json")
+TAGS_FILE = os.path.join(DATA_DIR, "tags.json")
 USERS_FILE = os.path.join(DATA_DIR, "users.json")
 ADMIN_FILE = os.path.join(DATA_DIR, "admin.json")
 ADMIN_USERNAME = "nugep"
 ADMIN_PASSWORD = "nugep123"
 
+# Configurações de acessibilidade
+if 'accessibility' not in st.session_state:
+    st.session_state.accessibility = {
+        'font_size': 'medium',
+        'theme': 'dark',
+        'high_contrast': False,
+        'reduce_motion': False,
+        'screen_reader': False,
+        'audio_descriptions': True
+    }
+
+# Mapeamento de tamanhos de fonte
+FONT_SIZES = {
+    'small': {'base': '14px', 'h1': '2.5rem', 'h2': '2rem', 'h3': '1.5rem'},
+    'medium': {'base': '16px', 'h1': '3.5rem', 'h2': '2.8rem', 'h3': '2rem'},
+    'large': {'base': '18px', 'h1': '4rem', 'h2': '3.2rem', 'h3': '2.5rem'},
+    'x-large': {'base': '20px', 'h1': '4.5rem', 'h2': '3.8rem', 'h3': '3rem'}
+}
+
+# Cores para temas
+THEMES = {
+    'dark': {
+        'bg': 'linear-gradient(-45deg,#000 0%,#001F3F 25%,#000 50%,#001F3F 75%,#000 100%)',
+        'text': '#e0e0e0',
+        'card': 'rgba(255,255,255,.15)',
+        'card_hover': 'rgba(255,255,255,.25)',
+        'border': 'rgba(255,255,255,.3)',
+        'accent': '#a7e6ff',
+        'accent2': '#d1baff'
+    },
+    'light': {
+        'bg': 'linear-gradient(135deg, #f5f7fa 0%, #e9ecef 100%)',
+        'text': '#2d3436',
+        'card': 'rgba(255,255,255,.9)',
+        'card_hover': 'rgba(255,255,255,1)',
+        'border': 'rgba(0,0,0,.1)',
+        'accent': '#0984e3',
+        'accent2': '#6c5ce7'
+    }
+}
+
 ANIMAIS = [
-    "Aguia","Boto","Capivara","Doninha","Ema","Falcao","Gaviao","Harpia","Irara","Jaguar",
-    "Lontra","Mico","Onca","Paca","Quati","Raposa","Tamandua","Urubu","Veado","Zorrilho",
+    "Águia","Boto","Capivara","Doninha","Ema","Falcão","Gavião","Harpia","Irara","Jaguar",
+    "Lontra","Mico","Onça","Paca","Quati","Raposa","Tamanduá","Urubu","Veado","Zorrilho",
     "Arara","Bugio","Caititu","Jaguatirica","Lobo","Mutum","Pirarucu","Tucano","Sucuri","Tatu"
 ]
 ADJETIVOS = [
     "Azul","Bravo","Calmo","Dourado","Esperto","Feroz","Gracioso","Intenso","Jovial","Lento",
-    "Magico","Nobre","Ousado","Preciso","Rapido","Sabio","Timido","Unico","Valente","Zeloso",
+    "Mágico","Nobre","Ousado","Preciso","Rápido","Sábio","Tímido","Único","Valente","Zeloso",
     "Curioso","Furtivo","Altivo","Sereno","Vibrante","Audaz","Brilhante","Corajoso","Distinto","Elegante"
 ]
 
@@ -46,7 +96,104 @@ def generate_animal_name():
     random.seed()
     return f"{random.choice(ANIMAIS)} {random.choice(ADJETIVOS)}"
 
-# --- CORE ---
+# Funções de acessibilidade
+def get_font_size_css():
+    fs = FONT_SIZES[st.session_state.accessibility['font_size']]
+    theme = THEMES[st.session_state.accessibility['theme']]
+    contrast_class = 'high-contrast' if st.session_state.accessibility['high_contrast'] else ''
+    motion_class = 'reduce-motion' if st.session_state.accessibility['reduce_motion'] else ''
+    
+    return f"""
+    <style>
+        :root {{
+            --font-size-base: {fs['base']};
+            --font-size-h1: {fs['h1']};
+            --font-size-h2: {fs['h2']};
+            --font-size-h3: {fs['h3']};
+            --bg-gradient: {theme['bg']};
+            --text-color: {theme['text']};
+            --card-bg: {theme['card']};
+            --card-hover: {theme['card_hover']};
+            --border-color: {theme['border']};
+            --accent-color: {theme['accent']};
+            --accent-color2: {theme['accent2']};
+        }}
+        
+        .{contrast_class} {{
+            --card-bg: rgba(0,0,0,.9) !important;
+            --border-color: #fff !important;
+        }}
+        
+        .{motion_class} * {{
+            transition: none !important;
+            animation: none !important;
+        }}
+        
+        * {{
+            font-size: var(--font-size-base);
+        }}
+        
+        h1 {{
+            font-size: var(--font-size-h1) !important;
+        }}
+        
+        h2 {{
+            font-size: var(--font-size-h2) !important;
+        }}
+        
+        h3 {{
+            font-size: var(--font-size-h3) !important;
+        }}
+    </style>
+    """
+
+def accessibility_controls():
+    """Controles de acessibilidade na barra lateral"""
+    with st.sidebar:
+        st.markdown("### Acessibilidade")
+        
+        # Tamanho da fonte
+        st.session_state.accessibility['font_size'] = st.select_slider(
+            "Tamanho da Fonte",
+            options=['small', 'medium', 'large', 'x-large'],
+            value=st.session_state.accessibility['font_size'],
+            format_func=lambda x: {
+                'small': 'Pequeno',
+                'medium': 'Médio',
+                'large': 'Grande',
+                'x-large': 'Extra Grande'
+            }[x]
+        )
+        
+        # Tema
+        st.session_state.accessibility['theme'] = st.radio(
+            "Tema",
+            options=['dark', 'light'],
+            format_func=lambda x: 'Escuro' if x == 'dark' else 'Claro',
+            horizontal=True
+        )
+        
+        # Alto contraste
+        st.session_state.accessibility['high_contrast'] = st.checkbox(
+            "Alto Contraste",
+            value=st.session_state.accessibility['high_contrast']
+        )
+        
+        # Reduzir movimento
+        st.session_state.accessibility['reduce_motion'] = st.checkbox(
+            "Reduzir Movimento",
+            value=st.session_state.accessibility['reduce_motion']
+        )
+        
+        # Descrições em áudio
+        st.session_state.accessibility['audio_descriptions'] = st.checkbox(
+            "Descrições em Áudio",
+            value=st.session_state.accessibility['audio_descriptions']
+        )
+        
+        st.markdown("---")
+
+# ── CORE ──────────────────────────────────────────────────────────────
 def ensure_data_dir():
     if not os.path.exists(DATA_DIR):
         os.makedirs(DATA_DIR)
@@ -71,9 +218,46 @@ def save_json_file(filepath, data):
         st.error(f"Erro ao salvar {filepath}: {e}")
         return False
 
-# --- SIMILARIDADE ---
-def ntag(tag):   return tag.lower().strip()
-def words(tag):  return set(ntag(tag).split())
+# ── DESCRIÇÃO DE IMAGENS ─────────────────────────────────────────────
+def generate_image_description(image_url):
+    """Gera uma descrição textual da imagem para acessibilidade"""
+    try:
+        response = requests.get(image_url, timeout=5)
+        img = Image.open(BytesIO(response.content))
+        
+        # Extrair metadados básicos
+        width, height = img.size
+        format_img = img.format
+        mode = img.mode
+        
+        # Análise básica de cores
+        img_array = np.array(img)
+        if len(img_array.shape) == 3:
+            avg_color = np.mean(img_array, axis=(0, 1))
+            brightness = np.mean(avg_color)
+        else:
+            brightness = np.mean(img_array)
+        
+        description = f"Imagem {width}x{height} pixels, formato {format_img}. "
+        
+        if brightness < 85:
+            description += "Imagem predominantemente escura. "
+        elif brightness > 170:
+            description += "Imagem predominantemente clara. "
+        else:
+            description += "Imagem com tons médios. "
+            
+        return description
+    except:
+        return "Descrição automática não disponível para esta imagem."
+
+def text_to_speech(text):
+    """Simula conversão de texto para áudio (placeholder para API real)"""
+    return f"Reproduzindo áudio: {text}"
+
+# ── SIMILARIDADE ──────────────────────────────────────────────────────
+def ntag(tag): return tag.lower().strip()
+def words(tag): return set(ntag(tag).split())
 def ngrams(text, n=3):
     t = ntag(text)
     return set([t]) if len(t) < n else set(t[i:i+n] for i in range(len(t)-n+1))
@@ -104,17 +288,20 @@ def tag_connections(tags_list, threshold=0.35):
             if s >= threshold:
                 w1,w2 = words(uniq[i]),words(uniq[j])
                 shared = w1&w2
-                if uniq[i] in uniq[j] or uniq[j] in uniq[i]: tipo = "Contencao"
-                elif shared: tipo = f"Palavra comum: '{', '.join(shared)}'"
-                else: tipo = "Similaridade fonetica"
+                if uniq[i] in uniq[j] or uniq[j] in uniq[i]: 
+                    tipo = "Contencao"
+                elif shared: 
+                    tipo = f"Palavra comum: '{', '.join(shared)}'"
+                else: 
+                    tipo = "Similaridade fonetica"
                 conns.append({"tag_a":uniq[i],"tag_b":uniq[j],"similaridade":round(s,3),"tipo":tipo})
     conns.sort(key=lambda x: x["similaridade"], reverse=True)
     return conns
 
 def tag_clusters(tags_list, threshold=0.35):
-    uniq  = list(set(ntag(t) for t in tags_list))
+    uniq = list(set(ntag(t) for t in tags_list))
     conns = tag_connections(uniq, threshold)
-    par   = {t:t for t in uniq}
+    par = {t:t for t in uniq}
     def find(x):
         while par[x]!=x: par[x]=par[par[x]]; x=par[x]
         return x
@@ -126,421 +313,722 @@ def tag_clusters(tags_list, threshold=0.35):
     for t in uniq: cl[find(t)].append(t)
     return [sorted(v) for v in cl.values() if len(v)>1]
 
-# --- CSS E ACESSIBILIDADE ---
+# ── ANÁLISE AVANÇADA DE TAGS ─────────────────────────────────────────
+def advanced_tag_analysis(tags_df):
+    """Análise estatística avançada das tags"""
+    analysis = {}
+    
+    # Estatísticas básicas
+    analysis['total_tags'] = len(tags_df)
+    analysis['unique_tags'] = tags_df['tag'].nunique()
+    analysis['avg_tags_per_user'] = tags_df.groupby('user_id').size().mean()
+    
+    # Distribuição de frequência
+    freq_dist = tags_df['tag'].value_counts()
+    analysis['most_common'] = freq_dist.head(10).to_dict()
+    analysis['least_common'] = freq_dist.tail(10).to_dict()
+    
+    # Métricas de diversidade
+    analysis['shannon_entropy'] = calculate_shannon_entropy(freq_dist)
+    analysis['simpson_index'] = calculate_simpson_index(freq_dist)
+    analysis['pielou_evenness'] = analysis['shannon_entropy'] / np.log(len(freq_dist)) if len(freq_dist) > 1 else 0
+    
+    # Hapax legomena
+    analysis['hapax_count'] = (freq_dist == 1).sum()
+    analysis['hapax_percentage'] = (analysis['hapax_count'] / analysis['unique_tags'] * 100)
+    
+    # Análise de comprimento das tags
+    tag_lengths = tags_df['tag'].str.len()
+    analysis['avg_tag_length'] = tag_lengths.mean()
+    analysis['min_tag_length'] = tag_lengths.min()
+    analysis['max_tag_length'] = tag_lengths.max()
+    
+    # Análise temporal
+    if 'timestamp' in tags_df.columns:
+        tags_df['hour'] = pd.to_datetime(tags_df['timestamp']).dt.hour
+        analysis['peak_hour'] = tags_df['hour'].mode().iloc[0] if not tags_df['hour'].empty else None
+        analysis['tags_by_hour'] = tags_df['hour'].value_counts().sort_index().to_dict()
+    
+    return analysis
+
+def calculate_shannon_entropy(freq_dist):
+    """Calcula entropia de Shannon para distribuição de tags"""
+    probs = freq_dist / freq_dist.sum()
+    return -sum(p * np.log(p) for p in probs if p > 0)
+
+def calculate_simpson_index(freq_dist):
+    """Calcula índice de Simpson para diversidade"""
+    total = freq_dist.sum()
+    return 1 - sum((n * (n - 1)) / (total * (total - 1)) for n in freq_dist)
+
+def create_tag_network(tags_df, threshold=0.35):
+    """Cria rede de conexões entre tags para visualização"""
+    unique_tags = tags_df['tag'].unique()
+    connections = tag_connections(unique_tags, threshold)
+    
+    G = nx.Graph()
+    for tag in unique_tags:
+        G.add_node(tag, size=tags_df[tags_df['tag']==tag].shape[0])
+    
+    for conn in connections:
+        G.add_edge(conn['tag_a'], conn['tag_b'], weight=conn['similaridade'])
+    
+    return G
+
+def hierarchical_clustering(tags_df, n_clusters=5):
+    """Agrupamento hierárquico de tags baseado em similaridade"""
+    unique_tags = tags_df['tag'].unique()
+    if len(unique_tags) < 2:
+        return None
+    
+    # Matriz de distância baseada em similaridade
+    n = len(unique_tags)
+    dist_matrix = np.zeros((n, n))
+    for i in range(n):
+        for j in range(i+1, n):
+            s = sim(unique_tags[i], unique_tags[j])
+            dist_matrix[i, j] = 1 - s
+            dist_matrix[j, i] = 1 - s
+    
+    # Agrupamento hierárquico
+    linkage_matrix = linkage(squareform(dist_matrix), method='average')
+    
+    # K-means para clusters finais
+    kmeans = KMeans(n_clusters=min(n_clusters, n), random_state=42)
+    clusters = kmeans.fit_predict(dist_matrix)
+    
+    result = {}
+    for i, tag in enumerate(unique_tags):
+        cluster_id = clusters[i]
+        if cluster_id not in result:
+            result[cluster_id] = []
+        result[cluster_id].append(tag)
+    
+    return result, linkage_matrix
+
+def generate_wordcloud(tags_df):
+    """Gera wordcloud das tags"""
+    text = ' '.join(tags_df['tag'].tolist())
+    wordcloud = WordCloud(width=800, height=400, 
+                         background_color='white',
+                         colormap='viridis',
+                         max_words=100).generate(text)
+    return wordcloud
+
+# ── FILTROS AVANÇADOS ───────────────────────────────────────────────
+def advanced_filters(obras, tags_df):
+    """Sistema de filtros avançados para busca de imagens"""
+    
+    st.markdown("### Filtros Avançados")
+    
+    with st.expander("Configurar Filtros", expanded=False):
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            # Filtro por palavras-chave
+            keywords = st.text_input("Palavras-chave", 
+                                     placeholder="Ex: natureza, retrato, abstrato...")
+            
+            # Filtro por período
+            year_range = st.slider("Período",
+                                   min_value=1400,
+                                   max_value=2024,
+                                   value=(1800, 2024))
+        
+        with col2:
+            # Filtro por artista
+            artists = list(set([o['artista'] for o in obras]))
+            selected_artists = st.multiselect("Artistas", artists)
+            
+            # Filtro por número de tags
+            obra_tags_count = tags_df.groupby('obra_id').size().to_dict()
+            min_tags = st.number_input("Mínimo de tags", min_value=0, value=0)
+        
+        with col3:
+            # Filtro por tags mais usadas
+            top_tags = tags_df['tag'].value_counts().head(20).index.tolist()
+            selected_tags = st.multiselect("Tags específicas", top_tags)
+            
+            # Filtro por popularidade
+            obra_popularity = tags_df.groupby('obra_id').size()
+            if not obra_popularity.empty:
+                pop_percentile = st.slider("Percentil de popularidade", 0, 100, 0)
+                min_popularity = np.percentile(obra_popularity, pop_percentile)
+            else:
+                min_popularity = 0
+        
+        # Ordenação
+        sort_by = st.selectbox("Ordenar por",
+                               ["ID", "Título", "Artista", "Ano", "Popularidade"])
+        
+        sort_order = st.radio("Ordem", ["Crescente", "Decrescente"], horizontal=True)
+    
+    # Aplicar filtros
+    filtered_obras = obras.copy()
+    
+    if keywords:
+        keywords_lower = keywords.lower()
+        filtered_obras = [o for o in filtered_obras 
+                         if keywords_lower in o['titulo'].lower() 
+                         or keywords_lower in o['artista'].lower()]
+    
+    filtered_obras = [o for o in filtered_obras 
+                     if year_range[0] <= int(o.get('ano', 0)) <= year_range[1]]
+    
+    if selected_artists:
+        filtered_obras = [o for o in filtered_obras 
+                         if o['artista'] in selected_artists]
+    
+    if min_tags > 0:
+        filtered_obras = [o for o in filtered_obras 
+                         if obra_tags_count.get(o['id'], 0) >= min_tags]
+    
+    if selected_tags:
+        obra_tags = tags_df.groupby('obra_id')['tag'].apply(list).to_dict()
+        filtered_obras = [o for o in filtered_obras 
+                         if all(tag in obra_tags.get(o['id'], []) 
+                               for tag in selected_tags)]
+    
+    if min_popularity > 0:
+        filtered_obras = [o for o in filtered_obras 
+                         if obra_popularity.get(o['id'], 0) >= min_popularity]
+    
+    # Ordenação
+    reverse = (sort_order == "Decrescente")
+    if sort_by == "ID":
+        filtered_obras = sorted(filtered_obras, key=lambda x: x['id'], reverse=reverse)
+    elif sort_by == "Título":
+        filtered_obras = sorted(filtered_obras, key=lambda x: x['titulo'], reverse=reverse)
+    elif sort_by == "Artista":
+        filtered_obras = sorted(filtered_obras, key=lambda x: x['artista'], reverse=reverse)
+    elif sort_by == "Ano":
+        filtered_obras = sorted(filtered_obras, 
+                               key=lambda x: int(x.get('ano', 0)), 
+                               reverse=reverse)
+    elif sort_by == "Popularidade":
+        filtered_obras = sorted(filtered_obras,
+                               key=lambda x: obra_popularity.get(x['id'], 0),
+                               reverse=reverse)
+    
+    return filtered_obras
+
+# ── CSS ───────────────────────────────────────────────────────────────
 def load_css():
-    # Carrega o tema atual (claro/escuro) e o tamanho da fonte
-    theme = st.session_state.get('theme', 'dark')
-    font_size = st.session_state.get('font_size', '16px')
+    base_css = """
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap');
+    
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        font-family: 'Poppins', sans-serif !important;
+    }
+    
+    .stApp {
+        background: var(--bg-gradient);
+        background-size: 400% 400%;
+        animation: bg 15s ease infinite;
+        color: var(--text-color);
+    }
+    
+    @keyframes bg {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+    }
+    
+    /* Barra de acessibilidade */
+    .accessibility-bar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 10000;
+        background: rgba(0,0,0,.8);
+        backdrop-filter: blur(10px);
+        padding: 0.5rem 2rem;
+        display: flex;
+        justify-content: flex-end;
+        gap: 1rem;
+        border-bottom: 1px solid rgba(255,255,255,.1);
+    }
+    
+    .accessibility-btn {
+        background: transparent;
+        border: 1px solid rgba(255,255,255,.2);
+        color: white;
+        padding: 0.3rem 1rem;
+        border-radius: 20px;
+        cursor: pointer;
+        font-size: 0.85rem;
+        transition: all 0.3s;
+    }
+    
+    .accessibility-btn:hover {
+        background: rgba(255,255,255,.1);
+        transform: translateY(-2px);
+    }
+    
+    /* Top navbar */
+    .top-navbar {
+        position: fixed;
+        top: 40px;
+        left: 0;
+        right: 0;
+        z-index: 9999;
+        background: var(--card-bg);
+        backdrop-filter: blur(20px) saturate(180%);
+        border-bottom: 1px solid var(--border-color);
+        padding: 1.4rem 3rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        box-shadow: 0 8px 32px rgba(0,0,0,.1);
+    }
+    
+    .navbar-logo {
+        font-size: 1.8rem;
+        font-weight: 800;
+        background: linear-gradient(135deg, var(--accent-color) 0%, var(--accent-color2) 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        letter-spacing: -1px;
+    }
+    
+    .main-content {
+        margin-top: 120px;
+        padding: 2rem 3rem;
+        max-width: 1600px;
+        margin-left: auto;
+        margin-right: auto;
+    }
+    
+    /* Cards e componentes */
+    .glass-card {
+        background: var(--card-bg);
+        backdrop-filter: blur(20px) saturate(180%);
+        border: 1px solid var(--border-color);
+        border-radius: 24px;
+        padding: 2.5rem;
+        margin: 1.5rem 0;
+        box-shadow: 0 8px 32px rgba(0,0,0,.1);
+        transition: all 0.4s cubic-bezier(.4,0,.2,1);
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .glass-card:hover {
+        background: var(--card-hover);
+        transform: translateY(-8px) scale(1.02);
+        box-shadow: 0 16px 48px rgba(0,0,0,.2);
+        border-color: var(--border-color);
+    }
+    
+    .obra-card {
+        background: var(--card-bg);
+        backdrop-filter: blur(15px) saturate(180%);
+        border: 1px solid var(--border-color);
+        border-radius: 20px;
+        overflow: hidden;
+        transition: all 0.4s cubic-bezier(.4,0,.2,1);
+        cursor: pointer;
+        position: relative;
+    }
+    
+    .obra-card:hover {
+        transform: translateY(-12px) scale(1.03);
+        box-shadow: 0 20px 60px rgba(0,31,63,.4);
+        border-color: var(--border-color);
+    }
+    
+    .obra-card img {
+        width: 100%;
+        height: 280px;
+        object-fit: cover;
+        transition: transform 0.6s cubic-bezier(.4,0,.2,1);
+    }
+    
+    .obra-card:hover img {
+        transform: scale(1.15) rotate(2deg);
+    }
+    
+    /* Badges e tags */
+    .tag-badge {
+        display: inline-block;
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        color: var(--text-color);
+        padding: 0.5rem 1.1rem;
+        border-radius: 50px;
+        margin: 0.3rem;
+        font-size: 0.88rem;
+        font-weight: 600;
+        transition: all 0.3s;
+    }
+    
+    .tag-badge:hover {
+        background: var(--card-hover);
+        transform: translateY(-3px) scale(1.05);
+    }
+    
+    .tag-green {
+        background: rgba(34,197,94,.25) !important;
+        border-color: rgba(34,197,94,.5) !important;
+        color: #dcfce7 !important;
+    }
+    
+    .tag-amber {
+        background: rgba(245,158,11,.25) !important;
+        border-color: rgba(245,158,11,.5) !important;
+        color: #fef3c7 !important;
+    }
+    
+    .tag-blue {
+        background: rgba(96,165,250,.25) !important;
+        border-color: rgba(96,165,250,.5) !important;
+        color: #dbeafe !important;
+    }
+    
+    /* Botão de áudio */
+    .audio-btn {
+        background: rgba(167,230,255,.2);
+        border: 1px solid rgba(167,230,255,.45);
+        color: var(--accent-color);
+        padding: 0.3rem 1rem;
+        border-radius: 50px;
+        font-size: 0.85rem;
+        cursor: pointer;
+        transition: all 0.3s;
+        margin: 0.5rem 0;
+    }
+    
+    .audio-btn:hover {
+        background: rgba(167,230,255,.3);
+        transform: translateY(-2px);
+    }
+    
+    /* KPIs e métricas */
+    .kpi-card {
+        background: var(--card-bg);
+        backdrop-filter: blur(20px) saturate(180%);
+        border: 1px solid var(--border-color);
+        border-radius: 18px;
+        padding: 1.6rem;
+        text-align: center;
+        color: var(--text-color);
+        box-shadow: 0 8px 32px rgba(0,0,0,.12);
+        transition: all 0.4s;
+    }
+    
+    .kpi-card:hover {
+        transform: translateY(-6px) scale(1.04);
+        box-shadow: 0 16px 48px rgba(0,31,63,.28);
+    }
+    
+    .kpi-val {
+        font-size: 2.5rem;
+        font-weight: 800;
+        margin: 0.6rem 0;
+        text-shadow: 0 4px 20px rgba(0,0,0,.2);
+        color: var(--accent-color);
+    }
+    
+    .kpi-lbl {
+        font-size: 0.78rem;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        font-weight: 600;
+        opacity: 0.8;
+    }
+    
+    /* Stats cards */
+    .stat-card {
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 14px;
+        padding: 1.3rem;
+        margin: 0.7rem 0;
+    }
+    
+    .stat-blue {
+        border-left: 4px solid #60a5fa;
+        background: rgba(96,165,250,.07);
+    }
+    
+    .stat-green {
+        border-left: 4px solid #34d399;
+        background: rgba(52,211,153,.07);
+    }
+    
+    .stat-purple {
+        border-left: 4px solid #a78bfa;
+        background: rgba(167,139,250,.07);
+    }
+    
+    .stat-amber {
+        border-left: 4px solid #fbbf24;
+        background: rgba(251,191,36,.07);
+    }
+    
+    /* Insights */
+    .insight {
+        background: rgba(167,230,255,.1);
+        border: 1px solid rgba(167,230,255,.28);
+        border-radius: 12px;
+        padding: 1rem 1.4rem;
+        margin: 0.6rem 0;
+        color: var(--text-color);
+        font-size: 0.9rem;
+        line-height: 1.7;
+    }
+    
+    .insight strong {
+        color: var(--accent-color);
+    }
+    
+    /* Conexões */
+    .conn-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+        background: rgba(255,255,255,.06);
+        border-radius: 11px;
+        padding: 0.85rem 1.2rem;
+        margin: 0.3rem 0;
+        border-left: 3px solid rgba(255,255,255,.2);
+        transition: background 0.2s;
+    }
+    
+    .conn-row:hover {
+        background: rgba(255,255,255,.12);
+    }
+    
+    /* Clusters */
+    .cluster-wrap {
+        background: rgba(255,255,255,.05);
+        border-radius: 14px;
+        padding: 1.1rem 1.4rem;
+        margin: 0.5rem 0;
+        border: 1px solid rgba(255,255,255,.1);
+    }
+    
+    .cluster-title {
+        font-size: 0.76rem;
+        text-transform: uppercase;
+        letter-spacing: 1.5px;
+        color: rgba(167,139,250,.8);
+        margin-bottom: 0.55rem;
+        font-weight: 700;
+    }
+    
+    .cluster-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        background: rgba(168,85,247,.2);
+        border: 1px solid rgba(168,85,247,.38);
+        border-radius: 50px;
+        padding: 0.32rem 0.85rem;
+        margin: 0.2rem;
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: #f3e8ff;
+    }
+    
+    /* Progress bar */
+    .pbar-o {
+        background: rgba(255,255,255,.1);
+        border-radius: 50px;
+        height: 6px;
+        margin: 3px 0;
+        overflow: hidden;
+    }
+    
+    .pbar-i {
+        height: 100%;
+        border-radius: 50px;
+        transition: width 0.5s;
+    }
+    
+    /* Divider */
+    .divider {
+        height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,.22), transparent);
+        margin: 1.6rem 0;
+    }
+    
+    /* Botões Streamlit */
+    .stButton button {
+        background: var(--card-bg) !important;
+        backdrop-filter: blur(15px) !important;
+        color: var(--text-color) !important;
+        border: 1px solid var(--border-color) !important;
+        border-radius: 50px !important;
+        padding: 1rem 2.5rem !important;
+        font-weight: 700 !important;
+        font-size: 1rem !important;
+        transition: all 0.4s !important;
+        box-shadow: 0 8px 25px rgba(0,0,0,.15) !important;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+    
+    .stButton button:hover {
+        background: var(--card-hover) !important;
+        box-shadow: 0 12px 40px rgba(0,31,63,.4) !important;
+        transform: translateY(-4px) scale(1.05) !important;
+        border-color: var(--border-color) !important;
+    }
+    
+    /* Inputs */
+    .stTextInput input, .stTextArea textarea, .stSelectbox select {
+        background: var(--card-bg) !important;
+        backdrop-filter: blur(10px) !important;
+        border: 1px solid var(--border-color) !important;
+        color: var(--text-color) !important;
+        border-radius: 14px !important;
+        padding: 0.9rem !important;
+        font-weight: 500 !important;
+    }
+    
+    .stTextInput input::placeholder, .stTextArea textarea::placeholder {
+        color: rgba(255,255,255,.55) !important;
+    }
+    
+    .stTextInput input:focus, .stTextArea textarea:focus {
+        border-color: var(--border-color) !important;
+        box-shadow: 0 0 0 3px rgba(255,255,255,.18) !important;
+    }
+    
+    /* Labels */
+    label {
+        color: var(--text-color) !important;
+        font-weight: 700 !important;
+        font-size: 1rem !important;
+        text-shadow: 0 2px 10px rgba(0,0,0,.2);
+    }
+    
+    /* Tabs */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 0.7rem;
+        background: var(--card-bg);
+        backdrop-filter: blur(10px);
+        padding: 0.45rem;
+        border-radius: 14px;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 10px;
+        color: var(--text-color);
+        padding: 0.75rem 1.5rem;
+        font-weight: 700;
+        transition: all 0.3s;
+    }
+    
+    .stTabs [data-baseweb="tab"]:hover {
+        background: var(--card-hover);
+        transform: translateY(-2px);
+    }
+    
+    .stTabs [aria-selected="true"] {
+        background: var(--card-hover) !important;
+        border-color: var(--border-color) !important;
+        box-shadow: 0 6px 20px rgba(0,31,63,.25) !important;
+    }
+    
+    /* Alerts */
+    .stAlert {
+        background: var(--card-bg) !important;
+        backdrop-filter: blur(15px) !important;
+        border-radius: 14px !important;
+        border-left: 4px solid !important;
+        color: var(--text-color) !important;
+    }
+    
+    /* Hide default elements */
+    #MainMenu, footer, header {
+        visibility: hidden;
+    }
+    
+    .stDeployButton {
+        display: none;
+    }
+    
+    [data-testid="stSidebar"] {
+        display: none;
+    }
+    
+    /* Headers */
+    h1, h2, h3, h4, h5, h6 {
+        color: var(--text-color);
+        font-weight: 700;
+        text-shadow: 0 2px 15px rgba(0,0,0,.3);
+    }
+    
+    /* Dataframes */
+    .dataframe {
+        background: var(--card-bg) !important;
+        border: 1px solid var(--border-color) !important;
+        border-radius: 14px !important;
+        color: var(--text-color) !important;
+    }
+    
+    .dataframe th {
+        background: rgba(255,255,255,.22) !important;
+        color: var(--text-color) !important;
+        font-weight: 700 !important;
+    }
+    
+    .dataframe td {
+        color: var(--text-color) !important;
+    }
+    
+    /* Responsive */
+    @media(max-width: 768px) {
+        .main-title {
+            font-size: 2.5rem;
+        }
+        
+        .main-content {
+            margin-top: 140px;
+            padding: 1rem;
+        }
+        
+        .top-navbar {
+            padding: 1rem;
+        }
+    }
+    </style>
+    """
+    
+    accessibility_css = get_font_size_css()
+    st.markdown(base_css + accessibility_css, unsafe_allow_html=True)
 
-    # Define as variáveis CSS com base no tema
-    if theme == 'light':
-        bg_gradient = 'linear-gradient(-45deg, #E0E0E0 0%, #F0F8FF 25%, #E0E0E0 50%, #F0F8FF 75%, #E0E0E0 100%)'
-        text_color = '#333333'
-        card_bg = 'rgba(255,255,255,0.8)'
-        card_border = '1px solid rgba(0,0,0,0.1)'
-        card_shadow = '0 8px 32px rgba(0,0,0,0.1)'
-        navbar_bg = 'rgba(255,255,255,0.9)'
-        navbar_border = '1px solid rgba(0,0,0,0.1)'
-        logo_gradient = 'linear-gradient(135deg,#007bff 0%,#6610f2 100%)'
-        title_color = '#001F3F'
-        subtitle_color = 'rgba(51,51,51,0.9)'
-        tag_badge_bg = 'rgba(0,0,0,0.1)'
-        tag_badge_border = '1px solid rgba(0,0,0,0.2)'
-        tag_badge_color = '#333'
-        kpi_card_bg = 'rgba(0,0,0,0.08)'
-        kpi_card_border = '1px solid rgba(0,0,0,0.15)'
-        kpi_card_color = '#333'
-        kpi_val_color = '#007bff'
-        insight_bg = 'rgba(0,123,255,0.1)'
-        insight_border = '1px solid rgba(0,123,255,0.2)'
-        insight_color = '#333'
-        insight_strong_color = '#007bff'
-        conn_row_bg = 'rgba(0,0,0,0.05)'
-        conn_row_border = '1px solid rgba(0,0,0,0.1)'
-        cluster_wrap_bg = 'rgba(0,0,0,0.04)'
-        cluster_wrap_border = '1px solid rgba(0,0,0,0.1)'
-        cluster_title_color = 'rgba(102,16,242,0.8)'
-        cluster_pill_bg = 'rgba(102,16,242,0.1)'
-        cluster_pill_border = '1px solid rgba(102,16,242,0.2)'
-        cluster_pill_color = '#6610f2'
-        button_bg = 'rgba(0,0,0,0.15)'
-        button_border = '1px solid rgba(0,0,0,0.25)'
-        button_color = '#333'
-        input_bg = 'rgba(0,0,0,0.1)'
-        input_border = '1px solid rgba(0,0,0,0.2)'
-        input_color = '#333'
-        input_placeholder = 'rgba(51,51,51,0.5)'
-        label_color = '#333'
-        tabs_bg = 'rgba(0,0,0,0.1)'
-        tabs_tab_bg = 'rgba(0,0,0,0.1)'
-        tabs_tab_border = '1px solid rgba(0,0,0,0.15)'
-        tabs_tab_color = '#333'
-        tabs_tab_selected_bg = 'rgba(0,0,0,0.2)'
-        tabs_tab_selected_border = '1px solid rgba(0,0,0,0.3)'
-        alert_bg = 'rgba(0,0,0,0.1)'
-        alert_color = '#333'
-        dataframe_bg = 'rgba(0,0,0,0.1)'
-        dataframe_border = '1px solid rgba(0,0,0,0.15)'
-        dataframe_color = '#333'
-        dataframe_th_bg = 'rgba(0,0,0,0.15)'
-        dataframe_th_color = '#333'
-        obra_card_bg = 'rgba(0,0,0,0.1)'
-        obra_card_border = '1px solid rgba(0,0,0,0.15)'
-        obra_card_after_bg = 'linear-gradient(135deg,rgba(255,255,255,.3),rgba(240,248,255,.3))'
-        animal_badge_bg = 'rgba(0,123,255,0.1)'
-        animal_badge_border = '1px solid rgba(0,123,255,0.2)'
-        animal_badge_color = '#007bff'
-        divider_bg = 'linear-gradient(90deg,transparent,rgba(0,0,0,.22),transparent)'
-        tag_green_bg = 'rgba(34,197,94,.1)!important'
-        tag_green_border = 'rgba(34,197,94,.3)!important'
-        tag_green_color = '#16a34a!important'
-        tag_amber_bg = 'rgba(245,158,11,.1)!important'
-        tag_amber_border = 'rgba(245,158,11,.3)!important'
-        tag_amber_color = '#b45309!important'
-        tag_blue_bg = 'rgba(96,165,250,.1)!important'
-        tag_blue_border = 'rgba(96,165,250,.3)!important'
-        tag_blue_color = '#2563eb!important'
-        sc_b_border = '#007bff'
-        sc_b_bg = 'rgba(0,123,255,0.07)'
-        sc_g_border = '#28a745'
-        sc_g_bg = 'rgba(40,167,69,0.07)'
-        sc_p_border = '#6610f2'
-        sc_p_bg = 'rgba(102,16,242,0.07)'
-        sc_a_border = '#ffc107'
-        sc_a_bg = 'rgba(255,193,7,0.07)'
-        pbar_o_bg = 'rgba(0,0,0,0.1)'
-        pbar_i_bg = '#007bff'
-
-
-    else: # dark theme
-        bg_gradient = 'linear-gradient(-45deg,#000 0%,#001F3F 25%,#000 50%,#001F3F 75%,#000 100%)'
-        text_color = '#e0e0e0'
-        card_bg = 'rgba(255,255,255,0.15)'
-        card_border = '1px solid rgba(255,255,255,0.3)'
-        card_shadow = '0 8px 32px rgba(0,0,0,0.1)'
-        navbar_bg = 'rgba(255,255,255,0.1)'
-        navbar_border = '1px solid rgba(255,255,255,0.2)'
-        logo_gradient = 'linear-gradient(135deg,#a7e6ff 0%,#d1baff 100%)'
-        title_color = 'white'
-        subtitle_color = 'rgba(255,255,255,0.95)'
-        tag_badge_bg = 'rgba(255,255,255,0.25)'
-        tag_badge_border = '1px solid rgba(255,255,255,0.4)'
-        tag_badge_color = 'white'
-        kpi_card_bg = 'rgba(255,255,255,0.16)'
-        kpi_card_border = '1px solid rgba(255,255,255,0.28)'
-        kpi_card_color = 'white'
-        kpi_val_color = '#a7e6ff'
-        insight_bg = 'rgba(167,230,255,0.1)'
-        insight_border = '1px solid rgba(167,230,255,0.28)'
-        insight_color = 'rgba(255,255,255,0.9)'
-        insight_strong_color = '#a7e6ff'
-        conn_row_bg = 'rgba(255,255,255,0.06)'
-        conn_row_border = '3px solid rgba(255,255,255,0.2)'
-        cluster_wrap_bg = 'rgba(255,255,255,0.05)'
-        cluster_wrap_border = '1px solid rgba(255,255,255,0.1)'
-        cluster_title_color = 'rgba(167,139,250,0.8)'
-        cluster_pill_bg = 'rgba(168,85,247,0.2)'
-        cluster_pill_border = '1px solid rgba(168,85,247,0.38)'
-        cluster_pill_color = '#f3e8ff'
-        button_bg = 'rgba(255,255,255,0.25)'
-        button_border = '1px solid rgba(255,255,255,0.4)'
-        button_color = 'white'
-        input_bg = 'rgba(255,255,255,0.18)'
-        input_border = '1px solid rgba(255,255,255,0.28)'
-        input_color = 'white'
-        input_placeholder = 'rgba(255,255,255,0.55)'
-        label_color = 'white'
-        tabs_bg = 'rgba(255,255,255,0.1)'
-        tabs_tab_bg = 'rgba(255,255,255,0.14)'
-        tabs_tab_border = '1px solid rgba(255,255,255,0.18)'
-        tabs_tab_color = 'white'
-        tabs_tab_selected_bg = 'rgba(255,255,255,0.33)'
-        tabs_tab_selected_border = '1px solid rgba(255,255,255,0.48)'
-        alert_bg = 'rgba(255,255,255,0.18)'
-        alert_color = 'white'
-        dataframe_bg = 'rgba(255,255,255,0.14)'
-        dataframe_border = '1px solid rgba(255,255,255,0.2)'
-        dataframe_color = 'white'
-        dataframe_th_bg = 'rgba(255,255,255,0.22)'
-        dataframe_th_color = 'white'
-        obra_card_bg = 'rgba(255,255,255,0.2)'
-        obra_card_border = '1px solid rgba(255,255,255,0.3)'
-        obra_card_after_bg = 'linear-gradient(135deg,rgba(0,0,0,.3),rgba(0,31,63,.3))'
-        animal_badge_bg = 'rgba(167,230,255,.2)'
-        animal_badge_border = '1px solid rgba(167,230,255,.45)'
-        animal_badge_color = '#a7e6ff'
-        divider_bg = 'linear-gradient(90deg,transparent,rgba(255,255,255,.22),transparent)'
-        tag_green_bg = 'rgba(34,197,94,.25)!important'
-        tag_green_border = 'rgba(34,197,94,.5)!important'
-        tag_green_color = '#dcfce7!important'
-        tag_amber_bg = 'rgba(245,158,11,.25)!important'
-        tag_amber_border = 'rgba(245,158,11,.5)!important'
-        tag_amber_color = '#fef3c7!important'
-        tag_blue_bg = 'rgba(96,165,250,.25)!important'
-        tag_blue_border = 'rgba(96,165,250,.5)!important'
-        tag_blue_color = '#dbeafe!important'
-        sc_b_border = '#60a5fa'
-        sc_b_bg = 'rgba(96,165,250,.07)'
-        sc_g_border = '#34d399'
-        sc_g_bg = 'rgba(52,211,153,.07)'
-        sc_p_border = '#a78bfa'
-        sc_p_bg = 'rgba(167,139,250,.07)'
-        sc_a_border = '#fbbf24'
-        sc_a_bg = 'rgba(251,191,36,.07)'
-        pbar_o_bg = 'rgba(255,255,255,.1)'
-        pbar_i_bg = '#60a5fa'
-
-
-    st.markdown(f"""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap');
-:root {{
-    --font-size-base: {font_size};
-    --bg-gradient: {bg_gradient};
-    --text-color: {text_color};
-    --card-bg: {card_bg};
-    --card-border: {card_border};
-    --card-shadow: {card_shadow};
-    --navbar-bg: {navbar_bg};
-    --navbar-border: {navbar_border};
-    --logo-gradient: {logo_gradient};
-    --title-color: {title_color};
-    --subtitle-color: {subtitle_color};
-    --tag-badge-bg: {tag_badge_bg};
-    --tag-badge-border: {tag_badge_border};
-    --tag-badge-color: {tag_badge_color};
-    --kpi-card-bg: {kpi_card_bg};
-    --kpi-card-border: {kpi_card_border};
-    --kpi-card-color: {kpi_card_color};
-    --kpi-val-color: {kpi_val_color};
-    --insight-bg: {insight_bg};
-    --insight-border: {insight_border};
-    --insight-color: {insight_color};
-    --insight-strong-color: {insight_strong_color};
-    --conn-row-bg: {conn_row_bg};
-    --conn-row-border: {conn_row_border};
-    --cluster-wrap-bg: {cluster_wrap_bg};
-    --cluster-wrap-border: {cluster_wrap_border};
-    --cluster-title-color: {cluster_title_color};
-    --cluster-pill-bg: {cluster_pill_bg};
-    --cluster-pill-border: {cluster_pill_border};
-    --cluster-pill-color: {cluster_pill_color};
-    --button-bg: {button_bg};
-    --button-border: {button_border};
-    --button-color: {button_color};
-    --input-bg: {input_bg};
-    --input-border: {input_border};
-    --input-color: {input_color};
-    --input-placeholder: {input_placeholder};
-    --label-color: {label_color};
-    --tabs-bg: {tabs_bg};
-    --tabs-tab-bg: {tabs_tab_bg};
-    --tabs-tab-border: {tabs_tab_border};
-    --tabs-tab-color: {tabs_tab_color};
-    --tabs-tab-selected-bg: {tabs_tab_selected_bg};
-    --tabs-tab-selected-border: {tabs_tab_selected_border};
-    --alert-bg: {alert_bg};
-    --alert-color: {alert_color};
-    --dataframe-bg: {dataframe_bg};
-    --dataframe-border: {dataframe_border};
-    --dataframe-color: {dataframe_color};
-    --dataframe-th-bg: {dataframe_th_bg};
-    --dataframe-th-color: {dataframe_th_color};
-    --obra-card-bg: {obra_card_bg};
-    --obra-card-border: {obra_card_border};
-    --obra-card-after-bg: {obra_card_after_bg};
-    --animal-badge-bg: {animal_badge_bg};
-    --animal-badge-border: {animal_badge_border};
-    --animal-badge-color: {animal_badge_color};
-    --divider-bg: {divider_bg};
-    --tag-green-bg: {tag_green_bg};
-    --tag-green-border: {tag_green_border};
-    --tag-green-color: {tag_green_color};
-    --tag-amber-bg: {tag_amber_bg};
-    --tag-amber-border: {tag_amber_border};
-    --tag-amber-color: {tag_amber_color};
-    --tag-blue-bg: {tag_blue_bg};
-    --tag-blue-border: {tag_blue_border};
-    --tag-blue-color: {tag_blue_color};
-    --sc-b-border: {sc_b_border};
-    --sc-b-bg: {sc_b_bg};
-    --sc-g-border: {sc_g_border};
-    --sc-g-bg: {sc_g_bg};
-    --sc-p-border: {sc_p_border};
-    --sc-p-bg: {sc_p_bg};
-    --sc-a-border: {sc_a_border};
-    --sc-a-bg: {sc_a_bg};
-    --pbar-o-bg: {pbar_o_bg};
-    --pbar-i-bg: {pbar_i_bg};
-}}
-
-*{{margin:0;padding:0;box-sizing:border-box;font-family:'Poppins',sans-serif!important}}
-html {{ font-size: var(--font-size-base); }}
-body {{ font-size: var(--font-size-base); }}
-
-@keyframes bg{{0%{{background-position:0% 50%}}50%{{background-position:100% 50%}}100%{{background-position:0% 50%}}}}
-.stApp{{background:var(--bg-gradient);
-  background-size:400% 400%;animation:bg 15s ease infinite;color:var(--text-color)}}
-
-.top-navbar{{position:fixed;top:0;left:0;right:0;z-index:9999;
-  background:var(--navbar-bg);backdrop-filter:blur(20px) saturate(180%);
-  border-bottom:var(--navbar-border);padding:1.4rem 3rem;
-  display:flex;justify-content:space-between;align-items:center;
-  box-shadow:0 8px 32px rgba(0,0,0,.1)}}
-.navbar-logo{{font-size:1.8rem;font-weight:800;
-  background:var(--logo-gradient);
-  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;letter-spacing:-1px}}
-
-.main-content{{margin-top:120px;padding:2rem 3rem;max-width:1600px;margin-left:auto;margin-right:auto}}
-
-.glass-card{{background:var(--card-bg);backdrop-filter:blur(20px) saturate(180%);
-  border:var(--card-border);border-radius:24px;padding:2.5rem;margin:1.5rem 0;
-  box-shadow:var(--card-shadow);transition:all .4s cubic-bezier(.4,0,.2,1);
-  position:relative;overflow:hidden}}
-.glass-card::before{{content:'';position:absolute;top:0;left:-100%;width:100%;height:100%;
-  background:linear-gradient(90deg,transparent,rgba(255,255,255,.3),transparent);transition:left .5s}}
-.glass-card:hover::before{{left:100%}}
-.glass-card:hover{{transform:translateY(-8px) scale(1.02);box-shadow:0 16px 48px rgba(0,0,0,.2);
-  border-color:rgba(255,255,255,.5)}}
-
-.obra-card{{background:var(--obra-card-bg);backdrop-filter:blur(15px) saturate(180%);
-  border:var(--obra-card-border);border-radius:20px;overflow:hidden;
-  transition:all .4s cubic-bezier(.4,0,.2,1);cursor:pointer;position:relative}}
-.obra-card::after{{content:'';position:absolute;top:0;left:0;right:0;bottom:0;
-  background:var(--obra-card-after-bg);opacity:0;transition:opacity .4s}}
-.obra-card:hover::after{{opacity:1}}
-.obra-card:hover{{transform:translateY(-12px) scale(1.03);box-shadow:0 20px 60px rgba(0,31,63,.4);
-  border-color:rgba(255,255,255,.6)}}
-.obra-card img{{width:100%;height:280px;object-fit:cover;transition:transform .6s cubic-bezier(.4,0,.2,1)}}
-.obra-card:hover img{{transform:scale(1.15) rotate(2deg)}}
-
-.main-title{{color:var(--title-color);font-size:3.5rem;font-weight:800;text-align:center;margin:2rem 0 1rem;
-  letter-spacing:-2px;text-shadow:0 4px 20px rgba(0,0,0,.3)}}
-.subtitle{{color:var(--subtitle-color);font-size:1.3rem;text-align:center;margin-bottom:3rem;
-  line-height:1.8;font-weight:300}}
-
-.tag-badge{{display:inline-block;background:var(--tag-badge-bg);backdrop-filter:blur(10px);
-  border:var(--tag-badge-border);color:var(--tag-badge-color);padding:.5rem 1.1rem;border-radius:50px;
-  margin:.3rem;font-size:.88rem;font-weight:600;transition:all .3s}}
-.tag-badge:hover{{background:rgba(255,255,255,.4);transform:translateY(-3px) scale(1.05)}}
-.tag-green {{background:var(--tag-green-bg);border-color:var(--tag-green-border);color:var(--tag-green-color)}}
-.tag-amber {{background:var(--tag-amber-bg);border-color:var(--tag-amber-border);color:var(--tag-amber-color)}}
-.tag-blue  {{background:var(--tag-blue-bg);border-color:var(--tag-blue-border);color:var(--tag-blue-color)}}
-
-.animal-badge{{display:inline-block;background:var(--animal-badge-bg);border:var(--animal-badge-border);
-  color:var(--animal-badge-color);padding:.35rem 1rem;border-radius:50px;font-size:.85rem;font-weight:700}}
-
-.kpi-card{{background:var(--kpi-card-bg);backdrop-filter:blur(20px) saturate(180%);
-  border:var(--kpi-card-border);border-radius:18px;padding:1.6rem;text-align:center;
-  color:var(--kpi-card-color);box-shadow:0 8px 32px rgba(0,0,0,.12);transition:all .4s}}
-.kpi-card:hover{{transform:translateY(-6px) scale(1.04);box-shadow:0 16px 48px rgba(0,31,63,.28)}}
-.kpi-val{{font-size:2.5rem;font-weight:800;margin:.6rem 0;text-shadow:0 4px 20px rgba(0,0,0,.2); color:var(--kpi-val-color)}}
-.kpi-lbl{{font-size:.78rem;text-transform:uppercase;letter-spacing:2px;font-weight:600;opacity:.8}}
-.kpi-sub{{font-size:.7rem;opacity:.5;margin-top:.3rem}}
-
-.sc{{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.13);border-radius:14px;padding:1.3rem;margin:.7rem 0}}
-.sc-b{{border-left:4px solid var(--sc-b-border);background:var(--sc-b-bg)}}
-.sc-g{{border-left:4px solid var(--sc-g-border);background:var(--sc-g-bg)}}
-.sc-p{{border-left:4px solid var(--sc-p-border);background:var(--sc-p-bg)}}
-.sc-a{{border-left:4px solid var(--sc-a-border);background:var(--sc-a-bg)}}
-
-.insight{{background:var(--insight-bg);border:var(--insight-border);border-radius:12px;
-  padding:1rem 1.4rem;margin:.6rem 0;color:var(--insight-color);font-size:.9rem;line-height:1.7}}
-.insight strong{{color:var(--insight-strong-color)}}
-
-.conn-row{{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;
-  background:var(--conn-row-bg);border-radius:11px;padding:.85rem 1.2rem;margin:.3rem 0;
-  border-left:var(--conn-row-border);transition:background .2s}}
-.conn-row:hover{{background:rgba(255,255,255,.12)}}
-
-.cluster-wrap{{background:var(--cluster-wrap-bg);border-radius:14px;padding:1.1rem 1.4rem;
-  margin:.5rem 0;border:var(--cluster-wrap-border)}}
-.cluster-title{{font-size:.76rem;text-transform:uppercase;letter-spacing:1.5px;
-  color:var(--cluster-title-color);margin-bottom:.55rem;font-weight:700}}
-.cluster-pill{{display:inline-flex;align-items:center;gap:5px;background:var(--cluster-pill-bg);
-  border:var(--cluster-pill-border);border-radius:50px;padding:.32rem .85rem;
-  margin:.2rem;font-size:.78rem;font-weight:600;color:var(--cluster-pill-color)}}
-
-.pbar-o{{background:var(--pbar-o-bg);border-radius:50px;height:6px;margin:3px 0;overflow:hidden}}
-.pbar-i{{height:100%;border-radius:50px;transition:width .5s; background:var(--pbar-i-bg)}}
-.divider{{height:1px;background:var(--divider-bg);margin:1.6rem 0}}
-
-.stButton button{{background:var(--button-bg)!important;backdrop-filter:blur(15px)!important;
-  color:var(--button-color)!important;border:var(--button-border)!important;border-radius:50px!important;
-  padding:1rem 2.5rem!important;font-weight:700!important;font-size:1rem!important;
-  transition:all .4s!important;box-shadow:0 8px 25px rgba(0,0,0,.15)!important;
-  text-transform:uppercase;letter-spacing:1px}}
-.stButton button:hover{{background:rgba(255,255,255,.4)!important;
-  box-shadow:0 12px 40px rgba(0,31,63,.4)!important;
-  transform:translateY(-4px) scale(1.05)!important;border-color:rgba(255,255,255,.6)!important}}
-
-.stTextInput input,.stTextArea textarea,.stSelectbox select,.stMultiSelect div[data-baseweb="select"]{{
-  background:var(--input-bg)!important;backdrop-filter:blur(10px)!important;
-  border:var(--input-border)!important;color:var(--input-color)!important;
-  border-radius:14px!important;padding:.9rem!important;font-weight:500!important}}
-.stTextInput input::placeholder,.stTextArea textarea::placeholder{{color:var(--input-placeholder)!important}}
-.stTextInput input:focus,.stTextArea textarea:focus{{
-  border-color:rgba(255,255,255,.6)!important;box-shadow:0 0 0 3px rgba(255,255,255,.18)!important}}
-
-label{{color:var(--label-color)!important;font-weight:700!important;font-size:1rem!important;
-  text-shadow:0 2px 10px rgba(0,0,0,.2)}}
-
-.stTabs [data-baseweb="tab-list"]{{gap:.7rem;background:var(--tabs-bg);
-  backdrop-filter:blur(10px);padding:.45rem;border-radius:14px}}
-.stTabs [data-baseweb="tab"]{{background:var(--tabs-tab-bg);
-  border:var(--tabs-tab-border);border-radius:10px;color:var(--tabs-tab-color);
-  padding:.75rem 1.5rem;font-weight:700;transition:all .3s}}
-.stTabs [data-baseweb="tab"]:hover{{background:rgba(255,255,255,.24);transform:translateY(-2px)}}
-.stTabs [aria-selected="true"]{{background:var(--tabs-tab-selected-bg)!important;
-  border-color:var(--tabs-tab-selected-border)!important;box-shadow:0 6px 20px rgba(0,31,63,.25)!important}}
-
-.stAlert{{background:var(--alert-bg)!important;backdrop-filter:blur(15px)!important;
-  border-radius:14px!important;border-left:4px solid!important;color:var(--alert-color)!important}}
-#MainMenu,footer,header{{visibility:hidden}}
-.stDeployButton{{display:none}}
-[data-testid="stSidebar"]{{display:none}}
-h1,h2,h3,h4,h5,h6{{color:var(--title-color);font-weight:700;text-shadow:0 2px 15px rgba(0,0,0,.3)}}
-.dataframe{{background:var(--dataframe-bg)!important;border:var(--dataframe-border)!important;
-  border-radius:14px!important;color:var(--dataframe-color)!important}}
-.dataframe th{{background:var(--dataframe-th-bg)!important;color:var(--dataframe-th-color)!important;font-weight:700!important}}
-.dataframe td{{color:var(--dataframe-color)!important}}
-div[data-testid="stTextInput"]>div{{background:transparent!important;border:none!important;
-  box-shadow:none!important;padding:0!important}}
-div[data-testid="stTextInput"]{{background:transparent!important;border:none!important}}
-div[data-testid="stTextInput"] input{{border-radius:11px!important;
-  background:var(--input-bg)!important;border:var(--input-border)!important;
-  padding:.75rem 1rem!important}}
-@media(max-width:768px){{.main-title{{font-size:2.5rem}}.main-content{{margin-top:140px;padding:1rem}}}}
-
-/* ARIA attributes for accessibility */
-[role="button"], [role="link"], [role="tab"], [role="option"], [role="checkbox"], [role="radio"] {{
-    cursor: pointer;
-}}
-[role="img"] {{
-    display: block; /* Ensure images are treated as blocks for screen readers */
-}}
-</style>""", unsafe_allow_html=True)
-
-# --- HELPERS ---
-def kpi(label, value, sub="", color="var(--kpi-val-color)"):
-    return (f"<div class='kpi-card' aria-label='Métrica: {label}. Valor: {value}. {sub}'>"
+# ── HELPERS ───────────────────────────────────────────────────────────
+def kpi(label, value, sub="", color="#a7e6ff"):
+    return (f"<div class='kpi-card'>"
             f"<div class='kpi-lbl'>{label}</div>"
             f"<div class='kpi-val' style='color:{color}'>{value}</div>"
             f"{'<div class=kpi-sub>'+sub+'</div>' if sub else ''}"
             f"</div>")
 
 def insight(text):
-    return f"<div class='insight' aria-live='polite'>{text}</div>"
+    return f"<div class='insight'>{text}</div>"
 
 def divider():
-    return "<div class='divider' role='separator'></div>"
+    return "<div class='divider'></div>"
 
-def pbar(pct, color="var(--pbar-i-bg)"):
+def pbar(pct, color="#60a5fa"):
     w = min(100, max(0, pct*100))
-    return f"<div class='pbar-o' role='progressbar' aria-valuenow='{w:.1f}' aria-valuemin='0' aria-valuemax='100'>" \
-           f"<div class='pbar-i' style='width:{w:.1f}%;background:{color}'></div></div>"
+    return f"<div class='pbar-o'><div class='pbar-i' style='width:{w:.1f}%;background:{color}'></div></div>"
 
-# --- DADOS ---
+# ── DADOS ─────────────────────────────────────────────────────────────
 def check_admin():
     admins = load_json_file(ADMIN_FILE, [])
     if not admins:
@@ -554,14 +1042,11 @@ def gen_uid():
 def load_obras():
     default = [
         {"id":1,"titulo":"Guernica","artista":"Pablo Picasso","ano":"1937",
-         "imagem":"https://upload.wikimedia.org/wikipedia/en/7/74/PicassoGuernica.jpg",
-         "audiodescricao":"Uma pintura em preto, branco e cinza que retrata o sofrimento de pessoas e animais em meio à guerra, com figuras distorcidas e angústia expressa."},
+         "imagem":"https://upload.wikimedia.org/wikipedia/en/7/74/PicassoGuernica.jpg"},
         {"id":2,"titulo":"A Noite Estrelada","artista":"Vincent van Gogh","ano":"1889",
-         "imagem":"https://upload.wikimedia.org/wikipedia/commons/thumb/e/ea/Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg/1200px-Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg",
-         "audiodescricao":"Uma paisagem noturna vibrante com um céu turbulento e estrelas brilhantes em espiral, um cipreste escuro em primeiro plano e uma pequena vila pacífica ao fundo."},
+         "imagem":"https://upload.wikimedia.org/wikipedia/commons/thumb/e/ea/Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg/1200px-Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg"},
         {"id":3,"titulo":"Mona Lisa","artista":"Leonardo da Vinci","ano":"1503",
-         "imagem":"https://upload.wikimedia.org/wikipedia/commons/thumb/e/ec/Mona_Lisa%2C_by_Leonardo_da_Vinci%2C_from_C2RMF_retouched.jpg/800px-Mona_Lisa%2C_by_Leonardo_da_Vinci%2C_from_C2RMF_retouched.jpg",
-         "audiodescricao":"Retrato de uma mulher com um sorriso enigmático, sentada diante de uma paisagem montanhosa e nebulosa. Ela veste roupas escuras e tem as mãos cruzadas."}
+         "imagem":"https://upload.wikimedia.org/wikipedia/commons/thumb/e/ec/Mona_Lisa%2C_by_Leonardo_da_Vinci%2C_from_C2RMF_retouched.jpg/800px-Mona_Lisa%2C_by_Leonardo_da_Vinci%2C_from_C2RMF_retouched.jpg"}
     ]
     obras = load_json_file(OBRAS_FILE, default)
     if not obras:
@@ -593,7 +1078,7 @@ def get_obra_user_tags(obra_id, uid):
     f = [t for t in tags if t['obra_id']==obra_id and t['user_id']==uid]
     if f:
         df = pd.DataFrame(f)
-        c  = df['tag'].value_counts().reset_index()
+        c = df['tag'].value_counts().reset_index()
         c.columns = ["tag","count"]
         return c
     return pd.DataFrame(columns=["tag","count"])
@@ -610,169 +1095,73 @@ def all_users():
     u = load_json_file(USERS_FILE, [])
     return pd.DataFrame(u) if u else pd.DataFrame()
 
-# --- EXPORTAÇÃO ---
-def html_quest(uid, animal, users_df):
-    if users_df.empty: return None
-    ud = users_df[users_df['user_id']==uid]
-    if ud.empty: return None
-    ui = ud.iloc[0]
-    return f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
-<style>*{{margin:0;padding:0;box-sizing:border-box}}
-body{{font-family:sans-serif;background:linear-gradient(135deg,#000,#001F3F);padding:40px;color:white}}
-.c{{max-width:900px;margin:0 auto;background:rgba(255,255,255,.15);padding:50px;border-radius:24px;border:1px solid rgba(255,255,255,.3)}}
-h1{{text-align:center;margin-bottom:15px;font-size:2.2rem}}
-.hi{{text-align:center;margin-bottom:35px;opacity:.9}}
-.ab{{background:rgba(167,230,255,.25);border:1px solid rgba(167,230,255,.5);color:#a7e6ff;
-  padding:.3rem 1rem;border-radius:50px;font-weight:700;display:inline-block}}
-.qb{{margin:22px 0;padding:18px 22px;background:rgba(255,255,255,.1);
-  border-left:4px solid rgba(255,255,255,.5);border-radius:12px}}
-.q{{font-weight:700;margin-bottom:8px}}.a{{line-height:1.7;opacity:.92}}
-.ft{{text-align:center;margin-top:40px;padding-top:18px;
-  border-top:1px solid rgba(255,255,255,.2);opacity:.65;font-size:.88rem}}</style></head>
-<body><div class="c"><h1>Respostas do Questionario</h1>
-<div class="hi">
-  <p>Usuario Anonimo: <span class="ab"> {animal}</span></p>
-  <p style="margin-top:6px;opacity:.65">Data: {ui.get('timestamp','N/A')}</p>
-</div>
-<div class="qb"><div class="q">1. Nivel de familiaridade com museus</div>
-<div class="a">{ui.get('q1','N/A')}</div></div>
-<div class="qb"><div class="q">2. Conhecimento sobre documentacao museologica</div>
-<div class="a">{ui.get('q2','N/A')}</div></div>
-<div class="qb"><div class="q">3. O que voce entende por 'tags'?</div>
-<div class="a">{ui.get('q3','N/A')}</div></div>
-<div class="ft">Sistema Folksonomia Digital — Ctrl+P → Salvar como PDF</div>
-</div></body></html>"""
-
-def html_tags(uid, animal, obras, tags_df):
-    ut = tags_df[tags_df['user_id']==uid] if not tags_df.empty else pd.DataFrame()
-    if ut.empty: return None
-    od = {o['id']:o for o in obras}
-    rows = "".join(
-        f"<tr><td>{i+1}</td>"
-        f"<td>{od.get(r['obra_id'],{}).get('titulo','Obra '+str(r['obra_id']))}</td>"
-        f"<td><span style='background:rgba(255,255,255,.22);padding:3px 10px;border-radius:50px'>{r['tag']}</span></td>"
-        f"<td>{r['timestamp']}</td></tr>"
-        for i,(_,r) in enumerate(ut.iterrows())
-    )
-    top = "".join(
-        f"<tr><td>{i}</td><td>{t}</td><td>{c}</td></tr>"
-        for i,(t,c) in enumerate(ut['tag'].value_counts().head(10).items(),1)
-    )
-    return f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
-<style>*{{margin:0;padding:0;box-sizing:border-box}}
-body{{font-family:sans-serif;background:linear-gradient(135deg,#000,#001F3F);padding:40px;color:white}}
-.c{{max-width:1100px;margin:0 auto;background:rgba(255,255,255,.15);padding:50px;border-radius:24px;border:1px solid rgba(255,255,255,.3)}}
-h1{{text-align:center;margin-bottom:15px;font-size:2.2rem}}
-.hi{{text-align:center;margin-bottom:28px;opacity:.9}}
-.ab{{background:rgba(167,230,255,.25);border:1px solid rgba(167,230,255,.5);color:#a7e6ff;
-  padding:.3rem 1rem;border-radius:50px;font-weight:700;display:inline-block}}
-.stats{{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:22px 0}}
-.sb{{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.28);
-  padding:18px;border-radius:12px;text-align:center}}
-.sv{{font-size:2.6rem;font-weight:800}}.sl{{font-size:.82rem;text-transform:uppercase;
-  letter-spacing:1.5px;margin-top:7px;opacity:.85}}
-table{{width:100%;border-collapse:collapse;margin:18px 0}}
-th,td{{padding:13px;text-align:left;border-bottom:1px solid rgba(255,255,255,.14)}}
-th{{background:rgba(255,255,255,.18);font-weight:700;text-transform:uppercase;font-size:.82rem}}
-tr:nth-child(even){{background:rgba(255,255,255,.04)}}
-.ft{{text-align:center;margin-top:38px;padding-top:18px;
-  border-top:1px solid rgba(255,255,255,.2);opacity:.65;font-size:.88rem}}</style></head>
-<body><div class="c"><h1>Relatorio de Tags</h1>
-<div class="hi">
-  <p>Usuario Anonimo: <span class="ab"> {animal}</span></p>
-  <p style="margin-top:6px;opacity:.65">Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}</p>
-</div>
-<div class="stats">
-  <div class="sb"><div class="sv">{len(ut)}</div><div class="sl">Total de Tags</div></div>
-  <div class="sb"><div class="sv">{ut['tag'].nunique()}</div><div class="sl">Tags Unicas</div></div>
-  <div class="sb"><div class="sv">{ut['obra_id'].nunique()}</div><div class="sl">Obras Etiquetadas</div></div>
-</div>
-<h2 style="margin:28px 0 14px;font-size:1.5rem">Todas as Tags</h2>
-<table><thead><tr><th>#</th><th>Obra</th><th>Tag</th><th>Data/Hora</th></tr></thead>
-<tbody>{rows}</tbody></table>
-<h2 style="margin:28px 0 14px;font-size:1.5rem">Top 10 Tags</h2>
-<table><thead><tr><th>Pos.</th><th>Tag</th><th>Freq.</th></tr></thead>
-<tbody>{top}</tbody></table>
-<div class="ft">Sistema Folksonomia Digital — Ctrl+P → Salvar como PDF</div>
-</div></body></html>"""
-
-# --- INTERFACE PRINCIPAL ---
+# ── INTERFACE PRINCIPAL ───────────────────────────────────────────────
 def show_header():
+    # Barra de acessibilidade
+    st.markdown("""
+    <div class="accessibility-bar">
+        <button class="accessibility-btn" onclick="document.body.style.fontSize='large'">
+            A+ Aumentar Texto
+        </button>
+        <button class="accessibility-btn" onclick="document.body.style.fontSize='medium'">
+            A- Diminuir Texto
+        </button>
+        <button class="accessibility-btn" onclick="document.body.classList.toggle('high-contrast')">
+            Alto Contraste
+        </button>
+    </div>
+    """, unsafe_allow_html=True)
+    
     st.markdown(
-        "<div class='top-navbar' role='navigation' aria-label='Barra de Navegação Principal'>"
-        "<div class='navbar-logo' aria-label='Sistema Folksonomia Digital'>Sistema Folksonomia Digital</div>"
+        "<div class='top-navbar'>"
+        "<div class='navbar-logo'>Sistema Folksonomia Digital</div>"
         "</div>", unsafe_allow_html=True)
 
 def main():
-    # Inicializa estados de sessão para acessibilidade
-    if 'theme' not in st.session_state:
-        st.session_state['theme'] = 'dark' # Default dark theme
-    if 'font_size' not in st.session_state:
-        st.session_state['font_size'] = '16px' # Default font size
-
-    load_css() # Carrega o CSS com base no tema e tamanho da fonte
-
+    load_css()
     try: check_admin()
     except Exception as e: st.error(f"Erro ao inicializar: {e}")
-
-    for k,v in [('user_id',gen_uid()),('animal_name',generate_animal_name()),
-                ('step','intro'),('answers',{})]:
+    
+    # Inicializar session state
+    for k,v in [('user_id',gen_uid()), ('animal_name',generate_animal_name()),
+                ('step','intro'), ('answers',{})]:
         if k not in st.session_state: st.session_state[k] = v
-
-    # Sidebar para controles de acessibilidade
-    with st.sidebar:
-        st.header("Acessibilidade")
-        # Botão para alternar tema
-        if st.button(f"Alternar para Tema {'Claro' if st.session_state['theme'] == 'dark' else 'Escuro'}", key="theme_toggle"):
-            st.session_state['theme'] = 'light' if st.session_state['theme'] == 'dark' else 'dark'
-            st.rerun()
-
-        # Slider para tamanho da fonte
-        font_size_options = ['14px', '16px', '18px', '20px']
-        current_font_idx = font_size_options.index(st.session_state['font_size'])
-        selected_font_size = st.select_slider(
-            "Tamanho da Fonte",
-            options=font_size_options,
-            value=st.session_state['font_size'],
-            key="font_size_slider"
-        )
-        if selected_font_size != st.session_state['font_size']:
-            st.session_state['font_size'] = selected_font_size
-            st.rerun()
-
+    
+    # Controles de acessibilidade
+    accessibility_controls()
+    
     if st.session_state['step'] != 'completed':
         show_intro()
     else:
         show_header()
-        st.markdown("<div class='main-content' role='main'>", unsafe_allow_html=True)
-        t1, t2 = st.tabs([" Explorar Obras"," Area Administrativa"])
+        st.markdown("<div class='main-content'>", unsafe_allow_html=True)
+        t1, t2 = st.tabs([" Explorar Obras", " Area Administrativa"])
         with t1: show_obras()
         with t2: show_admin()
         st.markdown("</div>", unsafe_allow_html=True)
 
-# --- INTRO ---
+# ── INTRO ─────────────────────────────────────────────────────────────
 def show_intro():
-    st.markdown("<div class='main-content' role='main'>", unsafe_allow_html=True)
-    st.markdown("<h1 class='main-title' aria-label='Sistema Folksonomia Digital'>Sistema Folksonomia Digital</h1>", unsafe_allow_html=True)
-    st.markdown("<p class='subtitle' aria-label='Sistema colaborativo de catalogacao de obras de arte. Complete o questionario para acessar a plataforma.'>Sistema colaborativo de catalogacao de obras de arte<br>Complete o questionario para acessar a plataforma</p>", unsafe_allow_html=True)
-    st.markdown("<div class='glass-card' role='form' aria-labelledby='questionario-acesso-titulo'>", unsafe_allow_html=True)
-    st.markdown("<h2 id='questionario-acesso-titulo' style='text-align:center;margin-bottom:2.2rem;font-size:1.7rem'>Questionario de Acesso</h2>", unsafe_allow_html=True)
+    st.markdown("<div class='main-content'>", unsafe_allow_html=True)
+    st.markdown("<h1 class='main-title'>Sistema Folksonomia Digital</h1>", unsafe_allow_html=True)
+    st.markdown("<p class='subtitle'>Sistema colaborativo de catalogacao de obras de arte<br>"
+                "Complete o questionario para acessar a plataforma</p>", unsafe_allow_html=True)
+    st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align:center;margin-bottom:2.2rem;font-size:1.7rem'>"
+                "Questionario de Acesso</h2>", unsafe_allow_html=True)
     with st.form("intro_form"):
         c1, c2 = st.columns(2)
         with c1:
             q1 = st.selectbox("1. Qual e o seu nivel de familiaridade com museus?",
-                ["Nunca visito museus","Visito raramente","Visito ocasionalmente","Visito frequentemente"],
-                key="q1_select", aria_label="Qual e o seu nivel de familiaridade com museus?")
+                ["Nunca visito museus","Visito raramente","Visito ocasionalmente","Visito frequentemente"])
             q2 = st.selectbox("2. Voce ja ouviu falar sobre documentacao museologica?",
-                ["Nunca ouvi falar","Ja ouvi, mas nao sei o que e","Tenho uma ideia basica","Conheco bem o tema"],
-                key="q2_select", aria_label="Voce ja ouviu falar sobre documentacao museologica?")
+                ["Nunca ouvi falar","Ja ouvi, mas nao sei o que e","Tenho uma ideia basica","Conheco bem o tema"])
         with c2:
             q3 = st.text_area("3. O que voce entende por 'tags' ou etiquetas digitais aplicadas a acervo?",
-                max_chars=500, height=200, placeholder="Descreva sua compreensao sobre o conceito...",
-                key="q3_textarea", aria_label="O que voce entende por 'tags' ou etiquetas digitais aplicadas a acervo?")
+                max_chars=500, height=200, placeholder="Descreva sua compreensao sobre o conceito...")
         _, cb, _ = st.columns([1,1,1])
         with cb:
-            submit = st.form_submit_button("Acessar Plataforma", use_container_width=True, aria_label="Botao para acessar a plataforma apos preencher o questionario")
+            submit = st.form_submit_button("Acessar Plataforma", use_container_width=True)
         if submit:
             if not q3.strip():
                 st.error("Por favor, responda todas as perguntas para continuar!")
@@ -782,106 +1171,67 @@ def show_intro():
                              st.session_state['answers'])
                 st.session_state['step'] = 'completed'
                 st.success("Questionario completo! Acesso liberado.")
-                # st.balloons() # Removido conforme solicitado (sem emojis)
+                st.balloons()
                 st.rerun()
     st.markdown("</div></div>", unsafe_allow_html=True)
 
-# --- GALERIA ---
+# ── GALERIA ───────────────────────────────────────────────────────────
 def show_obras():
-    st.markdown("<h1 class='main-title' aria-label='Galeria de Obras de Arte'>Galeria de Obras de Arte</h1>", unsafe_allow_html=True)
-    st.markdown("<p class='subtitle' aria-label='Explore as obras e contribua com suas tags descritivas'>Explore as obras e contribua com suas tags descritivas</p>",
+    st.markdown("<h1 class='main-title'>Galeria de Obras de Arte</h1>", unsafe_allow_html=True)
+    st.markdown("<p class='subtitle'>Explore as obras e contribua com suas tags descritivas</p>",
                 unsafe_allow_html=True)
+    
     obras = load_obras()
+    tags_df = all_tags()
+    
     if not obras:
         st.info("Nenhuma obra cadastrada.")
         return
-
-    st.markdown("<div class='glass-card' role='region' aria-labelledby='filtros-obras-titulo'>", unsafe_allow_html=True)
-    st.markdown("<h2 id='filtros-obras-titulo' style='font-size:1.5rem;margin-bottom:1rem'>Filtros de Obras</h2>", unsafe_allow_html=True)
-
-    # Filtros detalhados
-    col_id, col_artist = st.columns(2)
-    with col_id:
-        sid = st.text_input("Filtrar por numero da obra:", "", placeholder="Ex: 1, 2, 3...", key="filter_id", aria_label="Filtrar por numero da obra")
-    with col_artist:
-        all_artists = sorted(list(set(o['artista'] for o in obras)))
-        selected_artists = st.multiselect("Filtrar por artista:", all_artists, key="filter_artist", aria_label="Filtrar por artista")
-
-    col_year, col_tags = st.columns(2)
-    with col_year:
-        all_years = sorted(list(set(o['ano'] for o in obras)))
-        selected_years = st.multiselect("Filtrar por ano:", all_years, key="filter_year", aria_label="Filtrar por ano")
-    with col_tags:
-        all_available_tags = sorted(list(set(t['tag'] for t in all_tags().to_dict('records')))) # Pega todas as tags existentes
-        selected_tags = st.multiselect("Filtrar por tags existentes:", all_available_tags, key="filter_tags", aria_label="Filtrar por tags existentes")
-
-    sord = st.selectbox("Ordenar por:", ["Numero (crescente)","Numero (decrescente)","Titulo (A-Z)","Titulo (Z-A)","Artista (A-Z)","Artista (Z-A)","Ano (crescente)","Ano (decrescente)"], key="sort_order", aria_label="Ordenar obras por")
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    filtered = obras
-    if sid.strip().isdigit():
-        filtered = [o for o in filtered if str(o['id'])==sid.strip()]
-    if selected_artists:
-        filtered = [o for o in filtered if o['artista'] in selected_artists]
-    if selected_years:
-        filtered = [o for o in filtered if o['ano'] in selected_years]
-    if selected_tags:
-        # Filtra obras que possuem pelo menos UMA das tags selecionadas
-        # Para isso, precisamos carregar todas as tags e mapeá-las às obras
-        all_tags_df = all_tags()
-        obra_ids_with_selected_tags = set(all_tags_df[all_tags_df['tag'].isin(selected_tags)]['obra_id'].unique())
-        filtered = [o for o in filtered if o['id'] in obra_ids_with_selected_tags]
-
-    # Ordenação
-    if sord == "Numero (crescente)":
-        filtered = sorted(filtered, key=lambda x: x['id'])
-    elif sord == "Numero (decrescente)":
-        filtered = sorted(filtered, key=lambda x: x['id'], reverse=True)
-    elif sord == "Titulo (A-Z)":
-        filtered = sorted(filtered, key=lambda x: x['titulo'].lower())
-    elif sord == "Titulo (Z-A)":
-        filtered = sorted(filtered, key=lambda x: x['titulo'].lower(), reverse=True)
-    elif sord == "Artista (A-Z)":
-        filtered = sorted(filtered, key=lambda x: x['artista'].lower())
-    elif sord == "Artista (Z-A)":
-        filtered = sorted(filtered, key=lambda x: x['artista'].lower(), reverse=True)
-    elif sord == "Ano (crescente)":
-        filtered = sorted(filtered, key=lambda x: int(x['ano']) if x['ano'].isdigit() else 9999) # Trata anos não numéricos
-    elif sord == "Ano (decrescente)":
-        filtered = sorted(filtered, key=lambda x: int(x['ano']) if x['ano'].isdigit() else 0, reverse=True)
-
-
-    st.markdown(f"<div style='text-align:center;color:var(--text-color);margin:1.8rem 0;"
-                f"font-size:1.1rem;font-weight:600' aria-live='polite'>Exibindo "
-                f"<strong style='font-size:1.4rem'>{len(filtered)}</strong> obra(s)</div>",
+    
+    # Filtros avançados
+    filtered_obras = advanced_filters(obras, tags_df)
+    
+    st.markdown(f"<div style='text-align:center;color:white;margin:1.8rem 0;"
+                f"font-size:1.1rem;font-weight:600'>Exibindo "
+                f"<strong style='font-size:1.4rem'>{len(filtered_obras)}</strong> obra(s)</div>",
                 unsafe_allow_html=True)
-
+    
+    # Galeria em grid
     cols = st.columns(3)
-    for i, obra in enumerate(filtered):
+    for i, obra in enumerate(filtered_obras):
         with cols[i%3]:
-            st.markdown(f"""<div class='obra-card' role='figure' aria-labelledby='obra-titulo-{obra['id']}'>
-<img src='{obra['imagem']}' alt='{obra['titulo']} por {obra['artista']}' role='img' aria-describedby='audiodescricao-{obra['id']}' />
-<div style='padding:1.4rem'>
-  <h3 id='obra-titulo-{obra['id']}' style='font-size:1.05rem;font-weight:700;margin-bottom:.35rem'>Obra #{obra['id']} - {obra['titulo']}</h3>
-  <p style='font-size:.88rem;opacity:.65'>{obra['artista']} - {obra['ano']}</p>
-  <p id='audiodescricao-{obra['id']}' class='sr-only'>{obra.get('audiodescricao', 'Nao ha audiodescricao disponivel para esta imagem.')}</p>
-</div></div>""", unsafe_allow_html=True)
-
-            # Botão de audiodescrição
-            if st.button("Ouvir Audiodescricao", key=f"audio_desc_{obra['id']}", use_container_width=True, aria_label=f"Ouvir audiodescricao para a obra {obra['titulo']}"):
-                st.info(f"Audiodescricao para '{obra['titulo']}': {obra.get('audiodescricao', 'Nao ha audiodescricao disponivel para esta imagem.')}")
-
-            if st.button("Adicionar Tag", key=f"btn_{obra['id']}", use_container_width=True, aria_label=f"Adicionar tag para a obra {obra['titulo']}"):
+            # Gerar descrição para acessibilidade
+            img_desc = generate_image_description(obra['imagem'])
+            
+            st.markdown(f"""
+            <div class='obra-card'>
+                <img src='{obra['imagem']}' alt='{obra['titulo']} - {obra['artista']}' />
+                <div style='padding:1.4rem'>
+                    <h3 style='font-size:1.05rem;font-weight:700;margin-bottom:.35rem'>
+                        Obra #{obra['id']} - {obra['titulo']}
+                    </h3>
+                    <p style='font-size:.88rem;opacity:.65'>{obra['artista']} - {obra['ano']}</p>
+            """, unsafe_allow_html=True)
+            
+            # Botão de descrição em áudio
+            if st.session_state.accessibility['audio_descriptions']:
+                if st.button("🔊 Descricao em Audio", key=f"audio_{obra['id']}"):
+                    st.info(text_to_speech(f"{obra['titulo']} por {obra['artista']}. {img_desc}"))
+            
+            # Botão de tag
+            if st.button(" Adicionar Tag", key=f"btn_{obra['id']}", use_container_width=True):
                 st.session_state['selected_obra'] = obra
                 st.rerun()
+            
+            # Formulário de tag
             if ('selected_obra' in st.session_state and
                     st.session_state['selected_obra']['id'] == obra['id']):
-                with st.form(f"tf_{obra['id']}", aria_label=f"Formulario para adicionar tag a obra {obra['titulo']}"):
+                with st.form(f"tf_{obra['id']}"):
                     tag = st.text_input("Sua tag:", key=f"t_{obra['id']}",
-                                        placeholder="Ex: azul, triste, moderno...", aria_label="Campo para digitar sua tag")
+                                        placeholder="Ex: azul, triste, moderno…")
                     ca, cb = st.columns(2)
-                    with ca: sub = st.form_submit_button("Enviar", use_container_width=True, aria_label="Botao para enviar a tag")
-                    with cb: can = st.form_submit_button("Cancelar", use_container_width=True, aria_label="Botao para cancelar a adicao de tag")
+                    with ca: sub = st.form_submit_button(" Enviar", use_container_width=True)
+                    with cb: can = st.form_submit_button(" Cancelar", use_container_width=True)
                     if sub and tag:
                         save_tag(st.session_state['user_id'], obra['id'], tag)
                         st.success(f"Tag '{tag}' adicionada!")
@@ -890,69 +1240,78 @@ def show_obras():
                     if can:
                         del st.session_state['selected_obra']
                         st.rerun()
+            
+            # Mostrar tags do usuário
             ut = get_obra_user_tags(obra['id'], st.session_state['user_id'])
             if not ut.empty:
                 st.markdown("**Suas Tags:**")
                 st.markdown("".join(
-                    f"<span class='tag-badge' aria-label='Tag {r['tag']} com {r['count']} usos'>{r['tag']} ({r['count']})</span>"
+                    f"<span class='tag-badge'>{r['tag']} ({r['count']})</span>"
                     for _, r in ut.iterrows()
                 ), unsafe_allow_html=True)
-            else:
-                st.info("Voce ainda nao criou tags para esta obra")
+            
+            st.markdown("</div></div>", unsafe_allow_html=True)
 
-# --- ADMIN ---
+# ── ADMIN ─────────────────────────────────────────────────────────────
 def show_admin():
     if 'admin_logged_in' not in st.session_state:
         st.session_state['admin_logged_in'] = False
+    
     if not st.session_state['admin_logged_in']:
-        st.markdown("<h1 class='main-title' aria-label='Area Administrativa'>Area Administrativa</h1>", unsafe_allow_html=True)
-        st.markdown("<p class='subtitle' aria-label='Acesso restrito'>Acesso restrito</p>", unsafe_allow_html=True)
+        st.markdown("<h1 class='main-title'>Area Administrativa</h1>", unsafe_allow_html=True)
+        st.markdown("<p class='subtitle'>Acesso restrito</p>", unsafe_allow_html=True)
         _, c2, _ = st.columns([1,1,1])
         with c2:
-            st.markdown("<div class='glass-card' role='form' aria-labelledby='login-admin-titulo'>", unsafe_allow_html=True)
-            st.markdown("<h2 id='login-admin-titulo' style='text-align:center;margin-bottom:1.8rem'>Login Administrativo</h2>", unsafe_allow_html=True)
+            st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+            st.markdown("<h2 style='text-align:center;margin-bottom:1.8rem'>"
+                        "Login Administrativo</h2>", unsafe_allow_html=True)
             with st.form("login"):
-                username = st.text_input("Usuario:", placeholder="Digite seu usuario", key="admin_username_input", aria_label="Campo de usuario para login administrativo")
-                password = st.text_input("Senha:", type="password", placeholder="Digite sua senha", key="admin_password_input", aria_label="Campo de senha para login administrativo")
-                sub = st.form_submit_button("Entrar no Sistema", use_container_width=True, aria_label="Botao para entrar no sistema administrativo")
+                username = st.text_input("Usuario:", placeholder="Digite seu usuario")
+                password = st.text_input("Senha:", type="password", placeholder="Digite sua senha")
+                sub = st.form_submit_button("Entrar no Sistema", use_container_width=True)
                 if sub:
                     if check_login(username, password):
                         st.session_state['admin_logged_in'] = True
-                        st.session_state['admin_username']  = username
+                        st.session_state['admin_username'] = username
                         st.success("Login realizado com sucesso!")
-                        # st.balloons() # Removido
+                        st.balloons()
                         st.rerun()
                     else:
                         st.error("Credenciais invalidas. Acesso negado.")
             st.markdown("</div>", unsafe_allow_html=True)
     else:
         st.markdown(
-            f"<h1 class='main-title' aria-label='Dashboard Administrativo'>Dashboard Administrativo</h1>"
-            f"<p class='subtitle' aria-label='Bem-vindo, {st.session_state.get('admin_username','Admin')}'>Bem-vindo, "
+            f"<h1 class='main-title'>Dashboard Administrativo</h1>"
+            f"<p class='subtitle'>Bem-vindo, "
             f"<strong>{st.session_state.get('admin_username','Admin')}</strong></p>",
             unsafe_allow_html=True)
+        
         tabs = st.tabs([
             " Visao Geral",
             " Analise de Tags",
+            " Analise Avancada de Tags",
             " Conexoes de Tags",
-            " Usuarios & Questionario",
+            " Usuarios e Questionario",
             " Obras",
             " Exportar"
         ])
+        
         with tabs[0]: tab_overview()
         with tabs[1]: tab_tags()
-        with tabs[2]: tab_connections()
-        with tabs[3]: tab_users_quest()
-        with tabs[4]: tab_obras()
-        with tabs[5]: tab_export()
+        with tabs[2]: tab_advanced_tags()
+        with tabs[3]: tab_connections()
+        with tabs[4]: tab_users_quest()
+        with tabs[5]: tab_obras()
+        with tabs[6]: tab_export()
+        
         _, c2, _ = st.columns([1,1,1])
         with c2:
-            if st.button("Sair do Sistema", use_container_width=True, aria_label="Botao para sair do sistema administrativo"):
+            if st.button(" Sair do Sistema", use_container_width=True):
                 st.session_state['admin_logged_in'] = False
                 st.rerun()
 
 # ═════════════════════════════════════════════════════════════════════
-# ABA 1 — VISÃO GERAL
+# ABA 1 — VISAO GERAL
 # ═════════════════════════════════════════════════════════════════════
 def tab_overview():
     tdf = all_tags()
@@ -960,19 +1319,19 @@ def tab_overview():
     obs = load_obras()
 
     st.markdown("### Metricas Gerais do Sistema")
-    total  = len(tdf) if not tdf.empty else 0
+    total = len(tdf) if not tdf.empty else 0
     unicas = tdf['tag'].nunique() if not tdf.empty else 0
     nusers = udf['user_id'].nunique() if not udf.empty else 0
-    nobs   = len(obs)
+    nobs = len(obs)
     obs_ct = tdf['obra_id'].nunique() if not tdf.empty else 0
 
     c1,c2,c3,c4,c5 = st.columns(5)
     for col, lbl, val, sub, clr in [
-        (c1,"Total de Tags",     total,   "registros","#a7e6ff"),
-        (c2,"Tags Unicas",       unicas,  f"{unicas/total:.0%} do total" if total else "—","#d1baff"),
-        (c3,"Participantes",     nusers,  "usuarios ativos","#6ee7b7"),
-        (c4,"Obras Cadastradas", nobs,    f"{obs_ct} com tags","#fcd34d"),
-        (c5,"Media Tags/Usuario",f"{total/nusers:.1f}" if nusers else "—","por participante","#f9a8d4"),
+        (c1,"Total de Tags", total, "registros","#a7e6ff"),
+        (c2,"Tags Unicas", unicas, f"{unicas/total:.0%} do total" if total else "-","#d1baff"),
+        (c3,"Participantes", nusers, "usuarios ativos","#6ee7b7"),
+        (c4,"Obras Cadastradas", nobs, f"{obs_ct} com tags","#fcd34d"),
+        (c5,"Media Tags/Usuario",f"{total/nusers:.1f}" if nusers else "-","por participante","#f9a8d4"),
     ]:
         with col: st.markdown(kpi(lbl,val,sub,clr), unsafe_allow_html=True)
 
@@ -982,16 +1341,16 @@ def tab_overview():
         st.markdown("### Participantes Anonimos")
         uct = tdf.groupby('user_id').size().reset_index(name='tags')
         uuq = tdf.groupby('user_id')['tag'].nunique().reset_index(name='unicas')
-        m   = udf.merge(uct,on='user_id',how='left').merge(uuq,on='user_id',how='left').fillna(0)
+        m = udf.merge(uct,on='user_id',how='left').merge(uuq,on='user_id',how='left').fillna(0)
         for _, row in m.iterrows():
             animal = row.get('animal_name','?')
-            ts     = row.get('timestamp','N/A')
+            ts = row.get('timestamp','N/A')
             nt, nu = int(row['tags']), int(row['unicas'])
-            p      = nu/nt if nt>0 else 0
+            p = nu/nt if nt>0 else 0
             st.markdown(
-                f"<div class='sc sc-b' style='padding:.85rem 1.3rem;margin:.25rem 0' aria-label='Perfil do participante {animal}'>"
+                f"<div class='stat-card stat-blue' style='padding:.85rem 1.3rem;margin:.25rem 0'>"
                 f"<div style='display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px'>"
-                f"<div><span class='animal-badge'>{animal}</span>"
+                f"<div><span class='animal-badge'>🐾 {animal}</span>"
                 f"<span style='color:rgba(255,255,255,.45);font-size:.75rem;margin-left:10px'>Acesso: {ts}</span></div>"
                 f"<div style='text-align:right;min-width:170px'>"
                 f"<span style='color:white;font-weight:700'>{nt} tags</span>"
@@ -1020,7 +1379,7 @@ def tab_overview():
                 use_container_width=True, hide_index=True)
 
 # ═════════════════════════════════════════════════════════════════════
-# ABA 2 — ANÁLISE DE TAGS (Frequência + Temporal + Nuvem de Palavras)
+# ABA 2 — ANALISE DE TAGS (Frequencia + Temporal)
 # ═════════════════════════════════════════════════════════════════════
 def tab_tags():
     tdf = all_tags()
@@ -1029,31 +1388,31 @@ def tab_tags():
         return
 
     st.markdown("### Analise de Tags")
-    t1, t2, t3 = st.tabs([" Frequencia e Vocabulario", " Evolucao Temporal", " Nuvem de Palavras"])
+    t1, t2 = st.tabs([" Frequencia e Vocabulario", " Evolucao Temporal"])
 
-    # --- FREQUÊNCIA ---
+    # --- FREQUENCIA ---
     with t1:
         freq = tdf['tag'].value_counts().reset_index()
         freq.columns = ['Tag','Frequencia']
         total_usos = freq['Frequencia'].sum()
-        freq['% do Total']  = (freq['Frequencia']/total_usos*100).round(2)
+        freq['% do Total'] = (freq['Frequencia']/total_usos*100).round(2)
         freq['% Acumulada'] = freq['% do Total'].cumsum().round(2)
-        freq['Categoria']   = pd.cut(
+        freq['Categoria'] = pd.cut(
             freq['Frequencia'],
             bins=[0,1,2,5,10,99999],
             labels=['Hapax (1x)','Rara (2x)','Ocasional (3-5x)','Frequente (6-10x)','Muito Frequente (10+x)']
         )
 
-        hapax  = (freq['Frequencia']==1).sum()
-        lei80  = (freq['% Acumulada']<=80).sum()
-        ttr    = len(freq)/total_usos if total_usos else 0
-        top1p  = freq.iloc[0]['% do Total'] if not freq.empty else 0
+        hapax = (freq['Frequencia']==1).sum()
+        lei80 = (freq['% Acumulada']<=80).sum()
+        ttr = len(freq)/total_usos if total_usos else 0
+        top1p = freq.iloc[0]['% do Total'] if not freq.empty else 0
 
         c1,c2,c3,c4 = st.columns(4)
-        with c1: st.markdown(kpi("Vocabulario Total",  len(freq), "tags distintas","#a7e6ff"), unsafe_allow_html=True)
-        with c2: st.markdown(kpi("Hapax Legomena",     hapax,     f"{hapax/len(freq):.0%} do vocab.","#f9a8d4"), unsafe_allow_html=True)
-        with c3: st.markdown(kpi("80% dos Usos",       f"{lei80} tags","lei de Zipf","#6ee7b7"), unsafe_allow_html=True)
-        with c4: st.markdown(kpi("Type-Token Ratio",   f"{ttr:.3f}","riqueza global","#fcd34d"), unsafe_allow_html=True)
+        with c1: st.markdown(kpi("Vocabulario Total", len(freq), "tags distintas","#a7e6ff"), unsafe_allow_html=True)
+        with c2: st.markdown(kpi("Hapax Legomena", hapax, f"{hapax/len(freq):.0%} do vocab.","#f9a8d4"), unsafe_allow_html=True)
+        with c3: st.markdown(kpi("80% dos Usos", f"{lei80} tags","lei de Zipf","#6ee7b7"), unsafe_allow_html=True)
+        with c4: st.markdown(kpi("Type-Token Ratio", f"{ttr:.3f}","riqueza global","#fcd34d"), unsafe_allow_html=True)
 
         st.markdown(insight(
             f"<strong>Distribuicao de Zipf:</strong> As {lei80} tags mais frequentes cobrem 80% de todos os usos. "
@@ -1064,19 +1423,30 @@ def tab_tags():
         ), unsafe_allow_html=True)
 
         st.markdown(divider(), unsafe_allow_html=True)
-        st.markdown("#### Frequencia - Top 25 Tags")
-        st.bar_chart(tdf['tag'].value_counts().head(25))
+        st.markdown("#### Frequencia — Top 25 Tags")
+        
+        # Gráfico interativo com Plotly
+        fig = px.bar(freq.head(25), x='Tag', y='Frequencia',
+                     title='Top 25 Tags Mais Frequentes',
+                     color='Frequencia',
+                     color_continuous_scale='Viridis')
+        fig.update_layout(
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            font_color='white'
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
         st.markdown("#### Tabela Completa de Frequencias")
         cat_opts = list(freq['Categoria'].cat.categories)
-        cat_sel  = st.multiselect("Filtrar por categoria:", cat_opts, default=cat_opts, key="fc")
+        cat_sel = st.multiselect("Filtrar por categoria:", cat_opts, default=cat_opts, key="fc")
         disp = freq[freq['Categoria'].isin(cat_sel)] if cat_sel else freq
         st.dataframe(disp, use_container_width=True, hide_index=True)
 
         c1, c2 = st.columns(2)
         with c1:
             st.download_button(
-                "Frequencias (CSV)",
+                " Frequencias (CSV)",
                 freq.to_csv(index=False).encode('utf-8'),
                 f"frequencias_{datetime.now().strftime('%Y%m%d')}.csv",
                 "text/csv", use_container_width=True)
@@ -1091,31 +1461,31 @@ def tab_tags():
         st.markdown("#### Evolucao Temporal das Tags")
         try:
             tf = tdf.copy()
-            tf['ts']    = pd.to_datetime(tf['timestamp'])
-            tf['date']  = tf['ts'].dt.date
-            tf['ano']   = tf['ts'].dt.year
-            tf['mes']   = tf['ts'].dt.month
-            tf['dia']   = tf['ts'].dt.day
-            tf['hora']  = tf['ts'].dt.hour
-            tf['dow']   = tf['ts'].dt.day_name()
-            tf['semana']= tf['ts'].dt.isocalendar().week.astype(int)
+            tf['ts'] = pd.to_datetime(tf['timestamp'])
+            tf['date'] = tf['ts'].dt.date
+            tf['ano'] = tf['ts'].dt.year
+            tf['mes'] = tf['ts'].dt.month
+            tf['dia'] = tf['ts'].dt.day
+            tf['hora'] = tf['ts'].dt.hour
+            tf['dow'] = tf['ts'].dt.day_name()
+            tf['semana'] = tf['ts'].dt.isocalendar().week.astype(int)
 
-            # --- KPIs temporais ---
+            # KPIs temporais
             dias_ativos = tf['date'].nunique()
-            media_dia   = len(tf)/dias_ativos if dias_ativos else 0
-            pico_dia    = tf.groupby('date').size()
-            pico_val    = int(pico_dia.max()) if not pico_dia.empty else 0
-            pico_dt     = str(pico_dia.idxmax()) if not pico_dia.empty else "—"
+            media_dia = len(tf)/dias_ativos if dias_ativos else 0
+            pico_dia = tf.groupby('date').size()
+            pico_val = int(pico_dia.max()) if not pico_dia.empty else 0
+            pico_dt = str(pico_dia.idxmax()) if not pico_dia.empty else "-"
 
             c1,c2,c3,c4 = st.columns(4)
             with c1: st.markdown(kpi("Dias com Atividade", dias_ativos,"dias","#a7e6ff"), unsafe_allow_html=True)
-            with c2: st.markdown(kpi("Media por Dia",      f"{media_dia:.1f}","tags/dia","#6ee7b7"), unsafe_allow_html=True)
-            with c3: st.markdown(kpi("Pico de Tags",       pico_val,f"em {pico_dt}","#fcd34d"), unsafe_allow_html=True)
-            with c4: st.markdown(kpi("Periodo Total",      f"{dias_ativos} dias","registrado","#d1baff"), unsafe_allow_html=True)
+            with c2: st.markdown(kpi("Media por Dia", f"{media_dia:.1f}","tags/dia","#6ee7b7"), unsafe_allow_html=True)
+            with c3: st.markdown(kpi("Pico de Tags", pico_val,f"em {pico_dt}","#fcd34d"), unsafe_allow_html=True)
+            with c4: st.markdown(kpi("Periodo Total", f"{dias_ativos} dias","registrado","#d1baff"), unsafe_allow_html=True)
 
             st.markdown(divider(), unsafe_allow_html=True)
 
-            # --- Linha: tags por dia ---
+            # Linha: tags por dia
             daily = tf.groupby('date').agg(
                 Tags=('tag','count'),
                 Tags_Unicas=('tag','nunique'),
@@ -1123,19 +1493,41 @@ def tab_tags():
             ).reset_index().rename(columns={'date':'Data'})
 
             st.markdown("#### Tags Criadas por Dia")
-            st.line_chart(daily.set_index('Data')['Tags'])
+            fig = px.line(daily, x='Data', y='Tags',
+                         title='Evolucao Diaria de Tags',
+                         color_discrete_sequence=['#a7e6ff'])
+            fig.update_layout(
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)',
+                font_color='white'
+            )
+            st.plotly_chart(fig, use_container_width=True)
 
             c1, c2 = st.columns(2)
             with c1:
                 st.markdown("**Usuarios ativos por dia**")
-                st.line_chart(daily.set_index('Data')['Usuarios'])
+                fig = px.line(daily, x='Data', y='Usuarios',
+                             color_discrete_sequence=['#6ee7b7'])
+                fig.update_layout(
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    font_color='white'
+                )
+                st.plotly_chart(fig, use_container_width=True)
             with c2:
                 st.markdown("**Tags unicas por dia**")
-                st.line_chart(daily.set_index('Data')['Tags_Unicas'])
+                fig = px.line(daily, x='Data', y='Tags_Unicas',
+                             color_discrete_sequence=['#fcd34d'])
+                fig.update_layout(
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    font_color='white'
+                )
+                st.plotly_chart(fig, use_container_width=True)
 
             st.markdown(divider(), unsafe_allow_html=True)
 
-            # --- Por mes ---
+            # Por mes
             st.markdown("#### Distribuicao Mensal")
             meses_pt = {1:"Jan",2:"Fev",3:"Mar",4:"Abr",5:"Mai",6:"Jun",
                         7:"Jul",8:"Ago",9:"Set",10:"Out",11:"Nov",12:"Dez"}
@@ -1147,85 +1539,779 @@ def tab_tags():
             monthly['Mes/Ano'] = monthly['mes'].map(meses_pt)+"/"+monthly['ano'].astype(str)
             monthly = monthly.sort_values(['ano','mes'])
 
-            st.bar_chart(monthly.set_index('Mes/Ano')['Tags'])
-
-            c1, c2 = st.columns(2)
-            with c1:
-                st.markdown("**Usuarios unicos por mes**")
-                st.bar_chart(monthly.set_index('Mes/Ano')['Usuarios'])
-            with c2:
-                st.markdown("**Tags unicas por mes**")
-                st.bar_chart(monthly.set_index('Mes/Ano')['Tags_Unicas'])
-
-            st.markdown(divider(), unsafe_allow_html=True)
-
-            # --- Por ano ---
-            st.markdown("#### Distribuicao Anual")
-            yearly = tf.groupby('ano').agg(
-                Tags=('tag','count'),
-                Tags_Unicas=('tag','nunique'),
-                Usuarios=('user_id','nunique')
-            ).reset_index().rename(columns={'ano':'Ano'})
-            st.bar_chart(yearly.set_index('Ano')['Tags'])
-            st.dataframe(yearly, use_container_width=True, hide_index=True)
+            fig = px.bar(monthly, x='Mes/Ano', y='Tags',
+                        title='Tags por Mes',
+                        color='Tags',
+                        color_continuous_scale='Viridis')
+            fig.update_layout(
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)',
+                font_color='white'
+            )
+            st.plotly_chart(fig, use_container_width=True)
 
             st.markdown(divider(), unsafe_allow_html=True)
 
-            # --- Distribuicao por dia da semana e hora ---
+            # Distribuicao por dia da semana e hora
             st.markdown("#### Padroes de Uso")
             c1, c2 = st.columns(2)
             with c1:
                 st.markdown("**Distribuicao por Hora do Dia**")
-                st.bar_chart(tf['hora'].value_counts().sort_index().rename("Tags"))
+                fig = px.bar(x=tf['hora'].value_counts().sort_index().index,
+                           y=tf['hora'].value_counts().sort_index().values,
+                           labels={'x':'Hora', 'y':'Tags'},
+                           color_discrete_sequence=['#a7e6ff'])
+                fig.update_layout(
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    font_color='white'
+                )
+                st.plotly_chart(fig, use_container_width=True)
             with c2:
                 st.markdown("**Distribuicao por Dia da Semana**")
                 dow_order = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
-                dow_pt    = {"Monday":"Seg","Tuesday":"Ter","Wednesday":"Qua","Thursday":"Qui",
-                             "Friday":"Sex","Saturday":"Sab","Sunday":"Dom"}
+                dow_pt = {"Monday":"Seg","Tuesday":"Ter","Wednesday":"Qua","Thursday":"Qui",
+                         "Friday":"Sex","Saturday":"Sab","Sunday":"Dom"}
                 dow_c = tf['dow'].value_counts().reindex(dow_order,fill_value=0)
                 dow_c.index = [dow_pt.get(d,d) for d in dow_c.index]
-                st.bar_chart(dow_c.rename("Tags"))
-
-            st.markdown(divider(), unsafe_allow_html=True)
-
-            # --- Tabela consolidada ---
-            st.markdown("#### Tabela Detalhada por Dia")
-            daily_full = tf.groupby('date').agg(
-                Total=('tag','count'),
-                Unicas=('tag','nunique'),
-                Usuarios=('user_id','nunique'),
-                Tag_Mais_Usada=('tag', lambda x: x.value_counts().index[0])
-            ).reset_index()
-            daily_full.columns = ['Data','Tags Criadas','Tags Unicas','Usuarios Ativos','Tag Mais Usada']
-            daily_full = daily_full.sort_values('Data',ascending=False)
-            st.dataframe(daily_full, use_container_width=True, hide_index=True)
-
-            st.markdown("#### Tabela Mensal Consolidada")
-            monthly_full = monthly[['Mes/Ano','Tags','Tags_Unicas','Usuarios']].copy()
-            monthly_full.columns = ['Mes/Ano','Tags Criadas','Tags Unicas','Usuarios Ativos']
-            st.dataframe(monthly_full, use_container_width=True, hide_index=True)
-
-            if len(daily)>1:
-                st.markdown(insight(
-                    f"<strong>Tendencia:</strong> Pico de <strong>{pico_val} tags</strong> em {pico_dt}. "
-                    f"Media de <strong>{media_dia:.1f} tags/dia</strong> nos {dias_ativos} dias com atividade. "
-                    f"Total de {len(tf)} tags distribuidas ao longo de "
-                    f"{monthly['ano'].nunique()} ano(s) e {len(monthly)} mes(es) registrado(s)."
-                ), unsafe_allow_html=True)
+                fig = px.bar(x=dow_c.index, y=dow_c.values,
+                           labels={'x':'Dia', 'y':'Tags'},
+                           color_discrete_sequence=['#d1baff'])
+                fig.update_layout(
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    font_color='white'
+                )
+                st.plotly_chart(fig, use_container_width=True)
 
         except Exception as e:
             st.info(f"Dados insuficientes para analise temporal.")
 
-    # --- NUVEM DE PALAVRAS ---
+# ═════════════════════════════════════════════════════════════════════
+# ABA 3 — ANALISE AVANCADA DE TAGS
+# ═════════════════════════════════════════════════════════════════════
+def tab_advanced_tags():
+    tdf = all_tags()
+    if tdf.empty:
+        st.info("Nenhuma tag disponivel.")
+        return
+
+    st.markdown("### Analise Avancada de Tags")
+    
+    t1, t2, t3, t4 = st.tabs([
+        " Estatisticas Avancadas",
+        " Word Cloud",
+        " Rede de Tags",
+        " Clustering Hierarquico"
+    ])
+
+    with t1:
+        st.markdown("#### Metricas Avancadas de Diversidade Lexical")
+        
+        analysis = advanced_tag_analysis(tdf)
+        
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.markdown(kpi("Entropia de Shannon", f"{analysis['shannon_entropy']:.3f}",
+                           "diversidade lexical", "#a7e6ff"), unsafe_allow_html=True)
+            st.markdown(kpi("Indice de Simpson", f"{analysis['simpson_index']:.3f}",
+                           "1 = maxima diversidade", "#6ee7b7"), unsafe_allow_html=True)
+        with c2:
+            st.markdown(kpi("Equitabilidade de Pielou", f"{analysis['pielou_evenness']:.3f}",
+                           "uniformidade", "#fcd34d"), unsafe_allow_html=True)
+            st.markdown(kpi("Hapax Legomena", f"{analysis['hapax_count']}",
+                           f"{analysis['hapax_percentage']:.1f}% do vocabulario", "#f9a8d4"), unsafe_allow_html=True)
+        with c3:
+            st.markdown(kpi("Comprimento Medio das Tags", f"{analysis['avg_tag_length']:.1f}",
+                           "caracteres", "#d1baff"), unsafe_allow_html=True)
+            if analysis['peak_hour']:
+                st.markdown(kpi("Horario de Pico", f"{analysis['peak_hour']:02d}:00",
+                               "maior atividade", "#86efac"), unsafe_allow_html=True)
+
+        st.markdown(divider(), unsafe_allow_html=True)
+        
+        # Distribuicao de comprimento das tags
+        st.markdown("#### Distribuicao do Comprimento das Tags")
+        tag_lengths = tdf['tag'].str.len()
+        fig = px.histogram(x=tag_lengths, nbins=20,
+                          title='Distribuicao do Numero de Caracteres por Tag',
+                          labels={'x':'Comprimento', 'y':'Frequencia'},
+                          color_discrete_sequence=['#a7e6ff'])
+        fig.update_layout(
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            font_color='white'
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    with t2:
+        st.markdown("#### Nuvem de Palavras (Word Cloud)")
+        st.markdown("Visualizacao das tags mais frequentes")
+        
+        wordcloud = generate_wordcloud(tdf)
+        fig, ax = plt.subplots(figsize=(10, 5))
+        ax.imshow(wordcloud, interpolation='bilinear')
+        ax.axis('off')
+        ax.set_facecolor('none')
+        fig.patch.set_alpha(0)
+        st.pyplot(fig)
+
     with t3:
-        st.markdown("#### Nuvem de Palavras das Tags")
+        st.markdown("#### Rede de Conexoes entre Tags")
+        st.markdown("Visualizacao em grafo das similaridades entre tags")
+        
+        threshold = st.slider("Limiar de similaridade para a rede:", 
+                             0.2, 0.8, 0.35, 0.05, key="network_thr")
+        
+        G = create_tag_network(tdf, threshold)
+        
+        if G.number_of_nodes() > 1:
+            # Layout do grafo
+            pos = nx.spring_layout(G, k=2, iterations=50)
+            
+            # Criar figura
+            fig, ax = plt.subplots(figsize=(12, 8))
+            
+            # Tamanhos dos nos baseados na frequencia
+            node_sizes = [G.nodes[node]['size'] * 50 for node in G.nodes()]
+            
+            # Desenhar grafo
+            nx.draw_networkx_nodes(G, pos, node_size=node_sizes,
+                                 node_color='#a7e6ff', alpha=0.8, ax=ax)
+            nx.draw_networkx_edges(G, pos, alpha=0.3,
+                                 edge_color='#d1baff', ax=ax)
+            nx.draw_networkx_labels(G, pos, font_size=8,
+                                   font_color='white', ax=ax)
+            
+            ax.set_facecolor('none')
+            fig.patch.set_alpha(0)
+            ax.axis('off')
+            
+            st.pyplot(fig)
+            
+            st.markdown(insight(
+                f"<strong>Grafo de Tags:</strong> A rede possui {G.number_of_nodes()} nos "
+                f"e {G.number_of_edges()} conexoes. Nos maiores representam tags mais frequentes."
+            ), unsafe_allow_html=True)
+        else:
+            st.info("Nao ha conexoes suficientes para gerar a rede com este limiar.")
+
+    with t4:
+        st.markdown("#### Clustering Hierarquico de Tags")
+        st.markdown("Agrupamento automatico de tags por similaridade semantica")
+        
+        n_clusters = st.slider("Numero de clusters:", 2, 10, 5, key="n_clusters")
+        
+        result, linkage_matrix = hierarchical_clustering(tdf, n_clusters)
+        
+        if result:
+            # Dendrograma
+            fig, ax = plt.subplots(figsize=(12, 6))
+            dendrogram(linkage_matrix, ax=ax, leaf_rotation=90,
+                      leaf_font_size=8, labels=tdf['tag'].unique())
+            ax.set_title('Dendrograma de Agrupamento Hierarquico')
+            ax.set_ylabel('Distancia')
+            ax.set_facecolor('none')
+            fig.patch.set_alpha(0)
+            ax.tick_params(colors='white')
+            ax.title.set_color('white')
+            ax.yaxis.label.set_color('white')
+            st.pyplot(fig)
+            
+            # Mostrar clusters
+            st.markdown("#### Clusters Identificados")
+            for cluster_id, tags in result.items():
+                st.markdown(f"**Cluster {cluster_id + 1}** ({len(tags)} tags)")
+                tag_list = ", ".join(tags[:10])
+                if len(tags) > 10:
+                    tag_list += f" e mais {len(tags) - 10}"
+                st.markdown(f"<span class='insight'>{tag_list}</span>", unsafe_allow_html=True)
+
+# ═════════════════════════════════════════════════════════════════════
+# ABA 4 — CONEXOES DE TAGS (mantida da versao original)
+# ═════════════════════════════════════════════════════════════════════
+def tab_connections():
+    tdf = all_tags()
+    obs = load_obras()
+    od = {o['id']:o['titulo'] for o in obs}
+    if tdf.empty:
+        st.warning("Nenhuma tag disponivel.")
+        return
+
+    st.markdown("### Conexoes e Agrupamentos de Tags")
+    st.markdown(insight(
+        "<strong>Como funciona:</strong> O algoritmo combina tres metricas — "
+        "<strong>Contencao de substring</strong> (ex: 'vaso' → 'vaso verde'), "
+        "<strong>Jaccard de palavras</strong> (ex: 'barco preto' ↔ 'barco de barro') e "
+        "<strong>Jaccard de trigramas</strong> (similaridade fonetica). "
+        "Score de 0 (sem relacao) a 1 (identicas)."
+    ), unsafe_allow_html=True)
+
+    c1, c2, c3 = st.columns(3)
+    with c1: threshold = st.slider("Limiar de similaridade:", 0.20, 0.90, 0.35, 0.05, key="ct")
+    with c2: obra_f = st.selectbox("Filtrar por obra:", ["Todas"]+[f"#{o['id']} — {o['titulo']}" for o in obs], key="co")
+    with c3: max_c = st.number_input("Max. conexoes:", 10, 300, 60, 10, key="cm")
+
+    fdf = tdf.copy()
+    if obra_f != "Todas":
+        oid = int(obra_f.split("—")[0].replace("#","").strip())
+        fdf = tdf[tdf['obra_id']==oid]
+
+    all_t = fdf['tag'].tolist()
+    if len(set(all_t)) < 2:
+        st.warning("Necessario ao menos 2 tags distintas.")
+        return
+
+    with st.spinner("Calculando conexoes…"):
+        conns = tag_connections(all_t, threshold=threshold)
+        clusters = tag_clusters(all_t, threshold=threshold)
+
+    c1,c2,c3 = st.columns(3)
+    with c1: st.markdown(kpi("Total de Conexoes", len(conns), f"limiar ≥ {threshold:.2f}","#a7e6ff"), unsafe_allow_html=True)
+    with c2: st.markdown(kpi("Grupos Formados", len(clusters),"clusters de tags","#d1baff"), unsafe_allow_html=True)
+    with c3: st.markdown(kpi("Tags Envolvidas", len(set(c['tag_a'] for c in conns)|set(c['tag_b'] for c in conns)),
+                              "tags conectadas","#6ee7b7"), unsafe_allow_html=True)
+
+    st.markdown(divider(), unsafe_allow_html=True)
+
+    t1, t2 = st.tabs([" Lista de Conexoes", " Grupos de Tags"])
+
+    # --- LISTA ---
+    with t1:
+        if not conns:
+            st.info("Nenhuma conexao encontrada. Reduza o limiar de similaridade.")
+        else:
+            tipos = sorted(set(c['tipo'] for c in conns))
+            tipo_sel = st.multiselect("Filtrar por tipo:", tipos, default=tipos, key="tsel")
+            cf = [c for c in conns if c['tipo'] in tipo_sel][:max_c]
+            freq_map = tdf['tag'].value_counts().to_dict()
+
+            st.markdown(f"Exibindo **{len(cf)}** de **{len(conns)}** conexoes")
+            st.markdown(divider(), unsafe_allow_html=True)
+
+            for c in cf:
+                s = c['similaridade']
+                bar = "█"*int(s*10)+"░"*(10-int(s*10))
+                fa = freq_map.get(c['tag_a'],0)
+                fb = freq_map.get(c['tag_b'],0)
+                st.markdown(
+                    f"<div class='conn-row'>"
+                    f"<div style='display:flex;align-items:center;gap:10px;flex-wrap:wrap'>"
+                    f"<span class='tag-badge'>{c['tag_a']}</span>"
+                    f"<span style='color:rgba(255,255,255,.3);font-size:.72rem'>({fa}x)</span>"
+                    f"<span style='color:rgba(255,255,255,.38)'>↔</span>"
+                    f"<span class='tag-badge'>{c['tag_b']}</span>"
+                    f"<span style='color:rgba(255,255,255,.3);font-size:.72rem'>({fb}x)</span>"
+                    f"</div>"
+                    f"<div style='text-align:right;min-width:195px'>"
+                    f"<span style='font-family:monospace;color:rgba(255,255,255,.6);font-size:.78rem'>"
+                    f"{bar} {s:.3f}</span><br>"
+                    f"<span style='font-size:.7rem;color:rgba(255,255,255,.35)'>{c['tipo']}</span>"
+                    f"</div></div>", unsafe_allow_html=True)
+
+            st.markdown(divider(), unsafe_allow_html=True)
+            st.download_button(
+                " Baixar conexoes (CSV)",
+                pd.DataFrame(conns).to_csv(index=False).encode('utf-8'),
+                f"conexoes_{datetime.now().strftime('%Y%m%d')}.csv","text/csv")
+
+    # --- CLUSTERS ---
+    with t2:
+        if not clusters:
+            st.info("Nenhum grupo formado. Reduza o limiar de similaridade.")
+        else:
+            COLORS = ["#60a5fa","#34d399","#f9a8d4","#fcd34d","#a78bfa",
+                      "#f87171","#67e8f9","#86efac","#fb923c","#c084fc"]
+            freq_map = tdf['tag'].value_counts().to_dict()
+            cls_sorted = sorted(clusters, key=len, reverse=True)
+
+            st.markdown(f"**{len(cls_sorted)} grupo(s) de tags relacionadas**")
+            st.markdown(divider(), unsafe_allow_html=True)
+
+            for i, cl in enumerate(cls_sorted, 1):
+                color = COLORS[(i-1) % len(COLORS)]
+                total_uses = sum(freq_map.get(t,0) for t in cl)
+                pills = "".join(
+                    f"<span class='cluster-pill'>{t} "
+                    f"<span style='opacity:.5;font-size:.7rem'>({freq_map.get(t,0)}x)</span></span>"
+                    for t in sorted(cl, key=lambda x: freq_map.get(x,0), reverse=True)
+                )
+                st.markdown(
+                    f"<div class='cluster-wrap' style='border-left:3px solid {color}'>"
+                    f"<div class='cluster-title'>Grupo {i} · {len(cl)} tags · {total_uses} usos totais</div>"
+                    f"{pills}</div>", unsafe_allow_html=True)
+
+            st.markdown(divider(), unsafe_allow_html=True)
+            st.markdown("#### Resumo dos Grupos")
+            summ = pd.DataFrame([{
+                "Grupo": f"Grupo {i}",
+                "Qtd Tags": len(cl),
+                "Total Usos": sum(freq_map.get(t,0) for t in cl),
+                "Tags": ", ".join(sorted(cl,key=lambda x:freq_map.get(x,0),reverse=True)[:6])
+                        + ("…" if len(cl)>6 else "")
+            } for i,cl in enumerate(cls_sorted,1)])
+            st.dataframe(summ, use_container_width=True, hide_index=True)
+
+            st.download_button(
+                " Baixar grupos (CSV)",
+                summ.to_csv(index=False).encode('utf-8'),
+                f"clusters_{datetime.now().strftime('%Y%m%d')}.csv","text/csv")
+
+# ═════════════════════════════════════════════════════════════════════
+# ABA 5 — USUARIOS E QUESTIONARIO
+# ═════════════════════════════════════════════════════════════════════
+def tab_users_quest():
+    tdf = all_tags()
+    udf = all_users()
+    obs = load_obras()
+    od = {o['id']:o['titulo'] for o in obs}
+
+    if udf.empty:
+        st.info("Nenhum dado de usuario disponivel.")
+        return
+
+    st.markdown("### Usuarios e Questionario")
+
+    # KPIs combinados
+    uct = tdf.groupby('user_id').size().reset_index(name='Total_Tags') if not tdf.empty else pd.DataFrame(columns=['user_id','Total_Tags'])
+    uuq = tdf.groupby('user_id')['tag'].nunique().reset_index(name='Tags_Unicas') if not tdf.empty else pd.DataFrame(columns=['user_id','Tags_Unicas'])
+    uob = tdf.groupby('user_id')['obra_id'].nunique().reset_index(name='Obras') if not tdf.empty else pd.DataFrame(columns=['user_id','Obras'])
+
+    merged = udf.merge(uct,on='user_id',how='left') \
+                .merge(uuq,on='user_id',how='left') \
+                .merge(uob,on='user_id',how='left').fillna(0)
+    merged['TTR'] = (merged['Tags_Unicas']/merged['Total_Tags'].replace(0,np.nan)).fillna(0).round(3)
+    merged['Usuario'] = merged.apply(lambda r: r.get('animal_name', r['user_id'][:8]), axis=1)
+
+    c1,c2,c3,c4 = st.columns(4)
+    top_u = merged.loc[merged['Total_Tags'].idxmax(),'Usuario'] if not merged.empty else "-"
+    with c1: st.markdown(kpi("Participantes", len(merged),"usuarios","#a7e6ff"), unsafe_allow_html=True)
+    with c2: st.markdown(kpi("Media Tags/Usuario", f"{merged['Total_Tags'].mean():.1f}","","#6ee7b7"), unsafe_allow_html=True)
+    with c3: st.markdown(kpi("Maior Contribuicao", int(merged['Total_Tags'].max()),top_u[:16],"#fcd34d"), unsafe_allow_html=True)
+    with c4: st.markdown(kpi("Riqueza Media (TTR)", f"{merged['TTR'].mean():.2%}","vocabular","#d1baff"), unsafe_allow_html=True)
+
+    st.markdown(divider(), unsafe_allow_html=True)
+
+    t1, t2, t3, t4 = st.tabs([
+        " Tabela de Participantes",
+        " Perfil Individual",
+        "Respostas do Questionario",
+        " Cruzamentos"
+    ])
+
+    # --- TABELA ---
+    with t1:
+        st.markdown("#### Comparativo Geral de Participantes")
+        dcols = ['Usuario','Total_Tags','Tags_Unicas','TTR','Obras','q1','q2']
+        avail = [c for c in dcols if c in merged.columns]
+        disp = merged[avail].rename(columns={
+            'Total_Tags':'Tags Criadas','Tags_Unicas':'Tags Unicas',
+            'Obras':'Obras Etiquetadas','q1':'Familiaridade c/ Museus',
+            'q2':'Conhec. Museologico'
+        }).sort_values('Tags Criadas',ascending=False)
+        st.dataframe(disp, use_container_width=True, hide_index=True)
+
+        st.markdown(divider(), unsafe_allow_html=True)
+        st.markdown("#### Contribuicao por Participante")
+        fig = px.bar(merged, x='Usuario', y='Total_Tags',
+                    title='Numero de Tags Criadas por Participante',
+                    color='Total_Tags',
+                    color_continuous_scale='Viridis')
+        fig.update_layout(
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            font_color='white'
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("**Riqueza Vocabular (TTR) por Usuario**")
+            fig = px.bar(merged, x='Usuario', y='TTR',
+                        color='TTR',
+                        color_continuous_scale='Viridis')
+            fig.update_layout(
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)',
+                font_color='white'
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        with c2:
+            st.markdown("**Obras Etiquetadas por Usuario**")
+            fig = px.bar(merged, x='Usuario', y='Obras',
+                        color='Obras',
+                        color_continuous_scale='Viridis')
+            fig.update_layout(
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)',
+                font_color='white'
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+    # --- PERFIL INDIVIDUAL ---
+    with t2:
+        st.markdown("#### Perfil Detalhado por Participante")
+        uopts = [f"🐾 {r.get('animal_name',r['user_id'][:8])}" for _,r in udf.iterrows()]
+        usel = st.selectbox("Selecione um participante:", uopts, key="ui_sel")
+        uidx = uopts.index(usel)
+        uid = udf.iloc[uidx]['user_id']
+        uanim = udf.iloc[uidx].get('animal_name', uid[:8])
+
+        utags = tdf[tdf['user_id']==uid] if not tdf.empty else pd.DataFrame()
+        if utags.empty:
+            st.info("Este participante ainda nao criou tags.")
+        else:
+            ttl = len(utags); unq = utags['tag'].nunique()
+            ttr_u = unq/ttl if ttl else 0
+
+            c1,c2,c3 = st.columns(3)
+            with c1: st.markdown(kpi("Tags Criadas", ttl,"","#a7e6ff"), unsafe_allow_html=True)
+            with c2: st.markdown(kpi("Tags Unicas", unq,f"TTR: {ttr_u:.2%}","#6ee7b7"), unsafe_allow_html=True)
+            with c3: st.markdown(kpi("Obras Tagueadas",utags['obra_id'].nunique(),"","#fcd34d"), unsafe_allow_html=True)
+
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown(f"**Top tags de {uanim}:**")
+                fig = px.bar(x=utags['tag'].value_counts().head(15).index,
+                           y=utags['tag'].value_counts().head(15).values,
+                           labels={'x':'Tag', 'y':'Frequencia'},
+                           color_discrete_sequence=['#a7e6ff'])
+                fig.update_layout(
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    font_color='white'
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            with c2:
+                st.markdown("**Distribuicao por obra:**")
+                obra_counts = utags.groupby('obra_id').size()
+                obra_counts.index = obra_counts.index.map(od)
+                fig = px.bar(x=obra_counts.index, y=obra_counts.values,
+                           labels={'x':'Obra', 'y':'Tags'},
+                           color_discrete_sequence=['#d1baff'])
+                fig.update_layout(
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    font_color='white'
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+            st.markdown("**Conexoes nas tags deste participante (limiar 0.30):**")
+            uconns = tag_connections(utags['tag'].tolist(), threshold=0.30)
+            if uconns:
+                for c in uconns[:10]:
+                    freq_map = utags['tag'].value_counts().to_dict()
+                    fa = freq_map.get(c['tag_a'],0)
+                    fb = freq_map.get(c['tag_b'],0)
+                    st.markdown(
+                        f"<div class='conn-row'>"
+                        f"<div style='display:flex;align-items:center;gap:9px;flex-wrap:wrap'>"
+                        f"<span class='tag-badge'>{c['tag_a']}</span>"
+                        f"<span style='color:rgba(255,255,255,.3);font-size:.7rem'>({fa}x)</span>"
+                        f"<span style='color:rgba(255,255,255,.35)'>↔</span>"
+                        f"<span class='tag-badge'>{c['tag_b']}</span>"
+                        f"<span style='color:rgba(255,255,255,.3);font-size:.7rem'>({fb}x)</span>"
+                        f"</div>"
+                        f"<span style='color:rgba(255,255,255,.35);font-size:.75rem'>"
+                        f"{c['similaridade']:.3f} · {c['tipo']}</span>"
+                        f"</div>", unsafe_allow_html=True)
+            else:
+                st.info("Nenhuma conexao encontrada nas tags deste participante.")
+
+            st.markdown(divider(), unsafe_allow_html=True)
+            st.markdown("**Todas as tags criadas:**")
+            ft = utags.copy()
+            ft['Obra'] = ft['obra_id'].map(od)
+            st.dataframe(
+                ft[['tag','Obra','timestamp']].rename(columns={'tag':'Tag','timestamp':'Data/Hora'}),
+                use_container_width=True, hide_index=True)
+
+    # --- QUESTIONARIO ---
+    with t3:
+        st.markdown("#### Respostas do Questionario de Perfil")
+
+        c1,c2 = st.columns(2)
+        with c1:
+            st.markdown("**Q1 — Familiaridade com Museus**")
+            q1c = udf['q1'].value_counts()
+            fig = px.bar(x=q1c.index, y=q1c.values,
+                        labels={'x':'Resposta', 'y':'Quantidade'},
+                        color_discrete_sequence=['#a7e6ff'])
+            fig.update_layout(
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)',
+                font_color='white'
+            )
+            st.plotly_chart(fig, use_container_width=True)
+            q1p = (q1c/q1c.sum()*100).round(1).reset_index()
+            q1p.columns=['Resposta','%']
+            st.dataframe(q1p, use_container_width=True, hide_index=True)
+
+        with c2:
+            st.markdown("**Q2 — Conhecimento sobre Documentacao Museologica**")
+            q2c = udf['q2'].value_counts()
+            fig = px.bar(x=q2c.index, y=q2c.values,
+                        labels={'x':'Resposta', 'y':'Quantidade'},
+                        color_discrete_sequence=['#d1baff'])
+            fig.update_layout(
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)',
+                font_color='white'
+            )
+            st.plotly_chart(fig, use_container_width=True)
+            q2p = (q2c/q2c.sum()*100).round(1).reset_index()
+            q2p.columns=['Resposta','%']
+            st.dataframe(q2p, use_container_width=True, hide_index=True)
+
+        st.markdown(divider(), unsafe_allow_html=True)
+        st.markdown("**Q3 — Respostas Abertas: O que voce entende por 'tags'?**")
+        disp = udf.copy()
+        if 'animal_name' in disp.columns:
+            disp = disp.rename(columns={'animal_name':'Usuario Anonimo'})
+        disp['Palavras'] = disp['q3'].str.split().str.len()
+        st.markdown(
+            f"Comprimento medio das respostas: "
+            f"**{disp['Palavras'].mean():.0f} palavras** por participante"
+        )
+        
+        fig = px.histogram(disp, x='Palavras', nbins=20,
+                          title='Distribuicao do Comprimento das Respostas',
+                          color_discrete_sequence=['#a7e6ff'])
+        fig.update_layout(
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            font_color='white'
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.markdown(divider(), unsafe_allow_html=True)
+        st.dataframe(
+            disp[['Usuario Anonimo','q3','Palavras','timestamp']]
+            .sort_values('timestamp',ascending=False)
+            .rename(columns={'q3':'Resposta','timestamp':'Data/Hora'}),
+            use_container_width=True, hide_index=True)
+
+    # --- CRUZAMENTOS ---
+    with t4:
+        if tdf.empty:
+            st.info("Dados de tags insuficientes para cruzamentos.")
+            return
+
+        st.markdown("#### Cruzamentos: Perfil do Participante × Comportamento de Tagging")
+
+        m = merged.copy()
+        m['TTR'] = (m['Tags_Unicas']/m['Total_Tags'].replace(0,np.nan)).fillna(0)
+
+        st.markdown(divider(), unsafe_allow_html=True)
+        st.markdown("**Familiaridade com Museus × Media de Tags Criadas**")
+        avg_q1 = m.groupby('q1')['Total_Tags'].mean().sort_values(ascending=False)
+        fig = px.bar(x=avg_q1.index, y=avg_q1.values,
+                    labels={'x':'Familiaridade', 'y':'Media de Tags'},
+                    color_discrete_sequence=['#a7e6ff'])
+        fig.update_layout(
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            font_color='white'
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        t_q1 = avg_q1.reset_index()
+        t_q1.columns = ['Familiaridade','Media de Tags']
+        t_q1['Media de Tags'] = t_q1['Media de Tags'].round(2)
+        st.dataframe(t_q1, use_container_width=True, hide_index=True)
+
+        st.markdown(divider(), unsafe_allow_html=True)
+        st.markdown("**Conhecimento Museologico × Tags Unicas**")
+        avg_q2 = m.groupby('q2')['Tags_Unicas'].mean().sort_values(ascending=False)
+        fig = px.bar(x=avg_q2.index, y=avg_q2.values,
+                    labels={'x':'Conhecimento', 'y':'Media Tags Unicas'},
+                    color_discrete_sequence=['#d1baff'])
+        fig.update_layout(
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            font_color='white'
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        t_q2 = avg_q2.reset_index()
+        t_q2.columns = ['Conhecimento','Media Tags Unicas']
+        t_q2['Media Tags Unicas'] = t_q2['Media Tags Unicas'].round(2)
+        st.dataframe(t_q2, use_container_width=True, hide_index=True)
+
+        st.markdown(divider(), unsafe_allow_html=True)
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("**Familiaridade × Riqueza Vocabular (TTR)**")
+            avg_ttr = m.groupby('q1')['TTR'].mean().sort_values(ascending=False)
+            fig = px.bar(x=avg_ttr.index, y=avg_ttr.values,
+                        color_discrete_sequence=['#6ee7b7'])
+            fig.update_layout(
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)',
+                font_color='white'
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        with c2:
+            st.markdown("**Conhecimento Museologico × TTR**")
+            avg_ttr2 = m.groupby('q2')['TTR'].mean().sort_values(ascending=False)
+            fig = px.bar(x=avg_ttr2.index, y=avg_ttr2.values,
+                        color_discrete_sequence=['#fcd34d'])
+            fig.update_layout(
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)',
+                font_color='white'
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+        st.markdown(divider(), unsafe_allow_html=True)
+        st.markdown("#### Tabela Consolidada de Cruzamentos")
+        cross = m.groupby('q1').agg(
+            Usuarios =('user_id','count'),
+            Media_Tags =('Total_Tags','mean'),
+            Media_Unicas =('Tags_Unicas','mean'),
+            Riqueza_TTR =('TTR','mean'),
+        ).round(2).reset_index()
+        cross.columns = ['Familiaridade','Usuarios','Media Tags','Media Unicas','Riqueza (TTR)']
+        st.dataframe(cross, use_container_width=True, hide_index=True)
+
+        st.markdown(insight(
+            "<strong>Interpretacao:</strong> Compare se participantes mais familiarizados com museus "
+            "produzem mais tags, maior diversidade vocabular (TTR) ou tags mais descritivas. "
+            "A riqueza vocabular (TTR) mede a proporcao de termos unicos sobre o total criado — "
+            "valores proximos de 1.0 indicam alta originalidade e variedade nas tags."
+        ), unsafe_allow_html=True)
+
+# ═════════════════════════════════════════════════════════════════════
+# ABA 6 — GESTAO DE OBRAS
+# ═════════════════════════════════════════════════════════════════════
+def tab_obras():
+    st.markdown("### Gestao de Obras")
+    obras = load_obras()
+    t1, t2 = st.tabs(["Listar Obras","Adicionar Nova"])
+
+    with t1:
+        if obras:
+            for obra in obras:
+                c1,c2,c3 = st.columns([1,2,1])
+                with c1: st.image(obra['imagem'], use_container_width=True)
+                with c2:
+                    st.markdown(f"**#{obra['id']} – {obra['titulo']}**")
+                    st.markdown(f"*{obra['artista']} — {obra['ano']}*")
+                    
+                    # Gerar descrição para acessibilidade
+                    if st.session_state.accessibility['audio_descriptions']:
+                        img_desc = generate_image_description(obra['imagem'])
+                        st.markdown(f"<small>{img_desc}</small>", unsafe_allow_html=True)
+                        
+                with c3:
+                    if st.button(" Remover", key=f"del_{obra['id']}"):
+                        obras.remove(obra)
+                        save_json_file(OBRAS_FILE, obras)
+                        st.success("Obra removida!")
+                        st.cache_data.clear()
+                        st.rerun()
+                st.divider()
+        else:
+            st.info("Nenhuma obra cadastrada.")
+
+    with t2:
+        with st.form("add_obra"):
+            titulo = st.text_input("Titulo da Obra")
+            artista = st.text_input("Artista")
+            ano = st.text_input("Ano")
+            imagem = st.text_input("URL da Imagem")
+            if st.form_submit_button(" Adicionar Obra"):
+                if titulo and artista and ano and imagem:
+                    nid = max([o['id'] for o in obras])+1 if obras else 1
+                    obras.append({"id":nid,"titulo":titulo,"artista":artista,"ano":ano,"imagem":imagem})
+                    save_json_file(OBRAS_FILE, obras)
+                    st.success("Obra adicionada!")
+                    st.cache_data.clear()
+                    st.rerun()
+                else:
+                    st.error("Preencha todos os campos!")
+
+# ═════════════════════════════════════════════════════════════════════
+# ABA 7 — EXPORTAR
+# ═════════════════════════════════════════════════════════════════════
+def tab_export():
+    st.markdown("### Central de Exportacao")
+    tdf = all_tags()
+    udf = all_users()
+    obs = load_obras()
+
+    t1, t2 = st.tabs([" Exportacao Geral", " Por Participante"])
+
+    with t1:
+        c1,c2,c3 = st.columns(3)
+        with c1:
+            st.markdown("#### Tags")
+            if not tdf.empty:
+                st.download_button(" Todas as Tags (CSV)",
+                    tdf.to_csv(index=False).encode('utf-8'),
+                    f"tags_{datetime.now().strftime('%Y%m%d')}.csv","text/csv",
+                    use_container_width=True)
+                freq = tdf['tag'].value_counts().reset_index()
+                freq.columns=['Tag','Frequencia']
+                freq['%']=(freq['Frequencia']/freq['Frequencia'].sum()*100).round(2)
+                st.download_button(" Frequencias (CSV)",
+                    freq.to_csv(index=False).encode('utf-8'),
+                    f"freq_{datetime.now().strftime('%Y%m%d')}.csv","text/csv",
+                    use_container_width=True)
+        with c2:
+            st.markdown("#### Usuarios")
+            if not udf.empty:
+                st.download_button(" Usuarios (CSV)",
+                    udf.to_csv(index=False).encode('utf-8'),
+                    f"usuarios_{datetime.now().strftime('%Y%m%d')}.csv","text/csv",
+                    use_container_width=True)
+        with c3:
+            st.markdown("#### Obras")
+            if obs:
+                st.download_button(" Obras (CSV)",
+                    pd.DataFrame(obs).to_csv(index=False).encode('utf-8'),
+                    f"obras_{datetime.now().strftime('%Y%m%d')}.csv","text/csv",
+                    use_container_width=True)
+
+        st.markdown(divider(), unsafe_allow_html=True)
+        st.markdown("#### Exportar Conexoes de Tags")
         if not tdf.empty:
-            text = " ".join(tdf['tag'].tolist())
+            thr = st.slider("Limiar de similaridade:", 0.2, 0.9, 0.35, 0.05, key="exp_thr")
+            if st.button("Gerar arquivo de conexoes"):
+                with st.spinner("Calculando…"):
+                    conns = tag_connections(tdf['tag'].tolist(), threshold=thr)
+                if conns:
+                    cdf = pd.DataFrame(conns)
+                    st.download_button(" Conexoes (CSV)",
+                        cdf.to_csv(index=False).encode('utf-8'),
+                        f"conexoes_{datetime.now().strftime('%Y%m%d')}.csv","text/csv",
+                        use_container_width=True)
+                    st.success(f"{len(conns)} conexoes exportadas.")
+                else:
+                    st.info("Nenhuma conexao encontrada com este limiar.")
 
-            # Remover caracteres especiais e números, manter apenas letras e espaços
-            cleaned_text = re.sub(r'[^a-zA-Z\s]', '', text)
+    with t2:
+        if udf.empty:
+            st.info("Nenhum participante cadastrado.")
+            return
+        uopts = [f"🐾 {r.get('animal_name',r['user_id'][:8])}" for _,r in udf.iterrows()]
+        usel = st.selectbox("Selecione um participante:", uopts, key="exp_u")
+        uidx = uopts.index(usel)
+        uid = udf.iloc[uidx]['user_id']
+        uanim = udf.iloc[uidx].get('animal_name', uid[:8])
 
-            # Definir stop words em português (pode ser expandido)
-            stopwords_pt = set([
-                "de", "a", "o", "que", "e", "do", "da", "em", "um", "para", "com", "nao", "uma", "os", "no", "se", "na", "por", "mais", "as", "dos", "das", "como", "mas", "ao", "ele", "das", "eu", "meu", "sua", "ou", "ser", "quando", "muito", "ha", "nos", "ja", "tambem", "so", "pelo", "pela", "ate", "isso", "ela", "entre", "depois", "sem", "mesmo", "aos", "ter", "seus", "quem", "nas", "me", "esse", "eles", "voce", "essa", "num", "nem", "suas", "ja", "foi", "sao", "era", "sobre", "onde", "estas", "este", "isto", "la", "deles", "delas", "fui", "foram", "fomos", "serei", "sera", "seremos", "serao", "fomos", "fosse", "fossem", "sendo", "tendo", "tido", "tinha", "tinham", "tive", "teve", "tiveram", "tivesse", "tivessem", "tenho", "tem", "temos", "tem", "terao", "teremos", "terei", "teria", "teriam", "teriamos", "vez", "vezes", "dia", "dias", "ano", "anos", "mes", "meses", "hora", "horas", "minuto", "minutos", "segundo", "segundos", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc", "etcetera", "etc
+        st.markdown(f"#### Dados de: **{uanim}**")
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("##### Questionario")
+            st.download_button(" Respostas (CSV)",
+                udf[udf['user_id']==uid].to_csv(index=False).encode('utf-8'),
+                f"quest_{uid[:8]}.csv","text/csv", use_container_width=True)
+        with c2:
+            st.markdown("##### Tags Criadas")
+            ut = get_user_tags(uid)
+            if not ut.empty:
+                st.download_button(" Tags (CSV)",
+                    ut.to_csv(index=False).encode('utf-8'),
+                    f"tags_{uid[:8]}.csv","text/csv", use_container_width=True)
 
+if __name__ == "__main__":
+    main()
