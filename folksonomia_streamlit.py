@@ -87,15 +87,14 @@ ADMIN_FILE = os.path.join(DATA_DIR, "admin.json")
 ADMIN_USERNAME = "nugep"
 ADMIN_PASSWORD = "nugep123"
 
-# Configurações de acessibilidade
+# Configurações de acessibilidade - garantir que todas as chaves existam
 if 'accessibility' not in st.session_state:
     st.session_state.accessibility = {
         'font_size': 'medium',
         'theme': 'dark',
         'high_contrast': False,
         'reduce_motion': False,
-        'audio_enabled': False,
-        'audio_descriptions': True
+        'audio_enabled': False
     }
 
 # Mapeamento de tamanhos de fonte
@@ -149,18 +148,28 @@ def apply_font_size():
     fs = FONT_SIZES[st.session_state.accessibility['font_size']]
     font_size_js = f"""
     <script>
+        // Aplicar variáveis CSS
         document.documentElement.style.setProperty('--font-size-base', '{fs['base']}');
         document.documentElement.style.setProperty('--font-size-h1', '{fs['h1']}');
         document.documentElement.style.setProperty('--font-size-h2', '{fs['h2']}');
         document.documentElement.style.setProperty('--font-size-h3', '{fs['h3']}');
         
-        // Aplicar a todos os elementos
+        // Aplicar aos elementos
         document.body.style.fontSize = '{fs['base']}';
+        
+        // Aplicar a todos os elementos de texto
+        var allElements = document.querySelectorAll('p, span, div, label, .stMarkdown, .stText');
+        allElements.forEach(function(el) {{
+            el.style.fontSize = '{fs['base']}';
+        }});
+        
+        // Aplicar aos headings
         var headings = document.querySelectorAll('h1, h2, h3, h4, h5, h6');
         headings.forEach(function(el) {{
             if (el.tagName === 'H1') el.style.fontSize = '{fs['h1']}';
             else if (el.tagName === 'H2') el.style.fontSize = '{fs['h2']}';
             else if (el.tagName === 'H3') el.style.fontSize = '{fs['h3']}';
+            else el.style.fontSize = '{fs['base']}';
         }});
     </script>
     """
@@ -209,6 +218,10 @@ def apply_theme():
             border-color: {theme['border']} !important;
             color: {theme['text']} !important;
         }}
+        .insight {{
+            background: {theme['card']} !important;
+            border-color: {theme['border']} !important;
+        }}
     </style>
     """
     st.markdown(theme_css, unsafe_allow_html=True)
@@ -219,34 +232,49 @@ def apply_high_contrast():
         contrast_css = """
         <style>
             .stApp {
-                background: #000 !important;
+                background: #000000 !important;
             }
             .glass-card, .obra-card, .kpi-card, .stat-card {
-                background: #fff !important;
-                border: 3px solid #000 !important;
+                background: #ffffff !important;
+                border: 3px solid #000000 !important;
             }
             h1, h2, h3, h4, h5, h6, label, .stMarkdown, p {
-                color: #fff !important;
-                text-shadow: 2px 2px 0 #000 !important;
+                color: #ffffff !important;
+                text-shadow: 2px 2px 0 #000000 !important;
             }
             .stButton button {
-                background: #000 !important;
-                color: #fff !important;
-                border: 3px solid #fff !important;
+                background: #000000 !important;
+                color: #ffffff !important;
+                border: 3px solid #ffffff !important;
+            }
+            .stButton button:hover {
+                background: #333333 !important;
             }
             .stTextInput input, .stTextArea textarea {
-                background: #fff !important;
-                color: #000 !important;
-                border: 3px solid #000 !important;
+                background: #ffffff !important;
+                color: #000000 !important;
+                border: 3px solid #000000 !important;
             }
             .tag-badge {
-                background: #000 !important;
-                color: #fff !important;
-                border: 2px solid #fff !important;
+                background: #000000 !important;
+                color: #ffffff !important;
+                border: 2px solid #ffffff !important;
+            }
+            .navbar-logo {
+                color: #ffffff !important;
+                -webkit-text-fill-color: #ffffff !important;
+            }
+            .insight {
+                background: #000000 !important;
+                border: 2px solid #ffffff !important;
+                color: #ffffff !important;
             }
         </style>
         """
         st.markdown(contrast_css, unsafe_allow_html=True)
+    else:
+        # Reaplicar tema normal quando desativar alto contraste
+        apply_theme()
 
 def apply_reduce_motion():
     """Aplica redução de movimento"""
@@ -261,9 +289,28 @@ def apply_reduce_motion():
             .glass-card:hover, .obra-card:hover, .kpi-card:hover {
                 transform: none !important;
             }
+            @keyframes none {
+                0% { }
+                100% { }
+            }
+            .stApp {
+                animation: none !important;
+            }
         </style>
         """
         st.markdown(motion_css, unsafe_allow_html=True)
+    else:
+        # Remover CSS de redução de movimento
+        st.markdown("""
+        <style>
+            * {
+                transition: all 0.4s cubic-bezier(.4,0,.2,1) !important;
+            }
+            .stApp {
+                animation: bg 15s ease infinite !important;
+            }
+        </style>
+        """, unsafe_allow_html=True)
 
 def accessibility_controls():
     """Controles de acessibilidade na barra lateral"""
@@ -271,76 +318,124 @@ def accessibility_controls():
         st.markdown("### Acessibilidade")
         
         # Tamanho da fonte
-        old_font = st.session_state.accessibility['font_size']
-        st.session_state.accessibility['font_size'] = st.select_slider(
+        font_size_options = ['small', 'medium', 'large', 'x-large']
+        font_size_labels = ['Pequeno', 'Médio', 'Grande', 'Extra Grande']
+        
+        current_index = font_size_options.index(st.session_state.accessibility['font_size'])
+        
+        selected_size = st.selectbox(
             "Tamanho da Fonte",
-            options=['small', 'medium', 'large', 'x-large'],
-            value=st.session_state.accessibility['font_size'],
-            format_func=lambda x: {
-                'small': 'Pequeno',
-                'medium': 'Médio',
-                'large': 'Grande',
-                'x-large': 'Extra Grande'
-            }[x]
+            options=font_size_options,
+            format_func=lambda x: font_size_labels[font_size_options.index(x)],
+            index=current_index,
+            key="font_size_select"
         )
-        if old_font != st.session_state.accessibility['font_size']:
+        
+        if selected_size != st.session_state.accessibility['font_size']:
+            st.session_state.accessibility['font_size'] = selected_size
             apply_font_size()
         
         # Tema
-        old_theme = st.session_state.accessibility['theme']
-        st.session_state.accessibility['theme'] = st.radio(
+        theme_options = ['dark', 'light']
+        theme_labels = ['Escuro', 'Claro']
+        
+        current_theme_index = theme_options.index(st.session_state.accessibility['theme'])
+        
+        selected_theme = st.radio(
             "Tema",
-            options=['dark', 'light'],
-            format_func=lambda x: 'Escuro' if x == 'dark' else 'Claro',
+            options=theme_options,
+            format_func=lambda x: theme_labels[theme_options.index(x)],
+            index=current_theme_index,
             horizontal=True,
             key="theme_radio"
         )
-        if old_theme != st.session_state.accessibility['theme']:
+        
+        if selected_theme != st.session_state.accessibility['theme']:
+            st.session_state.accessibility['theme'] = selected_theme
             apply_theme()
         
         # Alto contraste
-        old_contrast = st.session_state.accessibility['high_contrast']
-        st.session_state.accessibility['high_contrast'] = st.checkbox(
+        high_contrast = st.checkbox(
             "Alto Contraste",
             value=st.session_state.accessibility['high_contrast'],
             key="contrast_check"
         )
-        if old_contrast != st.session_state.accessibility['high_contrast']:
+        
+        if high_contrast != st.session_state.accessibility['high_contrast']:
+            st.session_state.accessibility['high_contrast'] = high_contrast
             apply_high_contrast()
         
         # Reduzir movimento
-        old_motion = st.session_state.accessibility['reduce_motion']
-        st.session_state.accessibility['reduce_motion'] = st.checkbox(
+        reduce_motion = st.checkbox(
             "Reduzir Movimento",
             value=st.session_state.accessibility['reduce_motion'],
             key="motion_check"
         )
-        if old_motion != st.session_state.accessibility['reduce_motion']:
+        
+        if reduce_motion != st.session_state.accessibility['reduce_motion']:
+            st.session_state.accessibility['reduce_motion'] = reduce_motion
             apply_reduce_motion()
         
         # Ativar áudio
-        st.session_state.accessibility['audio_enabled'] = st.checkbox(
+        audio_enabled = st.checkbox(
             "Ativar Áudio",
-            value=st.session_state.accessibility['audio_enabled'],
-            help="Reproduzir descrições em áudio quando disponíveis"
+            value=st.session_state.accessibility.get('audio_enabled', False),
+            help="Reproduzir descrições em áudio quando disponíveis",
+            key="audio_check"
         )
+        
+        if audio_enabled != st.session_state.accessibility.get('audio_enabled', False):
+            st.session_state.accessibility['audio_enabled'] = audio_enabled
         
         st.markdown("---")
 
 def text_to_speech(text):
     """Converte texto para áudio usando Web Speech API"""
-    if not st.session_state.accessibility['audio_enabled']:
+    if not st.session_state.accessibility.get('audio_enabled', False):
         return
+    
+    # Escapar caracteres especiais para JSON
+    text_escaped = json.dumps(text)
     
     audio_js = f"""
     <script>
+        // Cancelar qualquer áudio anterior
+        window.speechSynthesis.cancel();
+        
+        // Criar nova mensagem
         var msg = new SpeechSynthesisUtterance();
-        msg.text = {json.dumps(text)};
+        msg.text = {text_escaped};
         msg.lang = 'pt-BR';
         msg.rate = 1.0;
         msg.pitch = 1.0;
-        window.speechSynthesis.cancel(); // Cancelar qualquer áudio anterior
-        window.speechSynthesis.speak(msg);
+        msg.volume = 1.0;
+        
+        // Obter vozes disponíveis
+        window.speechSynthesis.onvoiceschanged = function() {{
+            var voices = window.speechSynthesis.getVoices();
+            // Tentar encontrar voz em português
+            var portugueseVoice = voices.find(function(voice) {{
+                return voice.lang.includes('pt') || voice.lang.includes('PT');
+            }});
+            if (portugueseVoice) {{
+                msg.voice = portugueseVoice;
+            }}
+            window.speechSynthesis.speak(msg);
+        }};
+        
+        // Se as vozes já estiverem carregadas
+        if (window.speechSynthesis.getVoices().length > 0) {{
+            var voices = window.speechSynthesis.getVoices();
+            var portugueseVoice = voices.find(function(voice) {{
+                return voice.lang.includes('pt') || voice.lang.includes('PT');
+            }});
+            if (portugueseVoice) {{
+                msg.voice = portugueseVoice;
+            }}
+            window.speechSynthesis.speak(msg);
+        }} else {{
+            window.speechSynthesis.speak(msg);
+        }}
     </script>
     """
     st.components.v1.html(audio_js, height=0)
@@ -382,7 +477,7 @@ def generate_image_description(image_url):
         
         # Extrair metadados básicos
         width, height = img.size
-        format_img = img.format
+        format_img = img.format or "desconhecido"
         
         # Análise básica de cores
         img_array = np.array(img)
@@ -485,7 +580,7 @@ def advanced_tag_analysis(tags_df):
     
     # Hapax legomena
     analysis['hapax_count'] = (freq_dist == 1).sum()
-    analysis['hapax_percentage'] = (analysis['hapax_count'] / analysis['unique_tags'] * 100)
+    analysis['hapax_percentage'] = (analysis['hapax_count'] / analysis['unique_tags'] * 100) if analysis['unique_tags'] > 0 else 0
     
     # Análise de comprimento das tags
     tag_lengths = tags_df['tag'].str.len()
@@ -636,6 +731,7 @@ def advanced_filters(obras, tags_df):
                 else:
                     min_popularity = 0
             else:
+                obra_popularity = pd.Series()
                 min_popularity = 0
         
         # Ordenação
@@ -670,7 +766,7 @@ def advanced_filters(obras, tags_df):
                          if all(tag in obra_tags.get(o['id'], []) 
                                for tag in selected_tags)]
     
-    if min_popularity > 0 and obra_popularity is not None:
+    if min_popularity > 0 and not obra_popularity.empty:
         filtered_obras = [o for o in filtered_obras 
                          if obra_popularity.get(o['id'], 0) >= min_popularity]
     
@@ -686,7 +782,7 @@ def advanced_filters(obras, tags_df):
         filtered_obras = sorted(filtered_obras, 
                                key=lambda x: int(x.get('ano', 0)), 
                                reverse=reverse)
-    elif sort_by == "Popularidade" and not tags_df.empty:
+    elif sort_by == "Popularidade" and not tags_df.empty and not obra_popularity.empty:
         filtered_obras = sorted(filtered_obras,
                                key=lambda x: obra_popularity.get(x['id'], 0),
                                reverse=reverse)
@@ -1407,7 +1503,7 @@ def show_obras():
             """, unsafe_allow_html=True)
             
             # Botão de descrição em áudio
-            if st.session_state.accessibility['audio_enabled']:
+            if st.session_state.accessibility.get('audio_enabled', False):
                 col1, col2 = st.columns(2)
                 with col1:
                     if st.button("🔊 Áudio", key=f"audio_{obra['id']}"):
@@ -2175,7 +2271,7 @@ def tab_obras():
                     st.markdown(f"*{obra['artista']} — {obra['ano']}*")
                     
                     # Gerar descrição para acessibilidade
-                    if st.session_state.accessibility['audio_enabled'] and REQUESTS_AVAILABLE and PIL_AVAILABLE:
+                    if st.session_state.accessibility.get('audio_enabled', False) and REQUESTS_AVAILABLE and PIL_AVAILABLE:
                         img_desc = generate_image_description(obra['imagem'])
                         st.markdown(f"<small>{img_desc}</small>", unsafe_allow_html=True)
                         
