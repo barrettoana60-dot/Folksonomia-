@@ -608,9 +608,9 @@ def show_admin():
                 st.session_state['admin_logged_in'] = False
                 st.rerun()
 
-# ═════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
 # ABA 1 — VISÃO GERAL
-# ═════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
 def tab_overview():
     tdf = all_tags()
     udf = all_users()
@@ -676,9 +676,9 @@ def tab_overview():
                 ot[['Obra','Tags']].sort_values('Tags',ascending=False),
                 use_container_width=True, hide_index=True)
 
-# ═════════════════════════════════════════════════════════════════════
-# ABA 2 — ANÁLISE DE TAGS (Frequência + Temporal)
-# ═════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
+# ABA 2 — ANÁLISE DE TAGS
+# ═══════════════════════════════════════════════════════════════════
 def tab_tags():
     tdf = all_tags()
     if tdf.empty:
@@ -688,7 +688,6 @@ def tab_tags():
     st.markdown("### Análise de Tags")
     t1, t2 = st.tabs([" Frequência e Vocabulário", " Evolução Temporal"])
 
-    # ─── FREQUÊNCIA ───────────────────────────────────────────────────
     with t1:
         freq = tdf['tag'].value_counts().reset_index()
         freq.columns = ['Tag','Frequência']
@@ -714,8 +713,7 @@ def tab_tags():
 
         st.markdown(insight(
             f"<strong>Distribuição de Zipf:</strong> As {lei80} tags mais frequentes cobrem 80% de todos os usos. "
-            f"Existem {hapax} hapax legomena — termos usados somente uma vez "
-            f"({hapax/len(freq):.0%} do vocabulário total). "
+            f"Existem {hapax} hapax legomena ({hapax/len(freq):.0%} do vocabulário total). "
             f"TTR global de <strong>{ttr:.3f}</strong> indica "
             f"{'alta' if ttr>0.5 else 'moderada' if ttr>0.25 else 'baixa'} diversidade lexical."
         ), unsafe_allow_html=True)
@@ -743,7 +741,6 @@ def tab_tags():
             cd.columns = ['Categoria','Qtd']
             st.dataframe(cd, use_container_width=True, hide_index=True)
 
-    # ─── TEMPORAL ─────────────────────────────────────────────────────
     with t2:
         st.markdown("#### Evolução Temporal das Tags")
         try:
@@ -752,12 +749,9 @@ def tab_tags():
             tf['date']  = tf['ts'].dt.date
             tf['ano']   = tf['ts'].dt.year
             tf['mes']   = tf['ts'].dt.month
-            tf['dia']   = tf['ts'].dt.day
             tf['hora']  = tf['ts'].dt.hour
             tf['dow']   = tf['ts'].dt.day_name()
-            tf['semana']= tf['ts'].dt.isocalendar().week.astype(int)
 
-            # ── KPIs temporais ──
             dias_ativos = tf['date'].nunique()
             media_dia   = len(tf)/dias_ativos if dias_ativos else 0
             pico_dia    = tf.groupby('date').size()
@@ -772,7 +766,6 @@ def tab_tags():
 
             st.markdown(divider(), unsafe_allow_html=True)
 
-            # ── Linha: tags por dia ──
             daily = tf.groupby('date').agg(
                 Tags=('tag','count'),
                 Tags_Unicas=('tag','nunique'),
@@ -791,8 +784,6 @@ def tab_tags():
                 st.line_chart(daily.set_index('Data')['Tags_Unicas'])
 
             st.markdown(divider(), unsafe_allow_html=True)
-
-            # ── Por mês ──
             st.markdown("#### Distribuição Mensal")
             meses_pt = {1:"Jan",2:"Fev",3:"Mar",4:"Abr",5:"Mai",6:"Jun",
                         7:"Jul",8:"Ago",9:"Set",10:"Out",11:"Nov",12:"Dez"}
@@ -803,32 +794,9 @@ def tab_tags():
             ).reset_index()
             monthly['Mês/Ano'] = monthly['mes'].map(meses_pt)+"/"+monthly['ano'].astype(str)
             monthly = monthly.sort_values(['ano','mes'])
-
             st.bar_chart(monthly.set_index('Mês/Ano')['Tags'])
 
-            c1, c2 = st.columns(2)
-            with c1:
-                st.markdown("**Usuários únicos por mês**")
-                st.bar_chart(monthly.set_index('Mês/Ano')['Usuarios'])
-            with c2:
-                st.markdown("**Tags únicas por mês**")
-                st.bar_chart(monthly.set_index('Mês/Ano')['Tags_Unicas'])
-
             st.markdown(divider(), unsafe_allow_html=True)
-
-            # ── Por ano ──
-            st.markdown("#### Distribuição Anual")
-            yearly = tf.groupby('ano').agg(
-                Tags=('tag','count'),
-                Tags_Unicas=('tag','nunique'),
-                Usuarios=('user_id','nunique')
-            ).reset_index().rename(columns={'ano':'Ano'})
-            st.bar_chart(yearly.set_index('Ano')['Tags'])
-            st.dataframe(yearly, use_container_width=True, hide_index=True)
-
-            st.markdown(divider(), unsafe_allow_html=True)
-
-            # ── Distribuição por dia da semana e hora ──
             st.markdown("#### Padrões de Uso")
             c1, c2 = st.columns(2)
             with c1:
@@ -844,8 +812,6 @@ def tab_tags():
                 st.bar_chart(dow_c.rename("Tags"))
 
             st.markdown(divider(), unsafe_allow_html=True)
-
-            # ── Tabela consolidada ──
             st.markdown("#### Tabela Detalhada por Dia")
             daily_full = tf.groupby('date').agg(
                 Total=('tag','count'),
@@ -857,25 +823,12 @@ def tab_tags():
             daily_full = daily_full.sort_values('Data',ascending=False)
             st.dataframe(daily_full, use_container_width=True, hide_index=True)
 
-            st.markdown("#### Tabela Mensal Consolidada")
-            monthly_full = monthly[['Mês/Ano','Tags','Tags_Unicas','Usuarios']].copy()
-            monthly_full.columns = ['Mês/Ano','Tags Criadas','Tags Únicas','Usuários Ativos']
-            st.dataframe(monthly_full, use_container_width=True, hide_index=True)
-
-            if len(daily)>1:
-                st.markdown(insight(
-                    f"<strong>Tendência:</strong> Pico de <strong>{pico_val} tags</strong> em {pico_dt}. "
-                    f"Média de <strong>{media_dia:.1f} tags/dia</strong> nos {dias_ativos} dias com atividade. "
-                    f"Total de {len(tf)} tags distribuídas ao longo de "
-                    f"{monthly['ano'].nunique()} ano(s) e {len(monthly)} mês(es) registrado(s)."
-                ), unsafe_allow_html=True)
-
         except Exception as e:
-            st.info(f"Dados insuficientes para análise temporal.")
+            st.info("Dados insuficientes para análise temporal.")
 
-# ═════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
 # ABA 3 — CONEXÕES DE TAGS
-# ═════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
 def tab_connections():
     tdf  = all_tags()
     obs  = load_obras()
@@ -887,9 +840,9 @@ def tab_connections():
     st.markdown("### Conexões e Agrupamentos de Tags")
     st.markdown(insight(
         "<strong>Como funciona:</strong> O algoritmo combina três métricas — "
-        "<strong>Contenção de substring</strong> (ex: 'vaso' → 'vaso verde'), "
-        "<strong>Jaccard de palavras</strong> (ex: 'barco preto' ↔ 'barco de barro') e "
-        "<strong>Jaccard de trigramas</strong> (similaridade fonética). "
+        "<strong>Contenção de substring</strong>, "
+        "<strong>Jaccard de palavras</strong> e "
+        "<strong>Jaccard de trigramas</strong>. "
         "Score de 0 (sem relação) a 1 (idênticas)."
     ), unsafe_allow_html=True)
 
@@ -919,10 +872,8 @@ def tab_connections():
                               "tags conectadas","#6ee7b7"), unsafe_allow_html=True)
 
     st.markdown(divider(), unsafe_allow_html=True)
-
     t1, t2 = st.tabs([" Lista de Conexões"," Grupos de Tags"])
 
-    # ── LISTA ─────────────────────────────────────────────────────────
     with t1:
         if not conns:
             st.info("Nenhuma conexão encontrada. Reduza o limiar de similaridade.")
@@ -955,24 +906,19 @@ def tab_connections():
                     f"<span style='font-size:.7rem;color:rgba(255,255,255,.35)'>{c['tipo']}</span>"
                     f"</div></div>", unsafe_allow_html=True)
 
-            st.markdown(divider(), unsafe_allow_html=True)
             st.download_button(
                 "⬇️ Baixar conexões (CSV)",
                 pd.DataFrame(conns).to_csv(index=False).encode('utf-8'),
                 f"conexoes_{datetime.now().strftime('%Y%m%d')}.csv","text/csv")
 
-    # ── CLUSTERS ──────────────────────────────────────────────────────
     with t2:
         if not clusters:
             st.info("Nenhum grupo formado. Reduza o limiar de similaridade.")
         else:
             COLORS = ["#60a5fa","#34d399","#f9a8d4","#fcd34d","#a78bfa",
                       "#f87171","#67e8f9","#86efac","#fb923c","#c084fc"]
-            freq_map     = tdf['tag'].value_counts().to_dict()
-            cls_sorted   = sorted(clusters, key=len, reverse=True)
-
-            st.markdown(f"**{len(cls_sorted)} grupo(s) de tags relacionadas**")
-            st.markdown(divider(), unsafe_allow_html=True)
+            freq_map   = tdf['tag'].value_counts().to_dict()
+            cls_sorted = sorted(clusters, key=len, reverse=True)
 
             for i, cl in enumerate(cls_sorted, 1):
                 color      = COLORS[(i-1) % len(COLORS)]
@@ -987,8 +933,6 @@ def tab_connections():
                     f"<div class='cluster-title'>Grupo {i} · {len(cl)} tags · {total_uses} usos totais</div>"
                     f"{pills}</div>", unsafe_allow_html=True)
 
-            st.markdown(divider(), unsafe_allow_html=True)
-            st.markdown("#### Resumo dos Grupos")
             summ = pd.DataFrame([{
                 "Grupo": f"Grupo {i}",
                 "Qtd Tags": len(cl),
@@ -997,15 +941,14 @@ def tab_connections():
                         + ("…" if len(cl)>6 else "")
             } for i,cl in enumerate(cls_sorted,1)])
             st.dataframe(summ, use_container_width=True, hide_index=True)
-
             st.download_button(
                 "⬇️ Baixar grupos (CSV)",
                 summ.to_csv(index=False).encode('utf-8'),
                 f"clusters_{datetime.now().strftime('%Y%m%d')}.csv","text/csv")
 
-# ═════════════════════════════════════════════════════════════════════
-# ABA 4 — USUÁRIOS & QUESTIONÁRIO (unificado)
-# ═════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
+# ABA 4 — USUÁRIOS & QUESTIONÁRIO
+# ═══════════════════════════════════════════════════════════════════
 def tab_users_quest():
     tdf = all_tags()
     udf = all_users()
@@ -1018,7 +961,6 @@ def tab_users_quest():
 
     st.markdown("### Usuários & Questionário")
 
-    # ── KPIs combinados ──
     uct = tdf.groupby('user_id').size().reset_index(name='Total_Tags') if not tdf.empty else pd.DataFrame(columns=['user_id','Total_Tags'])
     uuq = tdf.groupby('user_id')['tag'].nunique().reset_index(name='Tags_Unicas') if not tdf.empty else pd.DataFrame(columns=['user_id','Tags_Unicas'])
     uob = tdf.groupby('user_id')['obra_id'].nunique().reset_index(name='Obras') if not tdf.empty else pd.DataFrame(columns=['user_id','Obras'])
@@ -1041,13 +983,11 @@ def tab_users_quest():
     t1, t2, t3, t4 = st.tabs([
         " Tabela de Participantes",
         " Perfil Individual",
-        "Respostas do Questionário",
+        " Respostas do Questionário",
         " Cruzamentos"
     ])
 
-    # ── TABELA ────────────────────────────────────────────────────────
     with t1:
-        st.markdown("#### Comparativo Geral de Participantes")
         dcols = ['Usuário','Total_Tags','Tags_Unicas','TTR','Obras','q1','q2']
         avail = [c for c in dcols if c in merged.columns]
         disp  = merged[avail].rename(columns={
@@ -1056,22 +996,9 @@ def tab_users_quest():
             'q2':'Conhec. Museológico'
         }).sort_values('Tags Criadas',ascending=False)
         st.dataframe(disp, use_container_width=True, hide_index=True)
-
-        st.markdown(divider(), unsafe_allow_html=True)
-        st.markdown("#### Contribuição por Participante")
         st.bar_chart(merged.set_index('Usuário')['Total_Tags'].sort_values(ascending=False))
 
-        c1, c2 = st.columns(2)
-        with c1:
-            st.markdown("**Riqueza Vocabular (TTR) por Usuário**")
-            st.bar_chart(merged.set_index('Usuário')['TTR'].sort_values(ascending=False))
-        with c2:
-            st.markdown("**Obras Etiquetadas por Usuário**")
-            st.bar_chart(merged.set_index('Usuário')['Obras'].sort_values(ascending=False))
-
-    # ── PERFIL INDIVIDUAL ────────────────────────────────────────────
     with t2:
-        st.markdown("#### Perfil Detalhado por Participante")
         uopts = [f"🐾 {r.get('animal_name',r['user_id'][:8])}" for _,r in udf.iterrows()]
         usel  = st.selectbox("Selecione um participante:", uopts, key="ui_sel")
         uidx  = uopts.index(usel)
@@ -1098,137 +1025,59 @@ def tab_users_quest():
                 st.markdown("**Distribuição por obra:**")
                 st.bar_chart(utags.groupby('obra_id').size().rename(index=od))
 
-            st.markdown("**Conexões nas tags deste participante (limiar 0.30):**")
-            uconns = tag_connections(utags['tag'].tolist(), threshold=0.30)
-            if uconns:
-                for c in uconns[:10]:
-                    freq_map = utags['tag'].value_counts().to_dict()
-                    fa = freq_map.get(c['tag_a'],0)
-                    fb = freq_map.get(c['tag_b'],0)
-                    st.markdown(
-                        f"<div class='conn-row'>"
-                        f"<div style='display:flex;align-items:center;gap:9px;flex-wrap:wrap'>"
-                        f"<span class='tag-badge'>{c['tag_a']}</span>"
-                        f"<span style='color:rgba(255,255,255,.3);font-size:.7rem'>({fa}×)</span>"
-                        f"<span style='color:rgba(255,255,255,.35)'>↔</span>"
-                        f"<span class='tag-badge'>{c['tag_b']}</span>"
-                        f"<span style='color:rgba(255,255,255,.3);font-size:.7rem'>({fb}×)</span>"
-                        f"</div>"
-                        f"<span style='color:rgba(255,255,255,.35);font-size:.75rem'>"
-                        f"{c['similaridade']:.3f} · {c['tipo']}</span>"
-                        f"</div>", unsafe_allow_html=True)
-            else:
-                st.info("Nenhuma conexão encontrada nas tags deste participante.")
-
-            st.markdown(divider(), unsafe_allow_html=True)
-            st.markdown("**Todas as tags criadas:**")
             ft = utags.copy()
             ft['Obra'] = ft['obra_id'].map(od)
             st.dataframe(
                 ft[['tag','Obra','timestamp']].rename(columns={'tag':'Tag','timestamp':'Data/Hora'}),
                 use_container_width=True, hide_index=True)
 
-    # ── QUESTIONÁRIO ─────────────────────────────────────────────────
     with t3:
-        st.markdown("#### Respostas do Questionário de Perfil")
-
         c1,c2 = st.columns(2)
         with c1:
             st.markdown("**Q1 — Familiaridade com Museus**")
             q1c = udf['q1'].value_counts()
             st.bar_chart(q1c)
-            q1p = (q1c/q1c.sum()*100).round(1).reset_index()
-            q1p.columns=['Resposta','%']
-            st.dataframe(q1p, use_container_width=True, hide_index=True)
-
         with c2:
             st.markdown("**Q2 — Conhecimento sobre Documentação Museológica**")
             q2c = udf['q2'].value_counts()
             st.bar_chart(q2c)
-            q2p = (q2c/q2c.sum()*100).round(1).reset_index()
-            q2p.columns=['Resposta','%']
-            st.dataframe(q2p, use_container_width=True, hide_index=True)
 
         st.markdown(divider(), unsafe_allow_html=True)
-        st.markdown("**Q3 — Respostas Abertas: O que você entende por 'tags'?**")
+        st.markdown("**Q3 — Respostas Abertas**")
         disp = udf.copy()
         if 'animal_name' in disp.columns:
             disp = disp.rename(columns={'animal_name':'Usuário Anônimo'})
         disp['Palavras'] = disp['q3'].str.split().str.len()
-        st.markdown(
-            f"Comprimento médio das respostas: "
-            f"**{disp['Palavras'].mean():.0f} palavras** por participante"
-        )
-        st.bar_chart(disp['Palavras'].value_counts().sort_index().rename("Qtd Respostas"))
-
-        st.markdown(divider(), unsafe_allow_html=True)
         st.dataframe(
             disp[['Usuário Anônimo','q3','Palavras','timestamp']]
             .sort_values('timestamp',ascending=False)
             .rename(columns={'q3':'Resposta','timestamp':'Data/Hora'}),
             use_container_width=True, hide_index=True)
 
-    # ── CRUZAMENTOS ───────────────────────────────────────────────────
     with t4:
         if tdf.empty:
             st.info("Dados de tags insuficientes para cruzamentos.")
             return
 
-        st.markdown("#### Cruzamentos: Perfil do Participante × Comportamento de Tagging")
-
         m = merged.copy()
-        m['TTR'] = (m['Tags_Unicas']/m['Total_Tags'].replace(0,np.nan)).fillna(0)
-
-        st.markdown(divider(), unsafe_allow_html=True)
         st.markdown("**Familiaridade com Museus × Média de Tags Criadas**")
         avg_q1 = m.groupby('q1')['Total_Tags'].mean().sort_values(ascending=False)
         st.bar_chart(avg_q1)
-        t_q1 = avg_q1.reset_index()
-        t_q1.columns = ['Familiaridade','Média de Tags']
-        t_q1['Média de Tags'] = t_q1['Média de Tags'].round(2)
-        st.dataframe(t_q1, use_container_width=True, hide_index=True)
 
         st.markdown(divider(), unsafe_allow_html=True)
         st.markdown("**Conhecimento Museológico × Tags Únicas**")
         avg_q2 = m.groupby('q2')['Tags_Unicas'].mean().sort_values(ascending=False)
         st.bar_chart(avg_q2)
-        t_q2 = avg_q2.reset_index()
-        t_q2.columns = ['Conhecimento','Média Tags Únicas']
-        t_q2['Média Tags Únicas'] = t_q2['Média Tags Únicas'].round(2)
-        st.dataframe(t_q2, use_container_width=True, hide_index=True)
-
-        st.markdown(divider(), unsafe_allow_html=True)
-        c1, c2 = st.columns(2)
-        with c1:
-            st.markdown("**Familiaridade × Riqueza Vocabular (TTR)**")
-            avg_ttr = m.groupby('q1')['TTR'].mean().sort_values(ascending=False)
-            st.bar_chart(avg_ttr)
-        with c2:
-            st.markdown("**Conhecimento Museológico × TTR**")
-            avg_ttr2 = m.groupby('q2')['TTR'].mean().sort_values(ascending=False)
-            st.bar_chart(avg_ttr2)
-
-        st.markdown(divider(), unsafe_allow_html=True)
-        st.markdown("#### Tabela Consolidada de Cruzamentos")
-        cross = m.groupby('q1').agg(
-            Usuários     =('user_id','count'),
-            Média_Tags   =('Total_Tags','mean'),
-            Média_Únicas =('Tags_Unicas','mean'),
-            Riqueza_TTR  =('TTR','mean'),
-        ).round(2).reset_index()
-        cross.columns = ['Familiaridade','Usuários','Média Tags','Média Únicas','Riqueza (TTR)']
-        st.dataframe(cross, use_container_width=True, hide_index=True)
 
         st.markdown(insight(
             "<strong>Interpretação:</strong> Compare se participantes mais familiarizados com museus "
-            "produzem mais tags, maior diversidade vocabular (TTR) ou tags mais descritivas. "
-            "A riqueza vocabular (TTR) mede a proporção de termos únicos sobre o total criado — "
-            "valores próximos de 1.0 indicam alta originalidade e variedade nas tags."
+            "produzem mais tags ou maior diversidade vocabular (TTR). "
+            "Valores de TTR próximos de 1.0 indicam alta originalidade e variedade nas tags."
         ), unsafe_allow_html=True)
 
-# ═════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
 # ABA 5 — GESTÃO DE OBRAS
-# ═════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
 def tab_obras():
     st.markdown("### Gestão de Obras")
     obras = load_obras()
@@ -1270,9 +1119,9 @@ def tab_obras():
                 else:
                     st.error("Preencha todos os campos!")
 
-# ═════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
 # ABA 6 — EXPORTAR
-# ═════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
 def tab_export():
     st.markdown("### Central de Exportação")
     tdf  = all_tags()
@@ -1290,13 +1139,6 @@ def tab_export():
                     tdf.to_csv(index=False).encode('utf-8'),
                     f"tags_{datetime.now().strftime('%Y%m%d')}.csv","text/csv",
                     use_container_width=True)
-                freq = tdf['tag'].value_counts().reset_index()
-                freq.columns=['Tag','Frequência']
-                freq['%']=(freq['Frequência']/freq['Frequência'].sum()*100).round(2)
-                st.download_button(" Frequências (CSV)",
-                    freq.to_csv(index=False).encode('utf-8'),
-                    f"freq_{datetime.now().strftime('%Y%m%d')}.csv","text/csv",
-                    use_container_width=True)
         with c2:
             st.markdown("#### Usuários")
             if not udf.empty:
@@ -1312,23 +1154,6 @@ def tab_export():
                     f"obras_{datetime.now().strftime('%Y%m%d')}.csv","text/csv",
                     use_container_width=True)
 
-        st.markdown(divider(), unsafe_allow_html=True)
-        st.markdown("#### Exportar Conexões de Tags")
-        if not tdf.empty:
-            thr = st.slider("Limiar de similaridade:", 0.2, 0.9, 0.35, 0.05, key="exp_thr")
-            if st.button("Gerar arquivo de conexões"):
-                with st.spinner("Calculando…"):
-                    conns = tag_connections(tdf['tag'].tolist(), threshold=thr)
-                if conns:
-                    cdf = pd.DataFrame(conns)
-                    st.download_button(" Conexões (CSV)",
-                        cdf.to_csv(index=False).encode('utf-8'),
-                        f"conexoes_{datetime.now().strftime('%Y%m%d')}.csv","text/csv",
-                        use_container_width=True)
-                    st.success(f"{len(conns)} conexões exportadas.")
-                else:
-                    st.info("Nenhuma conexão encontrada com este limiar.")
-
     with t2:
         if udf.empty:
             st.info("Nenhum participante cadastrado.")
@@ -1339,7 +1164,6 @@ def tab_export():
         uid   = udf.iloc[uidx]['user_id']
         uanim = udf.iloc[uidx].get('animal_name', uid[:8])
 
-        st.markdown(f"#### Dados de: **{uanim}**")
         c1, c2 = st.columns(2)
         with c1:
             st.markdown("##### Questionário")
