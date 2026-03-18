@@ -1,4 +1,4 @@
-import streamlit as st
+import { SpeedInsights } from "@vercel/speed-insights/next"
 import pandas as pd
 import numpy as np
 import os
