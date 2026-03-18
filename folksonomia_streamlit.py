@@ -22,9 +22,9 @@ st.set_page_config(
     page_icon="📚"
 )
 
-DATA_DIR   = "data"
+DATA_DIR = "data"
 OBRAS_FILE = os.path.join(DATA_DIR, "obras.json")
-TAGS_FILE  = os.path.join(DATA_DIR, "tags.json")
+TAGS_FILE = os.path.join(DATA_DIR, "tags.json")
 USERS_FILE = os.path.join(DATA_DIR, "users.json")
 ADMIN_FILE = os.path.join(DATA_DIR, "admin.json")
 
@@ -32,20 +32,20 @@ ADMIN_USERNAME = "nugep"
 ADMIN_PASSWORD = "nugep123"
 
 ANIMAIS = [
-    "Águia","Boto","Capivara","Doninha","Ema","Falcão","Gavião","Harpia","Irara","Jaguar",
-    "Lontra","Mico","Onça","Paca","Quati","Raposa","Tamanduá","Urubu","Veado","Zorrilho",
-    "Arara","Bugio","Caititu","Jaguatirica","Lobo","Mutum","Pirarucu","Tucano","Sucuri","Tatu"
+    "Águia", "Boto", "Capivara", "Doninha", "Ema", "Falcão", "Gavião", "Harpia", "Irara", "Jaguar",
+    "Lontra", "Mico", "Onça", "Paca", "Quati", "Raposa", "Tamanduá", "Urubu", "Veado", "Zorrilho",
+    "Arara", "Bugio", "Caititu", "Jaguatirica", "Lobo", "Mutum", "Pirarucu", "Tucano", "Sucuri", "Tatu"
 ]
 
 ADJETIVOS = [
-    "Azul","Bravo","Calmo","Dourado","Esperto","Feroz","Gracioso","Intenso","Jovial","Lento",
-    "Mágico","Nobre","Ousado","Preciso","Rápido","Sábio","Tímido","Único","Valente","Zeloso",
-    "Curioso","Furtivo","Altivo","Sereno","Vibrante","Audaz","Brilhante","Corajoso","Distinto","Elegante"
+    "Azul", "Bravo", "Calmo", "Dourado", "Esperto", "Feroz", "Gracioso", "Intenso", "Jovial", "Lento",
+    "Mágico", "Nobre", "Ousado", "Preciso", "Rápido", "Sábio", "Tímido", "Único", "Valente", "Zeloso",
+    "Curioso", "Furtivo", "Altivo", "Sereno", "Vibrante", "Audaz", "Brilhante", "Corajoso", "Distinto", "Elegante"
 ]
 
 
 # ═════════════════════════════════════════════════════════════════════
-# UTILITÁRIOS BÁSICOS
+# UTILITÁRIOS
 # ═════════════════════════════════════════════════════════════════════
 def generate_animal_name():
     random.seed()
@@ -255,7 +255,7 @@ def tag_clusters(tags_list, threshold=0.35):
 
 
 # ═════════════════════════════════════════════════════════════════════
-# ESTILO
+# CSS
 # ═════════════════════════════════════════════════════════════════════
 def load_css():
     init_accessibility()
@@ -521,7 +521,7 @@ def load_css():
 
 
 # ═════════════════════════════════════════════════════════════════════
-# HELPERS VISUAIS
+# HELPERS
 # ═════════════════════════════════════════════════════════════════════
 def kpi(label, value, sub="", color="#60a5fa"):
     return (
@@ -557,11 +557,7 @@ def check_admin():
     admins = load_json_file(ADMIN_FILE, [])
     if not admins:
         hashed = hashlib.sha256(ADMIN_PASSWORD.encode()).hexdigest()
-        save_json_file(ADMIN_FILE, [{
-            "id": 1,
-            "username": ADMIN_USERNAME,
-            "password": hashed
-        }])
+        save_json_file(ADMIN_FILE, [{"id": 1, "username": ADMIN_USERNAME, "password": hashed}])
 
 
 @st.cache_data(ttl=5, show_spinner=False)
@@ -592,16 +588,18 @@ def load_obras():
             "descricao_acessivel": "Retrato de uma mulher sentada, com mãos cruzadas, expressão serena e leve sorriso. Ao fundo, uma paisagem distante em tons suaves."
         }
     ]
-
     obras = load_json_file(OBRAS_FILE, default)
     if not obras:
         save_json_file(OBRAS_FILE, default)
         return default
 
+    changed = False
     for obra in obras:
         if "descricao_acessivel" not in obra:
             obra["descricao_acessivel"] = ""
-
+            changed = True
+    if changed:
+        save_json_file(OBRAS_FILE, obras)
     return obras
 
 
@@ -662,7 +660,7 @@ def all_users():
 
 
 # ═════════════════════════════════════════════════════════════════════
-# EXPORTAÇÃO HTML
+# EXPORT HTML
 # ═════════════════════════════════════════════════════════════════════
 def html_quest(uid, animal, users_df):
     if users_df.empty:
@@ -700,7 +698,6 @@ def html_tags(uid, animal, obras, tags_df):
     ut = tags_df[tags_df["user_id"] == uid] if not tags_df.empty else pd.DataFrame()
     if ut.empty:
         return None
-
     od = {o["id"]: o for o in obras}
 
     rows = "".join(
@@ -755,7 +752,7 @@ tr:nth-child(even){{background:rgba(255,255,255,.03)}}
 
 
 # ═════════════════════════════════════════════════════════════════════
-# HEADER
+# INTERFACE
 # ═════════════════════════════════════════════════════════════════════
 def show_header():
     st.markdown(
@@ -764,9 +761,6 @@ def show_header():
     )
 
 
-# ═════════════════════════════════════════════════════════════════════
-# APP
-# ═════════════════════════════════════════════════════════════════════
 def main():
     load_css()
     try:
@@ -790,7 +784,6 @@ def main():
     else:
         show_header()
         st.markdown("<div class='main-content'>", unsafe_allow_html=True)
-
         with st.expander("Configurações de acessibilidade e visual", expanded=False):
             accessibility_panel()
 
@@ -803,9 +796,6 @@ def main():
         st.markdown("</div>", unsafe_allow_html=True)
 
 
-# ═════════════════════════════════════════════════════════════════════
-# INTRO
-# ═════════════════════════════════════════════════════════════════════
 def show_intro():
     st.markdown("<div class='main-content'>", unsafe_allow_html=True)
     st.markdown("<h1 class='main-title'>Sistema Folksonomia Digital</h1>", unsafe_allow_html=True)
@@ -823,7 +813,6 @@ def show_intro():
 
     with st.form("intro_form"):
         c1, c2 = st.columns(2)
-
         with c1:
             q1 = st.selectbox(
                 "1. Qual é o seu nível de familiaridade com museus?",
@@ -833,7 +822,6 @@ def show_intro():
                 "2. Você já ouviu falar sobre documentação museológica?",
                 ["Nunca ouvi falar", "Já ouvi, mas não sei o que é", "Tenho uma ideia básica", "Conheço bem o tema"]
             )
-
         with c2:
             q3 = st.text_area(
                 "3. O que você entende por 'tags' ou etiquetas digitais aplicadas a acervo?",
@@ -864,9 +852,6 @@ def show_intro():
     st.markdown("</div></div>", unsafe_allow_html=True)
 
 
-# ═════════════════════════════════════════════════════════════════════
-# GALERIA
-# ═════════════════════════════════════════════════════════════════════
 def show_obras():
     st.markdown("<h1 class='main-title'>Galeria de Obras de Arte</h1>", unsafe_allow_html=True)
     st.markdown(
@@ -881,19 +866,15 @@ def show_obras():
 
     st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
     c1, c2 = st.columns([2, 1])
-
     with c1:
         sid = st.text_input("Filtrar por número da obra", "", placeholder="Ex: 1, 2, 3")
-
     with c2:
         sord = st.selectbox("Ordenar por", ["Número (crescente)", "Número (decrescente)"])
-
     st.markdown("</div>", unsafe_allow_html=True)
 
     filtered = obras
     if sid.strip().isdigit():
         filtered = [o for o in obras if str(o["id"]) == sid.strip()]
-
     filtered = sorted(filtered, key=lambda x: x["id"], reverse=(sord == "Número (decrescente)"))
 
     st.markdown(
@@ -902,7 +883,6 @@ def show_obras():
     )
 
     cols = st.columns(3)
-
     for i, obra in enumerate(filtered):
         with cols[i % 3]:
             st.markdown(
@@ -966,9 +946,6 @@ def show_obras():
                     st.audio(audio_bytes, format="audio/mp3")
 
 
-# ═════════════════════════════════════════════════════════════════════
-# ADMIN
-# ═════════════════════════════════════════════════════════════════════
 def show_admin():
     if "admin_logged_in" not in st.session_state:
         st.session_state["admin_logged_in"] = False
@@ -996,7 +973,6 @@ def show_admin():
                         st.rerun()
                     else:
                         st.error("Credenciais inválidas. Acesso negado.")
-
             st.markdown("</div>", unsafe_allow_html=True)
 
     else:
@@ -1036,7 +1012,7 @@ def show_admin():
 
 
 # ═════════════════════════════════════════════════════════════════════
-# ABA 1 — VISÃO GERAL
+# ABA 1
 # ═════════════════════════════════════════════════════════════════════
 def tab_overview():
     tdf = all_tags()
@@ -1116,7 +1092,7 @@ def tab_overview():
 
 
 # ═════════════════════════════════════════════════════════════════════
-# ABA 2 — ANÁLISE DE TAGS
+# ABA 2
 # ═════════════════════════════════════════════════════════════════════
 def tab_tags():
     tdf = all_tags()
@@ -1316,7 +1292,7 @@ def tab_tags():
 
 
 # ═════════════════════════════════════════════════════════════════════
-# ABA 3 — CONEXÕES DE TAGS
+# ABA 3
 # ═════════════════════════════════════════════════════════════════════
 def tab_connections():
     tdf = all_tags()
@@ -1453,7 +1429,7 @@ def tab_connections():
 
 
 # ═════════════════════════════════════════════════════════════════════
-# ABA 4 — USUÁRIOS & QUESTIONÁRIO
+# ABA 4
 # ═════════════════════════════════════════════════════════════════════
 def tab_users_quest():
     tdf = all_tags()
@@ -1655,7 +1631,6 @@ def tab_users_quest():
         st.dataframe(t_q2, use_container_width=True, hide_index=True)
 
         st.markdown(divider(), unsafe_allow_html=True)
-
         c1, c2 = st.columns(2)
         with c1:
             st.markdown("**Familiaridade × TTR**")
@@ -1684,12 +1659,11 @@ def tab_users_quest():
 
 
 # ═════════════════════════════════════════════════════════════════════
-# ABA 5 — OBRAS
+# ABA 5
 # ═════════════════════════════════════════════════════════════════════
 def tab_obras():
     st.markdown("### Gestão de Obras")
     obras = load_obras()
-
     t1, t2 = st.tabs(["Listar Obras", "Adicionar Nova"])
 
     with t1:
@@ -1754,7 +1728,7 @@ def tab_obras():
 
 
 # ═════════════════════════════════════════════════════════════════════
-# ABA 6 — EXPORTAR
+# ABA 6
 # ═════════════════════════════════════════════════════════════════════
 def tab_export():
     st.markdown("### Central de Exportação")
