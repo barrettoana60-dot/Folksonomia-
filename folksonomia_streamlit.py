@@ -10,8 +10,8 @@ import random
 import warnings
 import io
 from collections import defaultdict
-import plotly.express as px
 from gtts import gTTS
+import matplotlib.pyplot as plt
 
 warnings.filterwarnings("ignore")
 
@@ -160,6 +160,17 @@ def montar_descricao_obra(obra, user_tags_df=None):
 
 
 # ═════════════════════════════════════════════════════════════════════
+# GRÁFICOS MATPLOTLIB
+# ═════════════════════════════════════════════════════════════════════
+def pie_chart_matplotlib(labels, values, title=""):
+    fig, ax = plt.subplots(figsize=(6, 6))
+    ax.pie(values, labels=labels, autopct="%1.1f%%", startangle=90)
+    ax.set_title(title)
+    ax.axis("equal")
+    st.pyplot(fig, clear_figure=True)
+
+
+# ═════════════════════════════════════════════════════════════════════
 # SIMILARIDADE DE TAGS
 # ═════════════════════════════════════════════════════════════════════
 def ntag(tag):
@@ -177,6 +188,7 @@ def ngrams(text, n=3):
 
 def sim(t1, t2):
     a, b = ntag(t1), ntag(t2)
+
     if a == b:
         return 1.0
 
@@ -1138,15 +1150,11 @@ def tab_tags():
         cat_df = freq["Categoria"].value_counts().reset_index()
         cat_df.columns = ["Categoria", "Quantidade"]
 
-        fig_cat = px.pie(
-            cat_df,
-            names="Categoria",
-            values="Quantidade",
-            hole=0.52,
-            title="Distribuição das categorias de frequência"
+        pie_chart_matplotlib(
+            cat_df["Categoria"].astype(str).tolist(),
+            cat_df["Quantidade"].tolist(),
+            "Distribuição das categorias de frequência"
         )
-        fig_cat.update_traces(textinfo="percent+label")
-        st.plotly_chart(fig_cat, use_container_width=True)
 
         st.markdown(insight(
             f"<strong>Leitura geral:</strong> O sistema possui <strong>{unicas}</strong> tags únicas em "
@@ -1159,17 +1167,8 @@ def tab_tags():
 
         with c1:
             top_n = st.slider("Quantidade de tags no gráfico principal", 5, 30, 10)
-            top_freq = freq.head(top_n).copy()
-
-            fig_bar = px.bar(
-                top_freq,
-                x="Tag",
-                y="Frequência",
-                text="Frequência",
-                title=f"Top {top_n} tags mais utilizadas"
-            )
-            fig_bar.update_layout(xaxis_title="Tag", yaxis_title="Frequência")
-            st.plotly_chart(fig_bar, use_container_width=True)
+            top_freq = freq.head(top_n).copy().set_index("Tag")
+            st.bar_chart(top_freq["Frequência"])
 
         with c2:
             pie_n = st.slider("Quantidade de tags no gráfico pizza", 3, 12, 6)
@@ -1182,31 +1181,30 @@ def tab_tags():
                     pd.DataFrame([{"Tag": "Outras", "Frequência": resto}])
                 ], ignore_index=True)
 
-            fig_pie = px.pie(
-                pie_df,
-                names="Tag",
-                values="Frequência",
-                hole=0.45,
-                title="Participação das tags no total"
+            pie_chart_matplotlib(
+                pie_df["Tag"].astype(str).tolist(),
+                pie_df["Frequência"].tolist(),
+                "Participação das tags no total"
             )
-            fig_pie.update_traces(textinfo="percent+label")
-            st.plotly_chart(fig_pie, use_container_width=True)
 
         st.markdown(divider(), unsafe_allow_html=True)
 
         c3, c4 = st.columns(2)
 
         with c3:
+            st.markdown("#### Tags por obra")
             obra_tag = df.groupby(["obra_id", "tag"]).size().reset_index(name="Qtd")
             if not obra_tag.empty:
-                top_heat = obra_tag.sort_values("Qtd", ascending=False).head(15)
-                fig_tree = px.treemap(
-                    top_heat,
-                    path=["obra_id", "tag"],
-                    values="Qtd",
-                    title="Treemap de tags por obra"
+                resumo_obra = obra_tag.groupby("obra_id")["Qtd"].sum().reset_index()
+                resumo_obra["obra_id"] = resumo_obra["obra_id"].astype(str)
+                st.bar_chart(resumo_obra.set_index("obra_id")["Qtd"])
+
+                st.markdown("**Top combinações obra × tag**")
+                st.dataframe(
+                    obra_tag.sort_values("Qtd", ascending=False).head(15),
+                    use_container_width=True,
+                    hide_index=True
                 )
-                st.plotly_chart(fig_tree, use_container_width=True)
 
         with c4:
             cat_table = freq.groupby("Categoria").agg(
@@ -1244,48 +1242,24 @@ def tab_tags():
 
         c1, c2 = st.columns(2)
         with c1:
-            fig_line = px.line(
-                daily,
-                x="Data",
-                y="Tags",
-                markers=True,
-                title="Evolução diária da criação de tags"
-            )
-            st.plotly_chart(fig_line, use_container_width=True)
-
+            st.markdown("#### Evolução diária da criação de tags")
+            st.line_chart(daily.set_index("Data")["Tags"])
         with c2:
-            fig_line2 = px.line(
-                daily,
-                x="Data",
-                y=["Tags_Unicas", "Usuarios"],
-                markers=True,
-                title="Tags únicas e usuários ativos por dia"
-            )
-            st.plotly_chart(fig_line2, use_container_width=True)
+            st.markdown("#### Tags únicas e usuários ativos por dia")
+            line_df = daily.set_index("Data")[["Tags_Unicas", "Usuarios"]]
+            st.line_chart(line_df)
 
         st.markdown(divider(), unsafe_allow_html=True)
 
         c3, c4 = st.columns(2)
         with c3:
+            st.markdown("#### Distribuição mensal")
             monthly = temp.groupby("AnoMes").size().reset_index(name="Qtd")
-            fig_month = px.bar(
-                monthly,
-                x="AnoMes",
-                y="Qtd",
-                text="Qtd",
-                title="Distribuição mensal"
-            )
-            st.plotly_chart(fig_month, use_container_width=True)
-
+            st.bar_chart(monthly.set_index("AnoMes")["Qtd"])
         with c4:
+            st.markdown("#### Distribuição por hora do dia")
             hour_df = temp.groupby("Hora").size().reset_index(name="Qtd")
-            fig_hour = px.area(
-                hour_df,
-                x="Hora",
-                y="Qtd",
-                title="Distribuição por hora do dia"
-            )
-            st.plotly_chart(fig_hour, use_container_width=True)
+            st.area_chart(hour_df.set_index("Hora")["Qtd"])
 
         st.markdown("#### Tabela temporal consolidada")
         st.dataframe(daily.sort_values("Data", ascending=False), use_container_width=True, hide_index=True)
