@@ -8,11 +8,7 @@ import base64
 import json
 import random
 import warnings
-import io
 from collections import defaultdict
-def gerar_audio_descricao(texto, lang="pt-br"):
-    return None
-import matplotlib.pyplot as plt
 
 warnings.filterwarnings("ignore")
 
@@ -85,7 +81,7 @@ def gen_uid():
 
 
 # ═════════════════════════════════════════════════════════════════════
-# ACESSIBILIDADE
+# ACESSIBILIDADE / VISUAL
 # ═════════════════════════════════════════════════════════════════════
 def init_accessibility():
     if "theme_mode" not in st.session_state:
@@ -95,7 +91,7 @@ def init_accessibility():
     if "alto_contraste" not in st.session_state:
         st.session_state["alto_contraste"] = False
     if "audio_auto" not in st.session_state:
-        st.session_state["audio_auto"] = True
+        st.session_state["audio_auto"] = False
 
 
 def accessibility_panel():
@@ -126,49 +122,29 @@ def accessibility_panel():
             value=st.session_state["alto_contraste"]
         )
         st.session_state["audio_auto"] = st.toggle(
-            "Ativar audiodescrição/narração",
+            "Exibir recursos de acessibilidade",
             value=st.session_state["audio_auto"]
         )
 
 
-def gerar_audio_descricao(texto, lang="pt-br"):
-    try:
-        if not texto or not str(texto).strip():
-            return None
-        fp = io.BytesIO()
-        tts = gTTS(text=str(texto), lang=lang)
-        tts.write_to_fp(fp)
-        fp.seek(0)
-        return fp
-    except Exception as e:
-        st.warning(f"Não foi possível gerar áudio: {e}")
-        return None
-
-
 def montar_descricao_obra(obra, user_tags_df=None):
-    base = f"Obra número {obra['id']}. Título: {obra['titulo']}. Artista: {obra['artista']}. Ano: {obra['ano']}."
+    base = (
+        f"Obra número {obra['id']}. "
+        f"Título: {obra['titulo']}. "
+        f"Artista: {obra['artista']}. "
+        f"Ano: {obra['ano']}."
+    )
 
     desc = obra.get("descricao_acessivel", "").strip()
     if desc:
-        base += f" Descrição acessível da imagem: {desc}"
+        base += f" Descrição acessível: {desc}"
 
     if user_tags_df is not None and not user_tags_df.empty:
         top_tags = user_tags_df.sort_values("count", ascending=False)["tag"].astype(str).tolist()[:5]
         if top_tags:
-            base += " Principais tags registradas pelo participante: " + ", ".join(top_tags) + "."
+            base += " Principais tags registradas: " + ", ".join(top_tags) + "."
 
     return base
-
-
-# ═════════════════════════════════════════════════════════════════════
-# GRÁFICOS MATPLOTLIB
-# ═════════════════════════════════════════════════════════════════════
-def pie_chart_matplotlib(labels, values, title=""):
-    fig, ax = plt.subplots(figsize=(6, 6))
-    ax.pie(values, labels=labels, autopct="%1.1f%%", startangle=90)
-    ax.set_title(title)
-    ax.axis("equal")
-    st.pyplot(fig, clear_figure=True)
 
 
 # ═════════════════════════════════════════════════════════════════════
@@ -563,6 +539,15 @@ def pbar(pct, color="#60a5fa"):
     )
 
 
+def percent_table(labels, values, col_label="Categoria", col_value="Quantidade"):
+    total = sum(values) if values else 0
+    data = []
+    for label, value in zip(labels, values):
+        pct = (value / total * 100) if total else 0
+        data.append({col_label: label, col_value: value, "%": round(pct, 2)})
+    return pd.DataFrame(data)
+
+
 # ═════════════════════════════════════════════════════════════════════
 # DADOS
 # ═════════════════════════════════════════════════════════════════════
@@ -602,6 +587,7 @@ def load_obras():
         }
     ]
     obras = load_json_file(OBRAS_FILE, default)
+
     if not obras:
         save_json_file(OBRAS_FILE, default)
         return default
@@ -611,8 +597,10 @@ def load_obras():
         if "descricao_acessivel" not in obra:
             obra["descricao_acessivel"] = ""
             changed = True
+
     if changed:
         save_json_file(OBRAS_FILE, obras)
+
     return obras
 
 
@@ -673,7 +661,7 @@ def all_users():
 
 
 # ═════════════════════════════════════════════════════════════════════
-# EXPORT HTML
+# EXPORTAÇÃO HTML
 # ═════════════════════════════════════════════════════════════════════
 def html_quest(uid, animal, users_df):
     if users_df.empty:
@@ -682,6 +670,7 @@ def html_quest(uid, animal, users_df):
     if ud.empty:
         return None
     ui = ud.iloc[0]
+
     return f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
 <style>
 *{{margin:0;padding:0;box-sizing:border-box}}
@@ -711,6 +700,7 @@ def html_tags(uid, animal, obras, tags_df):
     ut = tags_df[tags_df["user_id"] == uid] if not tags_df.empty else pd.DataFrame()
     if ut.empty:
         return None
+
     od = {o["id"]: o for o in obras}
 
     rows = "".join(
@@ -765,7 +755,7 @@ tr:nth-child(even){{background:rgba(255,255,255,.03)}}
 
 
 # ═════════════════════════════════════════════════════════════════════
-# INTERFACE
+# INTERFACE PRINCIPAL
 # ═════════════════════════════════════════════════════════════════════
 def show_header():
     st.markdown(
@@ -797,6 +787,7 @@ def main():
     else:
         show_header()
         st.markdown("<div class='main-content'>", unsafe_allow_html=True)
+
         with st.expander("Configurações de acessibilidade e visual", expanded=False):
             accessibility_panel()
 
@@ -809,6 +800,9 @@ def main():
         st.markdown("</div>", unsafe_allow_html=True)
 
 
+# ═════════════════════════════════════════════════════════════════════
+# INTRO
+# ═════════════════════════════════════════════════════════════════════
 def show_intro():
     st.markdown("<div class='main-content'>", unsafe_allow_html=True)
     st.markdown("<h1 class='main-title'>Sistema Folksonomia Digital</h1>", unsafe_allow_html=True)
@@ -826,6 +820,7 @@ def show_intro():
 
     with st.form("intro_form"):
         c1, c2 = st.columns(2)
+
         with c1:
             q1 = st.selectbox(
                 "1. Qual é o seu nível de familiaridade com museus?",
@@ -835,6 +830,7 @@ def show_intro():
                 "2. Você já ouviu falar sobre documentação museológica?",
                 ["Nunca ouvi falar", "Já ouvi, mas não sei o que é", "Tenho uma ideia básica", "Conheço bem o tema"]
             )
+
         with c2:
             q3 = st.text_area(
                 "3. O que você entende por 'tags' ou etiquetas digitais aplicadas a acervo?",
@@ -865,6 +861,9 @@ def show_intro():
     st.markdown("</div></div>", unsafe_allow_html=True)
 
 
+# ═════════════════════════════════════════════════════════════════════
+# GALERIA
+# ═════════════════════════════════════════════════════════════════════
 def show_obras():
     st.markdown("<h1 class='main-title'>Galeria de Obras de Arte</h1>", unsafe_allow_html=True)
     st.markdown(
@@ -879,10 +878,13 @@ def show_obras():
 
     st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
     c1, c2 = st.columns([2, 1])
+
     with c1:
         sid = st.text_input("Filtrar por número da obra", "", placeholder="Ex: 1, 2, 3")
+
     with c2:
         sord = st.selectbox("Ordenar por", ["Número (crescente)", "Número (decrescente)"])
+
     st.markdown("</div>", unsafe_allow_html=True)
 
     filtered = obras
@@ -896,6 +898,7 @@ def show_obras():
     )
 
     cols = st.columns(3)
+
     for i, obra in enumerate(filtered):
         with cols[i % 3]:
             st.markdown(
@@ -949,16 +952,14 @@ def show_obras():
             else:
                 st.info("Você ainda não criou tags para esta obra.")
 
-            st.markdown("**Recursos de acessibilidade da obra:**")
+            st.markdown("**Descrição acessível da obra:**")
             descricao_texto = montar_descricao_obra(obra, ut if not ut.empty else None)
             st.caption(descricao_texto)
 
-            if st.session_state.get("audio_auto", False):
-                audio_bytes = gerar_audio_descricao(descricao_texto)
-                if audio_bytes:
-                    st.audio(audio_bytes, format="audio/mp3")
 
-
+# ═════════════════════════════════════════════════════════════════════
+# ADMIN
+# ═════════════════════════════════════════════════════════════════════
 def show_admin():
     if "admin_logged_in" not in st.session_state:
         st.session_state["admin_logged_in"] = False
@@ -986,6 +987,7 @@ def show_admin():
                         st.rerun()
                     else:
                         st.error("Credenciais inválidas. Acesso negado.")
+
             st.markdown("</div>", unsafe_allow_html=True)
 
     else:
@@ -1025,7 +1027,7 @@ def show_admin():
 
 
 # ═════════════════════════════════════════════════════════════════════
-# ABA 1
+# ABA 1 — VISÃO GERAL
 # ═════════════════════════════════════════════════════════════════════
 def tab_overview():
     tdf = all_tags()
@@ -1105,7 +1107,7 @@ def tab_overview():
 
 
 # ═════════════════════════════════════════════════════════════════════
-# ABA 2
+# ABA 2 — ANÁLISE DE TAGS
 # ═════════════════════════════════════════════════════════════════════
 def tab_tags():
     tdf = all_tags()
@@ -1114,7 +1116,7 @@ def tab_tags():
         return
 
     st.markdown("### Análise de Tags")
-    t1, t2, t3 = st.tabs(["Visão Geral", "Frequência e Pizza", "Evolução Temporal"])
+    t1, t2, t3 = st.tabs(["Visão Geral", "Frequência", "Evolução Temporal"])
 
     df = tdf.copy()
     df["tag"] = df["tag"].astype(str).str.strip().str.lower()
@@ -1151,11 +1153,22 @@ def tab_tags():
         cat_df = freq["Categoria"].value_counts().reset_index()
         cat_df.columns = ["Categoria", "Quantidade"]
 
-        pie_chart_matplotlib(
-            cat_df["Categoria"].astype(str).tolist(),
-            cat_df["Quantidade"].tolist(),
-            "Distribuição das categorias de frequência"
-        )
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("#### Distribuição por categoria")
+            st.bar_chart(cat_df.set_index("Categoria")["Quantidade"])
+        with c2:
+            st.markdown("#### Participação percentual")
+            st.dataframe(
+                percent_table(
+                    cat_df["Categoria"].astype(str).tolist(),
+                    cat_df["Quantidade"].tolist(),
+                    "Categoria",
+                    "Quantidade"
+                ),
+                use_container_width=True,
+                hide_index=True
+            )
 
         st.markdown(insight(
             f"<strong>Leitura geral:</strong> O sistema possui <strong>{unicas}</strong> tags únicas em "
@@ -1164,15 +1177,16 @@ def tab_tags():
         ), unsafe_allow_html=True)
 
     with t2:
-        c1, c2 = st.columns([2, 1])
+        c1, c2 = st.columns(2)
 
         with c1:
             top_n = st.slider("Quantidade de tags no gráfico principal", 5, 30, 10)
             top_freq = freq.head(top_n).copy().set_index("Tag")
+            st.markdown(f"#### Top {top_n} tags")
             st.bar_chart(top_freq["Frequência"])
 
         with c2:
-            pie_n = st.slider("Quantidade de tags no gráfico pizza", 3, 12, 6)
+            pie_n = st.slider("Quantidade de tags na distribuição percentual", 3, 12, 6)
             pie_df = freq.head(pie_n).copy()
             resto = int(freq.iloc[pie_n:]["Frequência"].sum())
 
@@ -1182,10 +1196,16 @@ def tab_tags():
                     pd.DataFrame([{"Tag": "Outras", "Frequência": resto}])
                 ], ignore_index=True)
 
-            pie_chart_matplotlib(
-                pie_df["Tag"].astype(str).tolist(),
-                pie_df["Frequência"].tolist(),
-                "Participação das tags no total"
+            st.markdown("#### Participação no total")
+            st.dataframe(
+                percent_table(
+                    pie_df["Tag"].astype(str).tolist(),
+                    pie_df["Frequência"].tolist(),
+                    "Tag",
+                    "Frequência"
+                ),
+                use_container_width=True,
+                hide_index=True
             )
 
         st.markdown(divider(), unsafe_allow_html=True)
@@ -1200,19 +1220,14 @@ def tab_tags():
                 resumo_obra["obra_id"] = resumo_obra["obra_id"].astype(str)
                 st.bar_chart(resumo_obra.set_index("obra_id")["Qtd"])
 
-                st.markdown("**Top combinações obra × tag**")
+        with c4:
+            st.markdown("#### Top combinações obra × tag")
+            if not obra_tag.empty:
                 st.dataframe(
                     obra_tag.sort_values("Qtd", ascending=False).head(15),
                     use_container_width=True,
                     hide_index=True
                 )
-
-        with c4:
-            cat_table = freq.groupby("Categoria").agg(
-                Quantidade=("Tag", "count"),
-                Frequencia_Total=("Frequência", "sum")
-            ).reset_index()
-            st.dataframe(cat_table, use_container_width=True, hide_index=True)
 
         st.markdown("#### Tabela completa de frequências")
         st.dataframe(freq, use_container_width=True, hide_index=True)
@@ -1267,7 +1282,7 @@ def tab_tags():
 
 
 # ═════════════════════════════════════════════════════════════════════
-# ABA 3
+# ABA 3 — CONEXÕES
 # ═════════════════════════════════════════════════════════════════════
 def tab_connections():
     tdf = all_tags()
@@ -1404,7 +1419,7 @@ def tab_connections():
 
 
 # ═════════════════════════════════════════════════════════════════════
-# ABA 4
+# ABA 4 — USUÁRIOS E QUESTIONÁRIO
 # ═════════════════════════════════════════════════════════════════════
 def tab_users_quest():
     tdf = all_tags()
@@ -1634,7 +1649,7 @@ def tab_users_quest():
 
 
 # ═════════════════════════════════════════════════════════════════════
-# ABA 5
+# ABA 5 — OBRAS
 # ═════════════════════════════════════════════════════════════════════
 def tab_obras():
     st.markdown("### Gestão de Obras")
@@ -1653,11 +1668,6 @@ def tab_obras():
                     st.markdown(f"**#{obra['id']} – {obra['titulo']}**")
                     st.markdown(f"*{obra['artista']} — {obra['ano']}*")
                     st.caption(obra.get("descricao_acessivel", "Sem descrição acessível cadastrada."))
-
-                    if st.session_state.get("audio_auto", False):
-                        audio = gerar_audio_descricao(montar_descricao_obra(obra))
-                        if audio:
-                            st.audio(audio, format="audio/mp3")
 
                 with c3:
                     if st.button("Remover", key=f"del_{obra['id']}"):
@@ -1703,7 +1713,7 @@ def tab_obras():
 
 
 # ═════════════════════════════════════════════════════════════════════
-# ABA 6
+# ABA 6 — EXPORTAR
 # ═════════════════════════════════════════════════════════════════════
 def tab_export():
     st.markdown("### Central de Exportação")
