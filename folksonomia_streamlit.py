@@ -10,7 +10,8 @@ import random
 import warnings
 import io
 from collections import defaultdict
-from gtts import gTTS
+def gerar_audio_descricao(texto, lang="pt-br"):
+    return None
 import matplotlib.pyplot as plt
 
 warnings.filterwarnings("ignore")
