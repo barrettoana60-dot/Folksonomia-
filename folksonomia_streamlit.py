@@ -2899,6 +2899,24 @@ section.main > div { padding-top: 0.4rem; }
 }
 [data-testid="stSidebar"] { display: none; }
 @media (max-width: 1100px) { .hero-grid { grid-template-columns: 1fr; } .hero-microgrid, .metric-strip { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+[data-testid="stWidgetLabel"] p, [data-testid="stWidgetLabel"] span, [data-testid="stWidgetLabel"] label,
+label, .stSelectbox label, .stTextArea label, .stTextInput label, .stMultiSelect label, .stNumberInput label {
+    color: #353535 !important; font-weight: 600 !important;
+}
+.stTextArea textarea, textarea, .stTextInput input, input {
+    color: #262626 !important;
+}
+.stTextArea textarea::placeholder, textarea::placeholder, .stTextInput input::placeholder {
+    color: #666666 !important;
+    -webkit-text-fill-color: #666666 !important;
+    opacity: 1 !important;
+}
+.stSelectbox div[data-baseweb="select"] *, .stMultiSelect div[data-baseweb="select"] * {
+    color: #2c2c2c !important;
+}
+[data-testid="stMarkdownContainer"] p, [data-testid="stMarkdownContainer"] li, [data-testid="stMarkdownContainer"] span {
+    color: #3d3d3d !important;
+}
 @media (max-width: 640px) { .hero-title { font-size: 2.8rem; } .hero-microgrid, .metric-strip { grid-template-columns: 1fr; } .work-card img { height: 250px; } }
 </style>
 """
@@ -3522,35 +3540,74 @@ def build_public_metrics(tags_df: pd.DataFrame, works_df: pd.DataFrame, users_df
     }
 
 
-def build_knowledge_graph(store: JsonStore) -> nx.Graph:
-    graph = nx.Graph()
+def build_knowledge_graph(store: JsonStore) -> Any:
     works = store.works()
     concepts = {concept["id"]: concept for concept in store.concepts()}
     users = {user["id"]: user for user in store.users()}
     tags = store.tags()
+
+    if HAS_NETWORKX and nx is not None:
+        graph = nx.Graph()
+        for work in works:
+            graph.add_node(work["id"], kind="work", label=work.get("title", ""), subtitle=work.get("artist", ""))
+            for tag in work.get("institutional_tags", []):
+                node_id = f"inst::{normalize_text(tag)}"
+                graph.add_node(node_id, kind="institutional_tag", label=tag, subtitle="institucional")
+                graph.add_edge(work["id"], node_id, relation="institutional")
+        for user in users.values():
+            graph.add_node(user["id"], kind="user", label=user.get("pseudonym", ""), subtitle=user.get("profile_familiarity", ""))
+        for concept_id, concept in concepts.items():
+            graph.add_node(concept_id, kind="concept", label=concept.get("label", ""), subtitle=concept.get("category", ""))
+        for tag in tags:
+            tag_node = tag["id"]
+            graph.add_node(tag_node, kind="tag", label=tag.get("tag", ""), subtitle=tag.get("entity_prediction", ""))
+            if tag.get("work_id"):
+                graph.add_edge(tag.get("work_id"), tag_node, relation="tagged")
+            if tag.get("user_id"):
+                graph.add_edge(tag.get("user_id"), tag_node, relation="created")
+            if tag.get("concept_id") and tag.get("concept_id") in concepts:
+                graph.add_edge(tag_node, tag.get("concept_id"), relation="reconciled")
+        return graph
+
+    node_map = {}
+    edge_keys = set()
+    edges = []
+
+    def add_node(node_id: str, kind: str, label: str, subtitle: str = "") -> None:
+        if node_id not in node_map:
+            node_map[node_id] = {"id": node_id, "kind": kind, "label": label, "subtitle": subtitle}
+
+    def add_edge(source: str, target: str, relation: str) -> None:
+        key = tuple(sorted([str(source), str(target)])) + (relation,)
+        if key not in edge_keys:
+            edge_keys.add(key)
+            edges.append({"source": source, "target": target, "relation": relation})
+
     for work in works:
-        graph.add_node(work["id"], kind="work", label=work.get("title", ""), subtitle=work.get("artist", ""))
+        add_node(work["id"], "work", work.get("title", ""), work.get("artist", ""))
         for tag in work.get("institutional_tags", []):
             node_id = f"inst::{normalize_text(tag)}"
-            graph.add_node(node_id, kind="institutional_tag", label=tag, subtitle="institucional")
-            graph.add_edge(work["id"], node_id, relation="institutional")
+            add_node(node_id, "institutional_tag", tag, "institucional")
+            add_edge(work["id"], node_id, "institutional")
     for user in users.values():
-        graph.add_node(user["id"], kind="user", label=user.get("pseudonym", ""), subtitle=user.get("profile_familiarity", ""))
+        add_node(user["id"], "user", user.get("pseudonym", ""), user.get("profile_familiarity", ""))
     for concept_id, concept in concepts.items():
-        graph.add_node(concept_id, kind="concept", label=concept.get("label", ""), subtitle=concept.get("category", ""))
+        add_node(concept_id, "concept", concept.get("label", ""), concept.get("category", ""))
     for tag in tags:
         tag_node = tag["id"]
-        graph.add_node(tag_node, kind="tag", label=tag.get("tag", ""), subtitle=tag.get("entity_prediction", ""))
+        add_node(tag_node, "tag", tag.get("tag", ""), tag.get("entity_prediction", ""))
         if tag.get("work_id"):
-            graph.add_edge(tag.get("work_id"), tag_node, relation="tagged")
+            add_edge(tag.get("work_id"), tag_node, "tagged")
         if tag.get("user_id"):
-            graph.add_edge(tag.get("user_id"), tag_node, relation="created")
+            add_edge(tag.get("user_id"), tag_node, "created")
         if tag.get("concept_id") and tag.get("concept_id") in concepts:
-            graph.add_edge(tag_node, tag.get("concept_id"), relation="reconciled")
-    return graph
+            add_edge(tag_node, tag.get("concept_id"), "reconciled")
+    return {"nodes": list(node_map.values()), "edges": edges}
 
 
-def graph_to_plot(graph: nx.Graph, max_nodes: int = 120) -> go.Figure:
+def graph_to_plot(graph: Any, max_nodes: int = 120) -> Any:
+    if not (HAS_NETWORKX and HAS_PLOTLY and nx is not None and go is not None):
+        return None
     sub_nodes = list(graph.nodes())[:max_nodes]
     g = graph.subgraph(sub_nodes).copy()
     if len(g.nodes()) == 0:
@@ -3684,14 +3741,11 @@ def init_session() -> None:
 
 
 def topbar(store: JsonStore) -> None:
-    tags_df = build_tag_dataframe(store)
-    metrics = build_public_metrics(tags_df, to_dataframe(store.works()), to_dataframe(store.users()))
-    model = store.model_state()
     user_name = ""
     if st.session_state.get("session_user_id"):
         user = store.find_user(st.session_state["session_user_id"])
         user_name = user.get("pseudonym", "") if user else ""
-    chips = [f"<span class='status-chip'>obras {metrics.get('works', 0)}</span>", f"<span class='status-chip'>tags {metrics.get('total_tags', 0)}</span>", f"<span class='status-chip'>modelo {model.get('sample_count', 0)} amostras</span>"]
+    chips = []
     if user_name:
         chips.append(f"<span class='status-chip'>perfil {user_name}</span>")
     html = f"<div class='topbar'><div><div class='brand-title'>{APP_TITLE}</div><div class='brand-subtitle'>liquid glass semantic interface</div></div><div>{''.join(chips)}</div></div>"
@@ -3699,11 +3753,6 @@ def topbar(store: JsonStore) -> None:
 
 
 def hero_panel(store: JsonStore) -> None:
-    tags_df = build_tag_dataframe(store)
-    works_df = to_dataframe(store.works())
-    users_df = to_dataframe(store.users())
-    metrics = build_public_metrics(tags_df, works_df, users_df)
-    recent_report = store.reports()[-1] if store.reports() else {}
     html = f"""
     <div class="hero-panel">
         <div class="hero-grid">
@@ -3713,28 +3762,16 @@ def hero_panel(store: JsonStore) -> None:
                 <div class="hero-copy">
                     Interface translúcida com foco em documentação museológica, NLU aplicada a tags livres,
                     reconciliação conceitual, grafo de conhecimento e automação supervisionada.
-                    O sistema preserva a linguagem do público e cria uma camada interpretativa acima dela.
-                </div>
-                <div class="hero-microgrid">
-                    <div class="kpi-box"><div class="kpi-label">total de tags</div><div class="kpi-value">{metrics.get('total_tags', 0)}</div><div class="kpi-foot">camada social registrada</div></div>
-                    <div class="kpi-box"><div class="kpi-label">vocabulário único</div><div class="kpi-value">{metrics.get('unique_tags', 0)}</div><div class="kpi-foot">diversidade lexical</div></div>
-                    <div class="kpi-box"><div class="kpi-label">participantes</div><div class="kpi-value">{metrics.get('active_users', 0)}</div><div class="kpi-foot">perfis anônimos</div></div>
-                    <div class="kpi-box"><div class="kpi-label">densidade lexical</div><div class="kpi-value">{metrics.get('lexical_density', 0.0):.2f}</div><div class="kpi-foot">unique over total</div></div>
+                    A marcação pública permanece limpa e sem dados analíticos expostos ao participante.
                 </div>
             </div>
             <div>
                 <div class="preview-card">
-                    <div>
-                        <div class="preview-card-title">aprendizado real e automação curatorial</div>
-                        <div class="preview-card-copy">
-                            O modelo aprende com vocabulário seed, descrição de obras, validações administrativas e padrões de uso.
-                            Sugestões de entidade, aproximação conceitual, ambiguidades e conceitos candidatos são gerados automaticamente.
-                        </div>
-                    </div>
-                    <div class="story-copy">
-                        último relatório {recent_report.get('created_at', 'ainda não gerado')}<br>
-                        clusters {recent_report.get('cluster_count', 0)}<br>
-                        tags {recent_report.get('total_tags', 0)}
+                    <div class="preview-card-title">área pública limpa</div>
+                    <div class="preview-card-copy">
+                        Na interface pública, a pessoa participante vê apenas o questionário inicial e a galeria de imagens.
+                        Métricas, histórico individual, correlações, análise temporal, agrupamentos e demais leituras profundas
+                        ficam restritos à área administrativa.
                     </div>
                 </div>
             </div>
@@ -4165,18 +4202,27 @@ def render_admin_automation(store: JsonStore, ml: SemanticLearner) -> None:
 def render_admin_graph(store: JsonStore) -> None:
     open_panel("grafo de conhecimento", "obras, usuários, tags, conceitos e eixos institucionais conectados como rede consultável.")
     graph = build_knowledge_graph(store)
-    if HAS_NETWORKX and HAS_PLOTLY:
-        safe_plotly_chart(graph_to_plot(graph, max_nodes=140), use_container_width=True)
+    if HAS_NETWORKX and HAS_PLOTLY and nx is not None and hasattr(graph, "number_of_nodes"):
+        fig = graph_to_plot(graph, max_nodes=140)
+        if fig is not None:
+            safe_plotly_chart(fig, use_container_width=True)
         node_count = graph.number_of_nodes()
         edge_count = graph.number_of_edges()
     else:
-        node_count = len(graph.get("nodes", []))
-        edge_count = len(graph.get("edges", []))
+        node_count = len(graph.get("nodes", [])) if isinstance(graph, dict) else 0
+        edge_count = len(graph.get("edges", [])) if isinstance(graph, dict) else 0
         st.info("visualização interativa do grafo indisponível neste ambiente. o app segue funcionando com o resumo estrutural.")
-        node_df = pd.DataFrame(graph.get("nodes", []))
+        node_df = pd.DataFrame(graph.get("nodes", [])) if isinstance(graph, dict) else pd.DataFrame()
+        edge_df = pd.DataFrame(graph.get("edges", [])) if isinstance(graph, dict) else pd.DataFrame()
         if not node_df.empty and "kind" in node_df.columns:
+            st.markdown("**distribuição de nós por tipo**")
             st.bar_chart(node_df["kind"].value_counts())
-    st.markdown(f"<div class='story-card'><div class='story-title'>estrutura atual</div><div class='graph-note'>nós {node_count} · arestas {edge_count}. O grafo incorpora obras, usuários, conceitos, tags livres e tags institucionais.</div></div>", unsafe_allow_html=True)
+        if not edge_df.empty and "relation" in edge_df.columns:
+            st.markdown("**relações registradas**")
+            st.bar_chart(edge_df["relation"].value_counts())
+        if not node_df.empty:
+            st.dataframe(node_df[[c for c in ["kind", "label", "subtitle"] if c in node_df.columns]].head(40), use_container_width=True, hide_index=True)
+    st.markdown(f"<div class='story-card'><div class='story-title'>estrutura atual</div><div class='graph-note'>nós {node_count} · arestas {edge_count}. o grafo incorpora obras, usuários, conceitos, tags livres e tags institucionais.</div></div>", unsafe_allow_html=True)
     close_panel()
 
 
@@ -4393,16 +4439,14 @@ def main() -> None:
     topbar(store)
     hero_panel(store)
 
-    public_tabs = st.tabs(["explorar obras", "meu histórico", "administração"])
+    public_tabs = st.tabs(["explorar obras", "administração"])
     with public_tabs[0]:
         render_public_explore(store, ml)
     with public_tabs[1]:
-        render_public_history(store)
-    with public_tabs[2]:
         if not st.session_state.get("admin_authenticated", False):
             render_admin_login(store)
         else:
-            admin_tabs = st.tabs(["painel", "validação", "conceitos", "machine learning", "automação", "grafo", "dados"])
+            admin_tabs = st.tabs(["painel geral", "validação", "conceitos", "machine learning", "automação", "grafo", "dados e obras"])
             with admin_tabs[0]:
                 render_admin_dashboard(store, ml)
             with admin_tabs[1]:
