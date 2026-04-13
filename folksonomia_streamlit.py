@@ -14,7 +14,11 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-import networkx as nx
+try:
+    import networkx as nx
+except ModuleNotFoundError:
+    nx = None
+
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -26,6 +30,67 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.model_selection import train_test_split
+
+
+
+class MiniGraph:
+    def __init__(self) -> None:
+        self._nodes: Dict[str, Dict[str, Any]] = {}
+        self._edges: List[Tuple[str, str]] = []
+
+    def add_node(self, node_id: str, **attrs: Any) -> None:
+        current = self._nodes.get(node_id, {})
+        current.update(attrs)
+        self._nodes[node_id] = current
+
+    def add_edge(self, source: str, target: str, **attrs: Any) -> None:
+        if source not in self._nodes:
+            self.add_node(source)
+        if target not in self._nodes:
+            self.add_node(target)
+        pair = (source, target)
+        if pair not in self._edges and (target, source) not in self._edges:
+            self._edges.append(pair)
+
+    def nodes(self, data: bool = False):
+        return list(self._nodes.items()) if data else list(self._nodes.keys())
+
+    def edges(self):
+        return list(self._edges)
+
+    def subgraph(self, selected_nodes: Sequence[str]) -> "MiniGraph":
+        node_set = set(selected_nodes)
+        sub = MiniGraph()
+        for node_id in selected_nodes:
+            if node_id in self._nodes:
+                sub.add_node(node_id, **self._nodes[node_id])
+        for source, target in self._edges:
+            if source in node_set and target in node_set:
+                sub.add_edge(source, target)
+        return sub
+
+    def copy(self) -> "MiniGraph":
+        copied = MiniGraph()
+        for node_id, attrs in self._nodes.items():
+            copied.add_node(node_id, **attrs)
+        for source, target in self._edges:
+            copied.add_edge(source, target)
+        return copied
+
+
+def simple_graph_layout(node_ids: Sequence[str]) -> Dict[str, Tuple[float, float]]:
+    if not node_ids:
+        return {}
+    if len(node_ids) == 1:
+        return {node_ids[0]: (0.0, 0.0)}
+    radius = 1.0
+    layout: Dict[str, Tuple[float, float]] = {}
+    total = len(node_ids)
+    for index, node_id in enumerate(node_ids):
+        angle = (2.0 * math.pi * index) / total
+        layout[node_id] = (radius * math.cos(angle), radius * math.sin(angle))
+    return layout
+
 
 st.set_page_config(page_title="folksonomia", layout="wide", initial_sidebar_state="collapsed")
 
@@ -3361,8 +3426,8 @@ def build_public_metrics(tags_df: pd.DataFrame, works_df: pd.DataFrame, users_df
     }
 
 
-def build_knowledge_graph(store: JsonStore) -> nx.Graph:
-    graph = nx.Graph()
+def build_knowledge_graph(store: JsonStore) -> Any:
+    graph = nx.Graph() if nx is not None else MiniGraph()
     works = store.works()
     concepts = {concept["id"]: concept for concept in store.concepts()}
     users = {user["id"]: user for user in store.users()}
@@ -3389,12 +3454,15 @@ def build_knowledge_graph(store: JsonStore) -> nx.Graph:
     return graph
 
 
-def graph_to_plot(graph: nx.Graph, max_nodes: int = 120) -> go.Figure:
+def graph_to_plot(graph: Any, max_nodes: int = 120) -> go.Figure:
     sub_nodes = list(graph.nodes())[:max_nodes]
     g = graph.subgraph(sub_nodes).copy()
     if len(g.nodes()) == 0:
         return go.Figure()
-    pos = nx.spring_layout(g, seed=42, k=0.9 / math.sqrt(max(len(g.nodes()), 2)))
+    if nx is not None:
+        pos = nx.spring_layout(g, seed=42, k=0.9 / math.sqrt(max(len(g.nodes()), 2)))
+    else:
+        pos = simple_graph_layout(list(g.nodes()))
     edge_x, edge_y = [], []
     for source, target in g.edges():
         x0, y0 = pos[source]
