@@ -34,6 +34,7 @@ except Exception:
     HAS_PLOTLY = False
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 try:
     from sklearn.cluster import AgglomerativeClustering
@@ -51,6 +52,17 @@ except Exception:
     cosine_similarity = None
     train_test_split = None
     HAS_SKLEARN = False
+
+try:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.utils import simpleSplit
+    HAS_REPORTLAB = True
+except Exception:
+    A4 = None
+    canvas = None
+    simpleSplit = None
+    HAS_REPORTLAB = False
 
 st.set_page_config(page_title="folksonomia", layout="wide", initial_sidebar_state="collapsed")
 
@@ -4670,9 +4682,8 @@ def render_admin_graph(store: JsonStore) -> None:
 def render_admin_data(store: JsonStore, ml: SemanticLearner) -> None:
     def build_detailed_pdf_bytes() -> bytes:
         from io import BytesIO
-        from reportlab.lib.pagesizes import A4
-        from reportlab.pdfgen import canvas
-        from reportlab.lib.utils import simpleSplit
+        if not HAS_REPORTLAB:
+            raise ModuleNotFoundError("reportlab")
 
         tags_df = build_tag_dataframe(store)
         works_df = to_dataframe(store.works())
@@ -5518,7 +5529,7 @@ def render_admin_graph(store: JsonStore) -> None:
     if fig is not None:
         safe_plotly_chart(fig, use_container_width=True)
     else:
-        st.info("instale plotly para visualizar a teia 3d completa.")
+        st.markdown("<div class='story-card'><div class='story-title'>visualização resumida da teia</div><div class='story-copy'>a teia tridimensional não foi carregada nesta execução, mas a estrutura conectiva segue disponível nos núcleos, metadados e palavras centrais abaixo.</div></div>", unsafe_allow_html=True)
     node_df = pd.DataFrame(payload.get("nodes", []))
     edge_df = pd.DataFrame(payload.get("edges", []))
     node_count = len(node_df)
@@ -5979,6 +5990,250 @@ def main() -> None:
 
     public_tabs = st.tabs(["explorar obras", "administração"])
     with public_tabs[0]:
+        render_public_explore(store, ml)
+    with public_tabs[1]:
+        if not st.session_state.get("admin_authenticated", False):
+            render_admin_login(store)
+        else:
+            admin_tabs = st.tabs(["painel geral", "validação", "conceitos", "machine learning", "análise temporal", "teia 3d", "dados e obras"])
+            with admin_tabs[0]:
+                render_admin_dashboard(store, ml)
+            with admin_tabs[1]:
+                render_admin_validation(store, ml)
+            with admin_tabs[2]:
+                render_admin_concepts(store, ml)
+            with admin_tabs[3]:
+                render_admin_ml(store, ml)
+            with admin_tabs[4]:
+                render_admin_automation(store, ml)
+            with admin_tabs[5]:
+                render_admin_graph(store)
+            with admin_tabs[6]:
+                render_admin_data(store, ml)
+            if st.button("sair da administração", use_container_width=True):
+                st.session_state["admin_authenticated"] = False
+                st.rerun()
+
+
+
+
+def build_accessibility_context(store: JsonStore) -> Dict[str, Any]:
+    works = store.works()
+    if not works:
+        return {"title": "", "text": "Nenhuma imagem está disponível no momento.", "gloss": "SEM IMAGEM", "work_id": ""}
+    selected_id = str(st.session_state.get("selected_work_id", "") or "")
+    selected = None
+    for work in works:
+        if str(work.get("id", "")) == selected_id:
+            selected = work
+            break
+    if selected is None:
+        selected = works[0]
+    work_id = str(selected.get("id", ""))
+    tags_df = build_tag_dataframe(store)
+    user_id = st.session_state.get("session_user_id", "")
+    mine = pd.DataFrame()
+    if not tags_df.empty:
+        mine = tags_df[(tags_df["work_id"].astype(str) == work_id)]
+        if user_id and "user_id" in tags_df.columns:
+            mine = mine[mine["user_id"].astype(str) == str(user_id)]
+    my_tags = []
+    if not mine.empty and "tag" in mine.columns:
+        my_tags = mine["tag"].astype(str).tolist()[:8]
+    inst_tags = selected.get("institutional_tags", []) or []
+    meta_bits = [
+        selected.get("artist", ""),
+        selected.get("year", ""),
+        selected.get("museum", ""),
+        selected.get("period", ""),
+        selected.get("technique", ""),
+        selected.get("material", ""),
+    ]
+    meta_bits = [str(v).strip() for v in meta_bits if str(v).strip()]
+    description = str(selected.get("description", "") or "").strip()
+    tag_phrase = ", ".join(my_tags) if my_tags else "ainda sem marcações pessoais registradas"
+    institutional_phrase = ", ".join(inst_tags[:6]) if inst_tags else "sem descritores institucionais visíveis"
+    readable = []
+    readable.append(f"Imagem selecionada: {selected.get('title', 'obra sem título')}. ")
+    if description:
+        readable.append(f"Descrição textual disponível: {description} ")
+    if meta_bits:
+        readable.append(f"Metadados de apoio: {'; '.join(meta_bits)}. ")
+    readable.append(f"Suas tags atuais nesta imagem: {tag_phrase}. ")
+    readable.append(f"Descritores institucionais relacionados: {institutional_phrase}. ")
+    readable.append("Esta leitura acessível pode apoiar compreensão textual, locução e acompanhamento visual do conteúdo.")
+    text_value = "".join(readable)
+    gloss = libras_gloss(text_value)
+    return {
+        "title": str(selected.get("title", "obra")),
+        "text": text_value,
+        "gloss": gloss,
+        "work_id": work_id,
+        "image_url": str(selected.get("image_url", "")),
+    }
+
+
+def libras_gloss(text_value: str) -> str:
+    stop = {
+        "a", "o", "as", "os", "de", "da", "do", "das", "dos", "e", "é", "um", "uma", "para",
+        "com", "em", "na", "no", "nas", "nos", "por", "que", "se", "ao", "aos", "à", "às",
+    }
+    normalized = normalize_text(text_value).upper().split()
+    tokens = [token for token in normalized if token and token.lower() not in stop]
+    if not tokens:
+        return "SEM TEXTO"
+    return " · ".join(tokens[:18])
+
+
+def render_accessibility_css_patch() -> None:
+    st.session_state.setdefault("font_scale", 1.0)
+    st.session_state.setdefault("high_contrast", False)
+    scale = float(st.session_state.get("font_scale", 1.0))
+    contrast = bool(st.session_state.get("high_contrast", False))
+    text0 = "#101010" if contrast else "#171717"
+    text1 = "#191919" if contrast else "#242424"
+    text2 = "#303030" if contrast else "#4a4a4a"
+    bg = "rgba(255,255,255,0.28)" if contrast else "rgba(255,255,255,0.20)"
+    border = "rgba(0,0,0,0.20)" if contrast else "rgba(255,255,255,0.52)"
+    css = f"""
+    <style>
+    :root {{ --user-font-scale: {scale:.2f}; }}
+    html, body, [class*='css'], [data-testid='stMarkdownContainer'], p, span, label, div, button, input, textarea, select {{
+        font-size: calc(1rem * var(--user-font-scale));
+    }}
+    :root {{
+        --glass: {bg};
+        --glass-strong: rgba(255,255,255,0.34);
+        --line: {border};
+        --text-0: {text0};
+        --text-1: {text1};
+        --text-2: {text2};
+    }}
+    .access-card {{
+        background: rgba(255,255,255,0.22);
+        border: 1px solid rgba(255,255,255,0.45);
+        border-radius: 22px;
+        padding: 1rem 1.2rem;
+        box-shadow: 0 16px 32px rgba(0,0,0,0.06);
+        margin-bottom: 1rem;
+    }}
+    .access-title {{ font-size: 1.12rem; font-weight: 700; color: var(--text-0); margin-bottom: .35rem; }}
+    .access-copy {{ color: var(--text-1); line-height: 1.65; }}
+    .access-mini {{ color: var(--text-2); font-size: .95rem; line-height: 1.5; }}
+    .stTextInput input, .stTextArea textarea, .stSelectbox div[data-baseweb='select'] > div {{
+        color: #111111 !important;
+        background: rgba(255,255,255,0.88) !important;
+    }}
+    .stTextArea textarea::placeholder, .stTextInput input::placeholder {{ color: #555555 !important; opacity: 1 !important; }}
+    </style>
+    """
+    st.markdown(css, unsafe_allow_html=True)
+
+
+def _escape_js(text_value: str) -> str:
+    return json.dumps(text_value, ensure_ascii=False)
+
+
+def render_accessibility_avatar(text_value: str, gloss: str) -> None:
+    safe_text = _escape_js(text_value)
+    safe_gloss = _escape_js(gloss)
+    html = f"""
+    <div style="background:rgba(255,255,255,.22);border:1px solid rgba(255,255,255,.45);border-radius:24px;padding:16px;box-shadow:0 18px 36px rgba(0,0,0,.06);">
+      <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;">
+        <div style="flex:0 0 210px;display:flex;justify-content:center;align-items:center;">
+          <div class="avatar-scene">
+            <div class="avatar-wrap">
+              <div class="avatar-head"><div class="eye left"></div><div class="eye right"></div><div class="mouth"></div></div>
+              <div class="avatar-body"></div>
+              <div class="avatar-arm left" id="armLeft"></div>
+              <div class="avatar-arm right" id="armRight"></div>
+            </div>
+          </div>
+        </div>
+        <div style="flex:1 1 320px;min-width:240px;">
+          <div style="font-family:'Times New Roman',serif;font-size:1.08rem;font-weight:700;color:#171717;margin-bottom:8px;">apoio acessível</div>
+          <div id="speechText" style="font-family:'Times New Roman',serif;color:#2a2a2a;line-height:1.6;margin-bottom:10px;">{text_value}</div>
+          <div style="font-family:'Times New Roman',serif;font-size:.95rem;color:#555;line-height:1.5;margin-bottom:12px;"><strong>glosa de apoio:</strong> {gloss}</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <button onclick="readText()" style="border:none;border-radius:999px;padding:10px 16px;background:#0e1a2c;color:#fff;font-family:'Times New Roman',serif;cursor:pointer;">ouvir texto</button>
+            <button onclick="stopText()" style="border:none;border-radius:999px;padding:10px 16px;background:#dcdcdc;color:#111;font-family:'Times New Roman',serif;cursor:pointer;">parar</button>
+            <button onclick="playGloss()" style="border:none;border-radius:999px;padding:10px 16px;background:#f0f0f0;color:#111;font-family:'Times New Roman',serif;cursor:pointer;">apoio libras</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <style>
+      .avatar-scene {{ width:180px; height:220px; perspective:800px; display:flex; align-items:center; justify-content:center; }}
+      .avatar-wrap {{ position:relative; width:140px; height:200px; transform-style:preserve-3d; animation:spinSoft 7s ease-in-out infinite; }}
+      .avatar-head {{ position:absolute; top:10px; left:35px; width:70px; height:70px; background:linear-gradient(145deg,#f3d2b6,#e7bf9a); border-radius:50%; box-shadow:inset -8px -6px 18px rgba(0,0,0,.10); transform:translateZ(24px); }}
+      .eye {{ position:absolute; top:28px; width:8px; height:8px; background:#222; border-radius:50%; }}
+      .eye.left {{ left:18px; }} .eye.right {{ right:18px; }}
+      .mouth {{ position:absolute; left:24px; bottom:16px; width:22px; height:10px; border-bottom:3px solid #884d4d; border-radius:0 0 18px 18px; animation:talk 1.2s infinite ease-in-out; }}
+      .avatar-body {{ position:absolute; top:76px; left:28px; width:84px; height:88px; border-radius:28px 28px 20px 20px; background:linear-gradient(145deg,#172742,#0e1a2c); transform:translateZ(10px); }}
+      .avatar-arm {{ position:absolute; top:88px; width:18px; height:70px; border-radius:20px; background:linear-gradient(145deg,#1b2f4f,#101a2b); transform-origin:top center; }}
+      .avatar-arm.left {{ left:16px; animation:armLeft 2s ease-in-out infinite; }}
+      .avatar-arm.right {{ right:16px; animation:armRight 2s ease-in-out infinite; }}
+      @keyframes spinSoft {{ 0%,100%{{transform:rotateY(-10deg)}} 50%{{transform:rotateY(10deg)}} }}
+      @keyframes talk {{ 0%,100%{{transform:scaleY(1)}} 50%{{transform:scaleY(.55)}} }}
+      @keyframes armLeft {{ 0%,100%{{transform:rotate(14deg)}} 50%{{transform:rotate(-28deg)}} }}
+      @keyframes armRight {{ 0%,100%{{transform:rotate(-14deg)}} 50%{{transform:rotate(28deg)}} }}
+    </style>
+    <script>
+      const fullText = {safe_text};
+      const glossText = {safe_gloss};
+      function readText() {{
+        if ('speechSynthesis' in window) {{
+          window.speechSynthesis.cancel();
+          const utter = new SpeechSynthesisUtterance(fullText);
+          utter.lang = 'pt-BR';
+          utter.rate = 0.95;
+          window.speechSynthesis.speak(utter);
+        }}
+      }}
+      function stopText() {{ if ('speechSynthesis' in window) window.speechSynthesis.cancel(); }}
+      function playGloss() {{
+        const target = document.getElementById('speechText');
+        if (!target) return;
+        target.innerText = glossText;
+        setTimeout(() => {{ target.innerText = fullText; }}, 6000);
+      }}
+    </script>
+    """
+    components.html(html, height=340)
+
+
+def render_accessibility_hub(store: JsonStore) -> None:
+    payload = build_accessibility_context(store)
+    with st.expander("acessibilidade", expanded=False):
+        c1, c2 = st.columns([0.92, 1.08])
+        with c1:
+            st.session_state["font_scale"] = st.slider("tamanho das letras", min_value=0.90, max_value=1.40, value=float(st.session_state.get("font_scale", 1.0)), step=0.05)
+            st.session_state["high_contrast"] = st.toggle("contraste reforçado", value=bool(st.session_state.get("high_contrast", False)))
+            st.markdown(f"<div class='access-card'><div class='access-title'>interpretação textual</div><div class='access-copy'>{payload['text']}</div></div>", unsafe_allow_html=True)
+            st.markdown("<div class='access-card'><div class='access-title'>áudio descrição e leitura em voz alta</div><div class='access-mini'>Use os controles ao lado para ouvir a descrição da imagem selecionada. O avatar 3D de apoio também apresenta uma glosa visual resumida para acompanhamento.</div></div>", unsafe_allow_html=True)
+        with c2:
+            render_accessibility_avatar(payload["text"], payload["gloss"])
+
+
+def main() -> None:
+    render_css()
+    render_css_patch_v3()
+    render_css_patch_v4()
+    init_session()
+    render_accessibility_css_patch()
+    store = JsonStore()
+    ml = SemanticLearner(store)
+    run_automation_engine(store, ml)
+
+    if not st.session_state.get("intro_complete", False) and store.settings().get("public_intro_enabled", True):
+        intro_flow(store)
+        return
+
+    topbar(store)
+
+    public_tabs = st.tabs(["explorar obras", "administração"])
+    with public_tabs[0]:
+        render_accessibility_hub(store)
         render_public_explore(store, ml)
     with public_tabs[1]:
         if not st.session_state.get("admin_authenticated", False):
