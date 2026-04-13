@@ -3093,7 +3093,7 @@ class JsonStore:
         write_json(ADMIN_FILE, {"username": ADMIN_USERNAME, "password": hash_password(ADMIN_PASSWORD)})
         if not WORKS_FILE.exists():
             works = []
-            for item in DEFAULT_WORKS:
+            for item in DEFAULT_WORKS[:3]:
                 works.append(asdict(WorkRecord(
                     id=make_id("work"),
                     title=item["title"],
@@ -3105,8 +3105,27 @@ class JsonStore:
                     created_at=now_iso(),
                 )))
             write_json(WORKS_FILE, works)
+        else:
+            works = read_json(WORKS_FILE, [])
+            legacy_titles = {"Guernica", "A Noite Estrelada", "Mona Lisa", "Operários", "Abaporu", "A Redenção de Cam"}
+            current_titles = {item.get("title", "") for item in works if isinstance(item, dict)}
+            if len(works) >= 6 and current_titles.issubset(legacy_titles):
+                write_json(WORKS_FILE, works[:3])
         if not USERS_FILE.exists():
             write_json(USERS_FILE, [])
+        else:
+            users = read_json(USERS_FILE, [])
+            changed = False
+            for index, user in enumerate(users):
+                if isinstance(user, dict):
+                    resolved_id = user.get("id") or user.get("user_id")
+                    if not resolved_id:
+                        resolved_id = f"legacy-user-{index+1}"
+                    if user.get("id") != resolved_id:
+                        user["id"] = resolved_id
+                        changed = True
+            if changed:
+                write_json(USERS_FILE, users)
         if not TAGS_FILE.exists():
             write_json(TAGS_FILE, [])
         if not CONCEPTS_FILE.exists():
@@ -3209,7 +3228,10 @@ class JsonStore:
 
     def find_user(self, user_id: str) -> Optional[Dict[str, Any]]:
         for item in self.users():
-            if item.get("id") == user_id:
+            resolved_id = item.get("id") or item.get("user_id")
+            if resolved_id == user_id:
+                if item.get("id") != resolved_id:
+                    item["id"] = resolved_id
                 return item
         return None
 
@@ -3542,8 +3564,15 @@ def build_public_metrics(tags_df: pd.DataFrame, works_df: pd.DataFrame, users_df
 
 def build_knowledge_graph(store: JsonStore) -> Any:
     works = store.works()
-    concepts = {concept["id"]: concept for concept in store.concepts()}
-    users = {user["id"]: user for user in store.users()}
+    concepts = {concept["id"]: concept for concept in store.concepts() if isinstance(concept, dict) and concept.get("id")}
+    users = {}
+    for index, user in enumerate(store.users()):
+        if not isinstance(user, dict):
+            continue
+        resolved_id = user.get("id") or user.get("user_id") or f"legacy-user-{index+1}"
+        if user.get("id") != resolved_id:
+            user["id"] = resolved_id
+        users[resolved_id] = user
     tags = store.tags()
 
     if HAS_NETWORKX and nx is not None:
@@ -3741,38 +3770,20 @@ def init_session() -> None:
 
 
 def topbar(store: JsonStore) -> None:
-    user_name = ""
-    if st.session_state.get("session_user_id"):
-        user = store.find_user(st.session_state["session_user_id"])
-        user_name = user.get("pseudonym", "") if user else ""
-    chips = []
-    if user_name:
-        chips.append(f"<span class='status-chip'>perfil {user_name}</span>")
-    html = f"<div class='topbar'><div><div class='brand-title'>{APP_TITLE}</div><div class='brand-subtitle'>liquid glass semantic interface</div></div><div>{''.join(chips)}</div></div>"
+    html = f"<div class='topbar'><div><div class='brand-title'>{APP_TITLE}</div><div class='brand-subtitle'>liquid glass semantic interface</div></div><div></div></div>"
     st.markdown(html, unsafe_allow_html=True)
 
 
 def hero_panel(store: JsonStore) -> None:
     html = f"""
     <div class="hero-panel">
-        <div class="hero-grid">
+        <div class="hero-grid" style="grid-template-columns: 1fr;">
             <div>
                 <div class="hero-kicker">camada semântica participativa com aprendizado contínuo</div>
                 <div class="hero-title">folksonomia</div>
                 <div class="hero-copy">
                     Interface translúcida com foco em documentação museológica, NLU aplicada a tags livres,
                     reconciliação conceitual, grafo de conhecimento e automação supervisionada.
-                    A marcação pública permanece limpa e sem dados analíticos expostos ao participante.
-                </div>
-            </div>
-            <div>
-                <div class="preview-card">
-                    <div class="preview-card-title">área pública limpa</div>
-                    <div class="preview-card-copy">
-                        Na interface pública, a pessoa participante vê apenas o questionário inicial e a galeria de imagens.
-                        Métricas, histórico individual, correlações, análise temporal, agrupamentos e demais leituras profundas
-                        ficam restritos à área administrativa.
-                    </div>
                 </div>
             </div>
         </div>
@@ -3845,18 +3856,16 @@ def render_public_overview(store: JsonStore, ml: SemanticLearner) -> None:
 def render_public_explore(store: JsonStore, ml: SemanticLearner) -> None:
     user = store.find_user(st.session_state.get("session_user_id", ""))
     works = store.works()
-    open_panel("explorar obras", "as imagens aparecem lado a lado em liquid glass. nenhum título, artista, técnica ou registro textual é exibido durante a marcação para evitar influência.")
+    open_panel("explorar obras", "")
     if not user:
-        st.info("responda ao questionário inicial para liberar o acesso às obras.")
         close_panel()
         return
-    st.markdown("<div class='work-grid-note'>clique em uma imagem para abrir o campo de tag. durante a marcação, o sistema oculta dados textuais da obra.</div>", unsafe_allow_html=True)
     if not works:
-        st.info("nenhuma obra cadastrada.")
         close_panel()
         return
 
-    col_count = 4 if len(works) >= 4 else 3 if len(works) == 3 else 2 if len(works) == 2 else 1
+    works = works[:3]
+    col_count = 3 if len(works) >= 3 else 2 if len(works) == 2 else 1
     cols = st.columns(col_count)
     for idx, work in enumerate(works):
         with cols[idx % col_count]:
@@ -3872,7 +3881,7 @@ def render_public_explore(store: JsonStore, ml: SemanticLearner) -> None:
         selected = next((w for w in works if w.get("id") == selected_id), None)
         if selected:
             st.markdown("<div class='soft-line'></div>", unsafe_allow_html=True)
-            open_panel("imagem selecionada", "escreva apenas a sua percepção livre. a interface continua sem exibir dados textuais da obra.")
+            open_panel("imagem selecionada", "")
             c1, c2 = st.columns([1.05, 0.95])
             with c1:
                 st.image(selected.get("image_url"), use_container_width=True)
@@ -4211,7 +4220,7 @@ def render_admin_graph(store: JsonStore) -> None:
     else:
         node_count = len(graph.get("nodes", [])) if isinstance(graph, dict) else 0
         edge_count = len(graph.get("edges", [])) if isinstance(graph, dict) else 0
-        st.info("visualização interativa do grafo indisponível neste ambiente. o app segue funcionando com o resumo estrutural.")
+        st.markdown("")
         node_df = pd.DataFrame(graph.get("nodes", [])) if isinstance(graph, dict) else pd.DataFrame()
         edge_df = pd.DataFrame(graph.get("edges", [])) if isinstance(graph, dict) else pd.DataFrame()
         if not node_df.empty and "kind" in node_df.columns:
