@@ -22,14 +22,31 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-import plotly.graph_objects as go
 import streamlit as st
 import streamlit.components.v1 as components
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4, landscape
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.lib.units import cm
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+PLOTLY_AVAILABLE = True
+try:
+    import plotly.graph_objects as go
+except Exception:
+    PLOTLY_AVAILABLE = False
+    go = None
+
+REPORTLAB_AVAILABLE = True
+try:
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import cm
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+except Exception:
+    REPORTLAB_AVAILABLE = False
+    colors = None
+    A4 = landscape = None
+    ParagraphStyle = getSampleStyleSheet = None
+    cm = None
+    Paragraph = SimpleDocTemplate = Spacer = Table = TableStyle = None
+
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics.pairwise import cosine_similarity
@@ -1115,6 +1132,27 @@ def layout_3d(nodes: List[Dict[str, Any]]) -> Dict[str, Tuple[float, float, floa
 
 
 def render_connectivity_web_3d(store: Store, pack: LearningPack) -> None:
+    if not PLOTLY_AVAILABLE:
+        section_title(
+            "Teia 3D de conectividade",
+            "A visualização tridimensional depende do Plotly. Enquanto isso, a leitura conectada abaixo resume os principais vínculos entre obras, metadados institucionais, tags livres e conceitos reconciliados.",
+        )
+        graph = build_connectivity_graph(store, pack)
+        nodes = graph.get("nodes", [])
+        edges = graph.get("edges", [])
+        st.markdown(
+            f"<div class='soft-panel'><strong>nós identificados:</strong> {len(nodes)}<br/><strong>ligações ativas:</strong> {len(edges)}</div>",
+            unsafe_allow_html=True,
+        )
+        top_edges = edges[:25]
+        for edge in top_edges:
+            label = f"{edge.get('source_label','')} ↔ {edge.get('target_label','')}"
+            desc = edge.get('relation','relação')
+            st.markdown(
+                f"<div class='validation-card'><strong>{html_escape(label)}</strong><br/>{html_escape(desc)}</div>",
+                unsafe_allow_html=True,
+            )
+        return
     nodes, edges = build_connectivity_web(store, pack)
     pos = layout_3d(nodes)
 
@@ -1394,6 +1432,8 @@ def render_tts_and_avatar(selected_text: str, title: str = "Acessibilidade") -> 
 # ============================================================
 
 def build_admin_pdf(store: Store, pack: LearningPack) -> bytes:
+    if not REPORTLAB_AVAILABLE:
+        raise RuntimeError("PDF indisponível nesta execução porque a biblioteca reportlab não está instalada.")
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer,
@@ -2170,7 +2210,7 @@ def render_admin_validation(store: Store, pack: LearningPack) -> None:
             )
 
 
-def temporal_series(cards: Dict[str, List[Dict[str, Any]]], title: str, label_formatter=lambda x: x) -> go.Figure:
+def temporal_series(cards: Dict[str, List[Dict[str, Any]]], title: str, label_formatter=lambda x: x):
     keys = sorted(cards.keys())
     counts = [len(cards[k]) for k in keys]
     labels = [label_formatter(k) for k in keys]
@@ -2205,15 +2245,27 @@ def render_admin_temporal(store: Store) -> None:
     c1, c2, c3 = st.columns(3)
     with c1:
         st.markdown("<div class='plot-shell'>", unsafe_allow_html=True)
-        st.plotly_chart(temporal_series(periods["day"], "dia"), use_container_width=True, config={"displaylogo": False})
+        if PLOTLY_AVAILABLE:
+            st.plotly_chart(temporal_series(periods["day"], "dia"), use_container_width=True, config={"displaylogo": False})
+        else:
+            day_counts = {k: len(v) for k, v in sorted(periods["day"].items())}
+            st.bar_chart(pd.Series(day_counts, name="marcações"))
         st.markdown("</div>", unsafe_allow_html=True)
     with c2:
         st.markdown("<div class='plot-shell'>", unsafe_allow_html=True)
-        st.plotly_chart(temporal_series(periods["month"], "mês", month_label), use_container_width=True, config={"displaylogo": False})
+        if PLOTLY_AVAILABLE:
+            st.plotly_chart(temporal_series(periods["month"], "mês", month_label), use_container_width=True, config={"displaylogo": False})
+        else:
+            month_counts = {month_label(k): len(v) for k, v in sorted(periods["month"].items())}
+            st.bar_chart(pd.Series(month_counts, name="marcações"))
         st.markdown("</div>", unsafe_allow_html=True)
     with c3:
         st.markdown("<div class='plot-shell'>", unsafe_allow_html=True)
-        st.plotly_chart(temporal_series(periods["year"], "ano"), use_container_width=True, config={"displaylogo": False})
+        if PLOTLY_AVAILABLE:
+            st.plotly_chart(temporal_series(periods["year"], "ano"), use_container_width=True, config={"displaylogo": False})
+        else:
+            year_counts = {k: len(v) for k, v in sorted(periods["year"].items())}
+            st.bar_chart(pd.Series(year_counts, name="marcações"))
         st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
