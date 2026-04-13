@@ -445,7 +445,7 @@ def build_learning_records(store: Store) -> pd.DataFrame:
     tags = store.tags()
     validations = store.validations()
 
-    work_map = {safe_int(w["id"]): w for w in works}
+    work_map = {safe_int(w.get("id")): w for w in works if safe_int(w.get("id")) is not None}
     validated_map = defaultdict(list)
     for val in validations:
         tag_id = safe_int(val.get("tag_id"))
@@ -494,7 +494,8 @@ def build_learning_records(store: Store) -> pd.DataFrame:
             }
         )
 
-    return pd.DataFrame(rows)
+    base_columns = ["tag_id", "work_id", "tag", "notes", "text_blob", "category", "concept", "created_at"]
+    return pd.DataFrame(rows, columns=base_columns)
 
 
 @dataclass
@@ -527,7 +528,7 @@ def build_concept_memory(store: Store) -> Tuple[Dict[str, Dict[str, Any]], Dict[
         }
 
     work_map = {safe_int(w["id"]): w for w in works}
-    tag_map = {safe_int(t["id"]): t for t in tags}
+    tag_map = {safe_int(t.get("id")): t for t in tags if safe_int(t.get("id")) is not None}
 
     for val in validations:
         if val.get("decision") != "approved":
@@ -584,7 +585,7 @@ def build_search_docs(store: Store, concept_by_label: Dict[str, Dict[str, Any]])
         tags_by_work[safe_int(t.get("work_id"))].append(str(t.get("tag", "")).strip())
 
     concepts_by_work = defaultdict(list)
-    tag_map = {safe_int(t["id"]): t for t in tags}
+    tag_map = {safe_int(t.get("id")): t for t in tags if safe_int(t.get("id")) is not None}
     for v in validations:
         if v.get("decision") != "approved":
             continue
@@ -639,6 +640,10 @@ def build_learning_pack(store: Store) -> LearningPack:
     category_vectorizer = None
     category_labels = []
 
+    required_cols = ["tag_id", "work_id", "tag", "notes", "text_blob", "category", "concept", "created_at"]
+    for col in required_cols:
+        if col not in records.columns:
+            records[col] = ""
     trainable = records[(records["category"].astype(str).str.len() > 0)]
     trained_examples = len(trainable)
     if SKLEARN_AVAILABLE and trained_examples >= 4 and trainable["category"].nunique() >= 2:
