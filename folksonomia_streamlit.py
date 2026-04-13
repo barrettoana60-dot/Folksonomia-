@@ -47,9 +47,27 @@ except Exception:
     cm = None
     Paragraph = SimpleDocTemplate = Spacer = Table = TableStyle = None
 
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics.pairwise import cosine_similarity
+SKLEARN_AVAILABLE = True
+try:
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.metrics.pairwise import cosine_similarity
+except Exception:
+    SKLEARN_AVAILABLE = False
+    TfidfVectorizer = None
+    LogisticRegression = None
+
+    def cosine_similarity(a, b):
+        import numpy as _np
+        a = _np.asarray(a, dtype=float)
+        b = _np.asarray(b, dtype=float)
+        if a.ndim == 1:
+            a = a.reshape(1, -1)
+        if b.ndim == 1:
+            b = b.reshape(1, -1)
+        denom = (_np.linalg.norm(a, axis=1, keepdims=True) * _np.linalg.norm(b, axis=1, keepdims=True).T)
+        denom[denom == 0] = 1.0
+        return (a @ b.T) / denom
 
 
 # ============================================================
@@ -612,7 +630,7 @@ def build_learning_pack(store: Store) -> LearningPack:
 
     search_vectorizer = None
     search_matrix = None
-    if docs:
+    if docs and SKLEARN_AVAILABLE:
         search_vectorizer = TfidfVectorizer(ngram_range=(1, 2), min_df=1)
         search_matrix = search_vectorizer.fit_transform([d["text"] for d in docs])
 
@@ -623,7 +641,7 @@ def build_learning_pack(store: Store) -> LearningPack:
 
     trainable = records[(records["category"].astype(str).str.len() > 0)]
     trained_examples = len(trainable)
-    if trained_examples >= 4 and trainable["category"].nunique() >= 2:
+    if SKLEARN_AVAILABLE and trained_examples >= 4 and trainable["category"].nunique() >= 2:
         category_vectorizer = TfidfVectorizer(ngram_range=(1, 2), min_df=1)
         X = category_vectorizer.fit_transform(trainable["text_blob"].astype(str).tolist())
         y = trainable["category"].astype(str).tolist()
@@ -641,6 +659,7 @@ def build_learning_pack(store: Store) -> LearningPack:
         f"{validations_total} validações registradas e {len(concept_by_label)} conceitos ativos. "
         f"Há {trained_examples} exemplos diretamente reutilizados no aprendizado supervisionado. "
         f"A busca foi enriquecida com metadados, tags públicas, conceitos reconciliados e pontos externos."
+        + (" O ambiente atual está sem scikit-learn; por isso o sistema usa classificação heurística e busca lexical conectada." if not SKLEARN_AVAILABLE else "")
     )
 
     return LearningPack(
@@ -779,21 +798,39 @@ def best_concept_for_text(text: str, pack: LearningPack) -> str:
 
 def search_works(query: str, pack: LearningPack) -> List[Dict[str, Any]]:
     query = (query or "").strip()
-    if not query or pack.search_vectorizer is None or pack.search_matrix is None:
+    if not query:
         return []
 
-    qvec = pack.search_vectorizer.transform([query])
-    sims = cosine_similarity(qvec, pack.search_matrix)[0]
-    ranked_idx = np.argsort(-sims)
-    results = []
-    for idx in ranked_idx[:8]:
-        score = float(sims[idx])
-        if score <= 0:
-            continue
-        item = dict(pack.search_docs[idx])
-        item["score"] = score
-        results.append(item)
-    return results
+    if pack.search_vectorizer is not None and pack.search_matrix is not None:
+        qvec = pack.search_vectorizer.transform([query])
+        sims = cosine_similarity(qvec, pack.search_matrix)[0]
+        ranked_idx = np.argsort(-sims)
+        results = []
+        for idx in ranked_idx[:8]:
+            score = float(sims[idx])
+            if score <= 0:
+                continue
+            item = dict(pack.search_docs[idx])
+            item["score"] = score
+            results.append(item)
+        return results
+
+    qnorm = normalize_tag(query)
+    qtokens = set(tokenize(query))
+    scored = []
+    for item in pack.search_docs:
+        text = item.get("text", "")
+        tokens = set(tokenize(text))
+        overlap = len(qtokens & tokens) / max(1, len(qtokens | tokens))
+        close = similarity(qnorm, normalize_tag(text))
+        contains = 0.3 if qnorm and qnorm in normalize_tag(text) else 0.0
+        score = max(overlap, close * 0.7 + contains)
+        if score > 0:
+            row = dict(item)
+            row["score"] = float(score)
+            scored.append(row)
+    scored.sort(key=lambda x: x["score"], reverse=True)
+    return scored[:8]
 
 
 # ============================================================
