@@ -6418,8 +6418,6 @@ def main() -> None:
                 st.rerun()
 
 
-if __name__ == '__main__':
-    main()
 
 
 # ===== OVERRIDE FINAL 2: foco real em validação, temporalidade, acessibilidade e teia 3D =====
@@ -6753,7 +6751,4 @@ def main() -> None:
                 st.rerun()
 
 if __name__ == '__main__':
-    main()
-
-if __name__ == "__main__":
     main()
