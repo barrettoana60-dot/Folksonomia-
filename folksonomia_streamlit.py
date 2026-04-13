@@ -16,20 +16,41 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 try:
     import networkx as nx
+    NETWORKX_AVAILABLE = True
 except ModuleNotFoundError:
     nx = None
+    NETWORKX_AVAILABLE = False
 
 import numpy as np
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
+
+try:
+    import plotly.express as px
+    import plotly.graph_objects as go
+    PLOTLY_AVAILABLE = True
+except ModuleNotFoundError:
+    px = None
+    go = None
+    PLOTLY_AVAILABLE = False
+
 import streamlit as st
-from sklearn.cluster import AgglomerativeClustering
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score
-from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.model_selection import train_test_split
+
+try:
+    from sklearn.cluster import AgglomerativeClustering
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.metrics import accuracy_score
+    from sklearn.metrics.pairwise import cosine_similarity
+    from sklearn.model_selection import train_test_split
+    SKLEARN_AVAILABLE = True
+except ModuleNotFoundError:
+    AgglomerativeClustering = None
+    TfidfVectorizer = None
+    LogisticRegression = None
+    accuracy_score = None
+    cosine_similarity = None
+    train_test_split = None
+    SKLEARN_AVAILABLE = False
 
 
 
@@ -57,6 +78,12 @@ class MiniGraph:
 
     def edges(self):
         return list(self._edges)
+
+    def number_of_nodes(self) -> int:
+        return len(self._nodes)
+
+    def number_of_edges(self) -> int:
+        return len(self._edges)
 
     def subgraph(self, selected_nodes: Sequence[str]) -> "MiniGraph":
         node_set = set(selected_nodes)
@@ -3263,7 +3290,7 @@ class SemanticLearner:
                 "text": f"{concept.get('label', '')} {alias_text} {concept.get('category', '')}".strip(),
             })
         self.concept_rows = rows
-        if not rows:
+        if not rows or not SKLEARN_AVAILABLE:
             self.concept_vectorizer = None
             self.concept_matrix = None
             return
@@ -3273,12 +3300,18 @@ class SemanticLearner:
     def train(self) -> None:
         corpus = self.build_training_corpus()
         self.entity_samples = int(len(corpus))
-        if len(corpus) < 20 or corpus["label"].nunique() < 2:
+        if (not SKLEARN_AVAILABLE) or len(corpus) < 20 or corpus["label"].nunique() < 2:
             self.entity_vectorizer = None
             self.entity_model = None
             self.entity_labels = []
             self.entity_accuracy = 0.0
             self.build_concept_matrix()
+            self.store.save_model_state({
+                "last_trained_at": now_iso(),
+                "sample_count": self.entity_samples,
+                "accuracy": round(float(self.entity_accuracy), 4),
+                "mode": "heuristic" if not SKLEARN_AVAILABLE else "insufficient_data",
+            })
             return
         vectorizer = TfidfVectorizer(analyzer="char_wb", ngram_range=(2, 5), min_df=1, sublinear_tf=True)
         X = vectorizer.fit_transform(corpus["text"])
@@ -3333,8 +3366,17 @@ class SemanticLearner:
         return results[0] if results else {}
 
     def suggest_concepts(self, tag_text: str, top_k: int = 5) -> List[Dict[str, Any]]:
-        if self.concept_vectorizer is None or self.concept_matrix is None or not self.concept_rows:
+        if not self.concept_rows:
             return []
+        if self.concept_vectorizer is None or self.concept_matrix is None or not SKLEARN_AVAILABLE:
+            scored = []
+            for row in self.concept_rows:
+                score = hybrid_similarity(tag_text, row.get("text", "")) if tag_text else 0.0
+                payload = dict(row)
+                payload["similarity"] = float(score)
+                scored.append(payload)
+            scored.sort(key=lambda item: item.get("similarity", 0.0), reverse=True)
+            return [row for row in scored[:top_k] if row.get("similarity", 0.0) > 0]
         X = self.concept_vectorizer.transform([tag_text])
         sims = cosine_similarity(X, self.concept_matrix)[0]
         idxs = np.argsort(sims)[::-1][:top_k]
@@ -3363,6 +3405,24 @@ class SemanticLearner:
         unique_values = [value for value in dict.fromkeys([str(v).strip() for v in values if str(v).strip()])]
         if len(unique_values) < 2:
             return []
+        if not SKLEARN_AVAILABLE:
+            groups: List[List[str]] = []
+            used = set()
+            for term in unique_values:
+                if term in used:
+                    continue
+                current = [term]
+                used.add(term)
+                for other in unique_values:
+                    if other in used:
+                        continue
+                    if hybrid_similarity(term, other) >= threshold:
+                        current.append(other)
+                        used.add(other)
+                if len(current) > 1:
+                    groups.append(sorted(current))
+            groups.sort(key=lambda item: (-len(item), item[0]))
+            return groups
         vectorizer = TfidfVectorizer(analyzer="char_wb", ngram_range=(2, 5), min_df=1)
         X = vectorizer.fit_transform(unique_values)
         similarity = cosine_similarity(X)
@@ -3454,15 +3514,28 @@ def build_knowledge_graph(store: JsonStore) -> Any:
     return graph
 
 
-def graph_to_plot(graph: Any, max_nodes: int = 120) -> go.Figure:
+def graph_to_plot(graph: Any, max_nodes: int = 120) -> Any:
     sub_nodes = list(graph.nodes())[:max_nodes]
     g = graph.subgraph(sub_nodes).copy()
     if len(g.nodes()) == 0:
-        return go.Figure()
-    if nx is not None:
+        return None if not PLOTLY_AVAILABLE else go.Figure()
+    if NETWORKX_AVAILABLE and nx is not None:
         pos = nx.spring_layout(g, seed=42, k=0.9 / math.sqrt(max(len(g.nodes()), 2)))
     else:
         pos = simple_graph_layout(list(g.nodes()))
+    if not PLOTLY_AVAILABLE:
+        node_rows = []
+        for node, attrs in g.nodes(data=True):
+            x, y = pos[node]
+            node_rows.append({
+                "id": node,
+                "label": attrs.get("label", node),
+                "kind": attrs.get("kind", ""),
+                "subtitle": attrs.get("subtitle", ""),
+                "x": round(float(x), 4),
+                "y": round(float(y), 4),
+            })
+        return pd.DataFrame(node_rows)
     edge_x, edge_y = [], []
     for source, target in g.edges():
         x0, y0 = pos[source]
@@ -3698,9 +3771,13 @@ def render_public_overview(store: JsonStore, ml: SemanticLearner) -> None:
     with c1:
         if not tags_df.empty:
             top_tags = tags_df["tag"].value_counts().head(15).rename_axis("tag").reset_index(name="frequência")
-            fig = px.bar(top_tags, x="frequência", y="tag", orientation="h")
-            fig.update_layout(height=430, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", margin=dict(l=10, r=10, t=20, b=10))
-            st.plotly_chart(fig, use_container_width=True)
+            if PLOTLY_AVAILABLE and px is not None:
+                fig = px.bar(top_tags, x="frequência", y="tag", orientation="h")
+                fig.update_layout(height=430, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", margin=dict(l=10, r=10, t=20, b=10))
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.bar_chart(top_tags.set_index("tag")["frequência"])
+                st.dataframe(top_tags, use_container_width=True, hide_index=True)
         else:
             st.info("ainda não existem tags suficientes para visualizar tendências.")
     with c2:
@@ -3797,9 +3874,13 @@ def render_work_detail(store: JsonStore, ml: SemanticLearner, work_id: str) -> N
                 st.caption("sem agrupamentos robustos ainda.")
         with c2:
             entity_counts = related_df["entity_prediction"].replace("", "não previsto").fillna("não previsto").value_counts().rename_axis("categoria").reset_index(name="frequência")
-            fig = px.pie(entity_counts, names="categoria", values="frequência")
-            fig.update_layout(height=320, paper_bgcolor="rgba(0,0,0,0)")
-            st.plotly_chart(fig, use_container_width=True)
+            if PLOTLY_AVAILABLE and px is not None:
+                fig = px.pie(entity_counts, names="categoria", values="frequência")
+                fig.update_layout(height=320, paper_bgcolor="rgba(0,0,0,0)")
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.bar_chart(entity_counts.set_index("categoria")["frequência"])
+                st.dataframe(entity_counts, use_container_width=True, hide_index=True)
     if st.button("fechar painel da obra", key="close-work-panel", use_container_width=True):
         st.session_state["selected_work_id"] = ""
         st.rerun()
@@ -3895,9 +3976,13 @@ def render_public_history(store: JsonStore) -> None:
     """
     st.markdown(html, unsafe_allow_html=True)
     top = mine["tag"].value_counts().head(20).rename_axis("tag").reset_index(name="frequência")
-    fig = px.bar(top, x="frequência", y="tag", orientation="h")
-    fig.update_layout(height=400, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", margin=dict(l=10, r=10, t=20, b=10))
-    st.plotly_chart(fig, use_container_width=True)
+    if PLOTLY_AVAILABLE and px is not None:
+        fig = px.bar(top, x="frequência", y="tag", orientation="h")
+        fig.update_layout(height=400, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", margin=dict(l=10, r=10, t=20, b=10))
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.bar_chart(top.set_index("tag")["frequência"])
+        st.dataframe(top, use_container_width=True, hide_index=True)
     st.dataframe(mine[[c for c in ["tag", "comment", "work_title", "entity_prediction", "entity_confidence", "concept_label", "created_at"] if c in mine.columns]], use_container_width=True, hide_index=True)
     close_panel()
 
@@ -3935,9 +4020,13 @@ def render_admin_dashboard(store: JsonStore, ml: SemanticLearner) -> None:
     with c1:
         if not tags_df.empty:
             entity_counts = tags_df["entity_prediction"].replace("", "não previsto").fillna("não previsto").value_counts().rename_axis("categoria").reset_index(name="frequência")
-            fig = px.bar(entity_counts, x="categoria", y="frequência")
-            fig.update_layout(height=360, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", margin=dict(l=10, r=10, t=20, b=10))
-            st.plotly_chart(fig, use_container_width=True)
+            if PLOTLY_AVAILABLE and px is not None:
+                fig = px.bar(entity_counts, x="categoria", y="frequência")
+                fig.update_layout(height=360, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", margin=dict(l=10, r=10, t=20, b=10))
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.bar_chart(entity_counts.set_index("categoria")["frequência"])
+                st.dataframe(entity_counts, use_container_width=True, hide_index=True)
     with c2:
         suggestions_df = to_dataframe(store.suggestions())
         validations_df = to_dataframe(store.validations())
@@ -4108,7 +4197,14 @@ def render_admin_automation(store: JsonStore, ml: SemanticLearner) -> None:
 def render_admin_graph(store: JsonStore) -> None:
     open_panel("grafo de conhecimento", "obras, usuários, tags, conceitos e eixos institucionais conectados como rede consultável.")
     graph = build_knowledge_graph(store)
-    st.plotly_chart(graph_to_plot(graph, max_nodes=140), use_container_width=True)
+    graph_view = graph_to_plot(graph, max_nodes=140)
+    if PLOTLY_AVAILABLE and graph_view is not None:
+        st.plotly_chart(graph_view, use_container_width=True)
+    elif isinstance(graph_view, pd.DataFrame) and not graph_view.empty:
+        st.info("plotly não está instalado neste ambiente. exibindo a malha do grafo em tabela.")
+        st.dataframe(graph_view, use_container_width=True, hide_index=True)
+    else:
+        st.info("não há dados suficientes para desenhar o grafo.")
     st.markdown(f"<div class='story-card'><div class='story-title'>estrutura atual</div><div class='graph-note'>nós {graph.number_of_nodes()} · arestas {graph.number_of_edges()}. O grafo incorpora obras, usuários, conceitos, tags livres e tags institucionais.</div></div>", unsafe_allow_html=True)
     close_panel()
 
