@@ -4953,6 +4953,716 @@ def main() -> None:
     render_footer()
 
 
+# ===== PATCH V3: teia 3D, validação expandida, temporal enxuto, ML com resumos =====
+
+def render_css_patch_v3() -> None:
+    st.markdown("""
+    <style>
+    .hero-copy { display:none !important; }
+    .hero-panel { padding: 1.35rem 1.5rem !important; }
+    .hero-title { margin-top: 0.35rem; margin-bottom: 0.2rem; }
+    .panel-subtitle:empty { display:none !important; }
+    .stTextArea textarea,
+    .stTextInput input,
+    textarea,
+    input,
+    [data-baseweb="input"] input,
+    [data-baseweb="textarea"] textarea,
+    [data-baseweb="base-input"] textarea,
+    [data-baseweb="base-input"] input {
+        color: #111111 !important;
+        -webkit-text-fill-color: #111111 !important;
+        caret-color: #111111 !important;
+        text-shadow: none !important;
+        font-weight: 600 !important;
+    }
+    .stTextArea textarea::selection,
+    .stTextInput input::selection,
+    textarea::selection,
+    input::selection {
+        background: rgba(40,40,40,0.18) !important;
+        color: #111111 !important;
+    }
+    .stTextArea textarea::placeholder,
+    .stTextInput input::placeholder,
+    textarea::placeholder,
+    input::placeholder {
+        color: #6f6f6f !important;
+        -webkit-text-fill-color: #6f6f6f !important;
+        opacity: 1 !important;
+    }
+    .work-card { min-height: 320px !important; }
+    .work-card img { height: 260px !important; }
+    .tag-compact-box {
+        max-width: 780px !important;
+        margin: 0.75rem auto 0 auto !important;
+        padding: 0.95rem 1rem !important;
+    }
+    .public-selected-image {
+        max-width: 980px !important;
+        margin: 0 auto !important;
+        border-radius: 24px !important;
+        overflow: hidden !important;
+        background: rgba(255,255,255,0.18) !important;
+        border: 1px solid rgba(255,255,255,0.52) !important;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.72), 0 12px 28px rgba(0,0,0,0.07) !important;
+        padding: 0.7rem !important;
+    }
+    .public-selected-image img { border-radius: 20px !important; }
+    .summary-block {
+        background: rgba(255,255,255,0.18);
+        border: 1px solid rgba(255,255,255,0.48);
+        border-radius: 22px;
+        padding: 1rem 1.1rem;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.70), 0 12px 26px rgba(0,0,0,0.06);
+        color: #333333;
+        line-height: 1.8;
+    }
+    .summary-block strong { color: #141414; }
+    .story-card p, .summary-block p { color: #333333 !important; }
+    </style>
+    """, unsafe_allow_html=True)
+
+
+def hero_panel(store: JsonStore) -> None:
+    html = """
+    <div class="hero-panel">
+        <div class="hero-grid" style="grid-template-columns: 1fr;">
+            <div>
+                <div class="hero-kicker">camada semântica participativa com aprendizado contínuo</div>
+                <div class="hero-title">folksonomia</div>
+            </div>
+        </div>
+    </div>
+    """
+    st.markdown(html, unsafe_allow_html=True)
+
+
+def _graph_payload(graph: Any) -> Dict[str, Any]:
+    if HAS_NETWORKX and nx is not None and hasattr(graph, "nodes"):
+        nodes = []
+        for node_id, attrs in graph.nodes(data=True):
+            row = dict(attrs)
+            row["id"] = node_id
+            nodes.append(row)
+        edges = []
+        for source, target, attrs in graph.edges(data=True):
+            edges.append({"source": source, "target": target, **dict(attrs)})
+        return {"nodes": nodes, "edges": edges}
+    if isinstance(graph, dict):
+        return {"nodes": graph.get("nodes", []), "edges": graph.get("edges", [])}
+    return {"nodes": [], "edges": []}
+
+
+def _edge_count_map(edges: Sequence[Dict[str, Any]]) -> Dict[str, int]:
+    counts = Counter()
+    for edge in edges:
+        a = str(edge.get("source", ""))
+        b = str(edge.get("target", ""))
+        if a:
+            counts[a] += 1
+        if b:
+            counts[b] += 1
+    return counts
+
+
+def _manual_3d_layout(nodes: Sequence[Dict[str, Any]], edges: Sequence[Dict[str, Any]]) -> Dict[str, Tuple[float, float, float]]:
+    counts = _edge_count_map(edges)
+    groups = defaultdict(list)
+    for row in nodes:
+        groups[str(row.get("kind", "outro"))].append(row)
+    kind_order = sorted(groups.keys())
+    pos: Dict[str, Tuple[float, float, float]] = {}
+    kind_radius = max(2.0, 1.3 + len(kind_order) * 0.22)
+    for ki, kind in enumerate(kind_order):
+        group = groups[kind]
+        base_angle = (2 * math.pi * ki) / max(len(kind_order), 1)
+        center_x = math.cos(base_angle) * kind_radius
+        center_y = math.sin(base_angle) * kind_radius
+        center_z = ((ki % 5) - 2) * 0.75
+        local_radius = 0.8 + min(len(group), 24) * 0.03
+        for idx, row in enumerate(group):
+            nid = str(row.get("id", ""))
+            h = sum(ord(ch) for ch in nid) % 1000
+            phi = (2 * math.pi * idx) / max(len(group), 1)
+            theta = ((h % 360) / 360.0) * math.pi
+            rx = local_radius * math.cos(phi) * max(0.35, math.sin(theta))
+            ry = local_radius * math.sin(phi) * max(0.35, math.sin(theta))
+            rz = local_radius * math.cos(theta) * 0.85
+            pos[nid] = (center_x + rx, center_y + ry, center_z + rz)
+    return pos
+
+
+def graph_to_plot_3d(graph: Any, max_nodes: int = 220) -> Any:
+    if not HAS_PLOTLY or go is None:
+        return None
+    payload = _graph_payload(graph)
+    nodes = payload["nodes"]
+    edges = payload["edges"]
+    if not nodes:
+        return None
+    degree = _edge_count_map(edges)
+    nodes = sorted(nodes, key=lambda row: degree.get(str(row.get("id", "")), 0), reverse=True)[:max_nodes]
+    keep = {str(row.get("id", "")) for row in nodes}
+    edges = [edge for edge in edges if str(edge.get("source", "")) in keep and str(edge.get("target", "")) in keep]
+    if HAS_NETWORKX and nx is not None:
+        g = nx.Graph()
+        for row in nodes:
+            g.add_node(str(row.get("id", "")), **row)
+        for edge in edges:
+            g.add_edge(str(edge.get("source", "")), str(edge.get("target", "")), **edge)
+        try:
+            pos = nx.spring_layout(g, dim=3, seed=42, k=max(0.38, 2.2 / math.sqrt(max(len(g.nodes()), 4))), iterations=120)
+        except Exception:
+            pos = _manual_3d_layout(nodes, edges)
+    else:
+        pos = _manual_3d_layout(nodes, edges)
+
+    kind_colors = {
+        "work": "#243B53",
+        "tag": "#5C677D",
+        "user": "#9C6644",
+        "concept": "#2F4858",
+        "institutional_tag": "#6C757D",
+        "artist": "#3D405B",
+        "museum": "#6D597A",
+        "collection": "#588157",
+        "place": "#7F5539",
+        "period": "#4361EE",
+        "technique": "#6B705C",
+        "material": "#A68A64",
+        "external_entity": "#7B2CBF",
+        "external_reference": "#8D99AE",
+        "tag_surface": "#495057",
+        "typo_candidate": "#BC6C25",
+        "entity_class": "#1D3557",
+    }
+
+    ex, ey, ez = [], [], []
+    for edge in edges:
+        s = str(edge.get("source", ""))
+        t = str(edge.get("target", ""))
+        if s not in pos or t not in pos:
+            continue
+        x0, y0, z0 = pos[s]
+        x1, y1, z1 = pos[t]
+        ex.extend([x0, x1, None])
+        ey.extend([y0, y1, None])
+        ez.extend([z0, z1, None])
+
+    edge_trace = go.Scatter3d(
+        x=ex, y=ey, z=ez,
+        mode="lines",
+        line=dict(color="rgba(70,70,70,0.28)", width=2),
+        hoverinfo="none",
+        name="ligações"
+    )
+
+    xs, ys, zs, colors, sizes, texts = [], [], [], [], [], []
+    for row in nodes:
+        nid = str(row.get("id", ""))
+        if nid not in pos:
+            continue
+        x, y, z = pos[nid]
+        xs.append(x)
+        ys.append(y)
+        zs.append(z)
+        kind = str(row.get("kind", "outro"))
+        colors.append(kind_colors.get(kind, "#444444"))
+        deg = degree.get(nid, 1)
+        sizes.append(min(24, 6 + deg * 0.65))
+        label = row.get("label", nid)
+        subtitle = row.get("subtitle", "")
+        texts.append(f"{label}<br>{kind}<br>{subtitle}<br>grau {deg}")
+
+    node_trace = go.Scatter3d(
+        x=xs, y=ys, z=zs,
+        mode="markers",
+        text=texts,
+        hovertemplate="%{text}<extra></extra>",
+        marker=dict(
+            size=sizes,
+            color=colors,
+            opacity=0.92,
+            line=dict(color="rgba(255,255,255,0.85)", width=1.4),
+        ),
+        name="nós"
+    )
+
+    label_rows = []
+    for row in nodes:
+        nid = str(row.get("id", ""))
+        if nid in pos and degree.get(nid, 0) >= 3:
+            label_rows.append((degree.get(nid, 0), row))
+    label_rows = sorted(label_rows, key=lambda item: item[0], reverse=True)[:28]
+    lx, ly, lz, lt = [], [], [], []
+    for _, row in label_rows:
+        nid = str(row.get("id", ""))
+        x, y, z = pos[nid]
+        lx.append(x)
+        ly.append(y)
+        lz.append(z)
+        lt.append(str(row.get("label", ""))[:34])
+
+    text_trace = go.Scatter3d(
+        x=lx, y=ly, z=lz,
+        mode="text",
+        text=lt,
+        textfont=dict(size=11, color="#1f1f1f"),
+        hoverinfo="none",
+        showlegend=False
+    )
+
+    fig = go.Figure(data=[edge_trace, node_trace, text_trace])
+    fig.update_layout(
+        height=760,
+        margin=dict(l=0, r=0, t=0, b=0),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        scene=dict(
+            xaxis=dict(visible=False, showbackground=False),
+            yaxis=dict(visible=False, showbackground=False),
+            zaxis=dict(visible=False, showbackground=False),
+            bgcolor="rgba(0,0,0,0)",
+            camera=dict(eye=dict(x=1.7, y=1.7, z=1.18))
+        ),
+        legend=dict(orientation="h", yanchor="bottom", y=0.01, xanchor="left", x=0.01, bgcolor="rgba(255,255,255,0.22)")
+    )
+    return fig
+
+
+def _analysis_summary_blocks(store: JsonStore, ml: SemanticLearner) -> Dict[str, str]:
+    tags_df = build_tag_dataframe(store)
+    validations_df = to_dataframe(store.validations())
+    concepts_df = to_dataframe(store.concepts())
+    if tags_df.empty:
+        return {
+            "ml": "Ainda não há tags suficientes para síntese do aprendizado.",
+            "validation": "A fila de validação será enriquecida quando a marcação pública começar a formar recorrências.",
+            "graph": "A teia 3D aparecerá densamente conectada quando obras, tags e conceitos passarem a compartilhar relações."
+        }
+    total = len(tags_df)
+    unique = int(tags_df["normalized_tag"].nunique())
+    validated = int(tags_df.get("is_validated", pd.Series([False]*len(tags_df))).sum())
+    pending = total - validated
+    entity_dist = tags_df["entity_prediction"].replace("", "tema").value_counts().head(5)
+    entity_text = ", ".join([f"{idx} {int(val)}" for idx, val in entity_dist.items()]) if not entity_dist.empty else "sem distribuição ainda"
+    concept_hits = tags_df["concept_label"].fillna("").astype(str)
+    concept_hits = concept_hits[concept_hits.str.strip() != ""].value_counts().head(5)
+    concept_text = ", ".join([f"{idx} {int(val)}" for idx, val in concept_hits.items()]) if not concept_hits.empty else "sem conceitos ligados"
+    typo_rows = typo_candidate_rows(tags_df["tag"].tolist(), threshold=0.80)
+    semantic_rows = semantic_tag_links(tags_df["tag"].tolist(), threshold=0.60)
+    work_density = tags_df.groupby("work_title").agg(tags=("id", "count"), voc=("normalized_tag", "nunique")).reset_index().sort_values(["tags", "voc"], ascending=False)
+    work_text = ", ".join([f"{row['work_title']} {int(row['tags'])}" for _, row in work_density.head(4).iterrows()]) if not work_density.empty else "sem densidade por obra"
+    validation_text = f"Total {total} marcações, {unique} formas únicas, {validated} já validadas e {pending} pendentes. Obras mais densas: {work_text}. Ligações semânticas detectadas: {len(semantic_rows)}. Variantes ortográficas fortes: {len(typo_rows)}."
+    ml_text = f"O modelo está treinado com {ml.entity_samples} amostras, acurácia estimada em {ml.entity_accuracy:.2f}, e lê principalmente {entity_text}. Conceitos mais acionados: {concept_text}. Cada validação aprovada retorna ao corpus de treino e altera as próximas previsões."
+    graph_text = f"A teia conecta obras, artistas, museu, coleção, lugar, período, técnica, material, tags institucionais, tags livres, conceitos reconciliados e pontos de open data externo. No momento, há {len(concepts_df)} conceitos ativos e {len(validations_df)} validações persistidas."
+    return {"ml": ml_text, "validation": validation_text, "graph": graph_text}
+
+
+def render_public_explore(store: JsonStore, ml: SemanticLearner) -> None:
+    user = store.find_user(st.session_state.get("session_user_id", ""))
+    works = store.works()
+    open_panel("explorar obras", "")
+    if not user or not works:
+        close_panel()
+        return
+
+    works = works[:3]
+    cols = st.columns(3 if len(works) >= 3 else max(1, len(works)))
+    for idx, work in enumerate(works):
+        with cols[idx % len(cols)]:
+            st.markdown("<div class='work-card'>", unsafe_allow_html=True)
+            st.image(work.get("image_url"), use_container_width=True)
+            if st.button("marcar esta imagem", key=f"public-open-v3-{work.get('id')}", use_container_width=True):
+                st.session_state["selected_work_id"] = work.get("id")
+                st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
+
+    selected_id = st.session_state.get("selected_work_id", "")
+    if selected_id:
+        selected = next((w for w in works if w.get("id") == selected_id), None)
+        if selected:
+            tags_df = build_tag_dataframe(store)
+            mine = tags_df[(tags_df["work_id"] == selected_id) & (tags_df["user_id"] == user.get("id"))] if not tags_df.empty else pd.DataFrame()
+            st.markdown("<div class='soft-line'></div>", unsafe_allow_html=True)
+            st.markdown("<div class='public-selected-image'>", unsafe_allow_html=True)
+            st.image(selected.get("image_url"), use_container_width=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+            st.markdown("<div class='tag-compact-box'>", unsafe_allow_html=True)
+            with st.form(f"tag-form-v3-{selected_id}", clear_on_submit=True):
+                tag_value = st.text_input("sua tag", placeholder="escreva uma palavra ou pequena expressão")
+                submitted = st.form_submit_button("registrar tag", use_container_width=True)
+                if submitted:
+                    if not tag_value.strip():
+                        st.warning("escreva uma tag antes de registrar.")
+                    else:
+                        store.submit_tag(selected.get("id"), user.get("id"), tag_value, "", ml)
+                        run_automation_engine(store, ml)
+                        st.success("tag registrada.")
+                        st.rerun()
+            if not mine.empty:
+                mine_counts = mine["tag"].value_counts().reset_index()
+                mine_counts.columns = ["tag", "frequência"]
+                st.markdown("<div class='tag-preview-wrap'>" + "".join([f"<span class='tag-chip'>{row['tag']} {int(row['frequência'])}</span>" for _, row in mine_counts.iterrows()]) + "</div>", unsafe_allow_html=True)
+            if st.button("fechar imagem", key=f"close-public-v3-{selected_id}", use_container_width=True):
+                st.session_state["selected_work_id"] = ""
+                st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
+    close_panel()
+
+
+def render_admin_validation(store: JsonStore, ml: SemanticLearner) -> None:
+    tags_df = build_tag_dataframe(store)
+    suggestions_df = to_dataframe(store.suggestions())
+    concepts = store.concepts()
+    concept_options = {f"{c.get('label')} · {c.get('category')}": c for c in concepts}
+    open_panel("validação e supervisão", "fila curatorial, conexões entre tags, variantes ortográficas e leitura cruzada por obra.")
+    if tags_df.empty:
+        st.info("não há tags registradas.")
+        close_panel()
+        return
+
+    summaries = _analysis_summary_blocks(store, ml)
+    st.markdown(f"<div class='summary-block'><strong>síntese curatorial.</strong> {summaries['validation']}</div>", unsafe_allow_html=True)
+
+    semantic_rows = pd.DataFrame(semantic_tag_links(tags_df["tag"].tolist(), threshold=0.60))
+    typo_rows = pd.DataFrame(typo_candidate_rows(tags_df["tag"].tolist(), threshold=0.80))
+    work_time = tags_df.groupby(["work_title", "created_month"]).agg(tags=("id", "count"), vocabulário=("normalized_tag", "nunique")).reset_index()
+    relation_by_work = semantic_rows.copy()
+    tabs = st.tabs(["fila de validação", "ligações entre tags", "variações ortográficas", "obras e conexões"])
+    with tabs[0]:
+        subset = tags_df.sort_values("created_at", ascending=False).head(20)
+        open_suggestions = suggestions_df[suggestions_df["status"] == "open"] if not suggestions_df.empty else pd.DataFrame()
+        for _, row in subset.iterrows():
+            related_suggestions = open_suggestions[open_suggestions["tag_id"] == row.get("id")] if not open_suggestions.empty else pd.DataFrame()
+            st.markdown(f"<div class='queue-card'><div class='story-title'>{row.get('tag')} · {row.get('work_title', '')}</div><div class='queue-text'>previsão {row.get('entity_prediction', '')} · confiança {safe_float(row.get('entity_confidence', 0.0)):.2f}<br>conceito atual {row.get('concept_label', '') or 'não ligado'}<br>museu {row.get('work_museum', '') or 'não informado'} · período {row.get('work_period', '') or 'não informado'} · técnica {row.get('work_technique', '') or 'não informada'}</div></div>", unsafe_allow_html=True)
+            if not related_suggestions.empty:
+                for _, srow in related_suggestions.iterrows():
+                    st.markdown(f"<div class='suggestion-card'><div class='suggestion-title'>{srow.get('rule_name')}</div><div class='suggestion-meta'>{json.dumps(srow.get('payload', {}), ensure_ascii=False)}</div></div>", unsafe_allow_html=True)
+            with st.form(f"validate-v3-{row.get('id')}"):
+                c1, c2 = st.columns(2)
+                with c1:
+                    default_entity = row.get("entity_prediction") if row.get("entity_prediction") in ENTITY_LABELS else "tema"
+                    entity_choice = st.selectbox("categoria validada", ENTITY_LABELS, index=ENTITY_LABELS.index(default_entity), key=f"ent-v3-{row.get('id')}")
+                    concept_choice = st.selectbox("conceito reconciliado", ["nenhum"] + list(concept_options.keys()), key=f"con-v3-{row.get('id')}")
+                with c2:
+                    decision = st.selectbox("decisão", ["approved", "linked", "rejected"], key=f"dec-v3-{row.get('id')}")
+                    notes = st.text_area("notas curatoriais", height=90, key=f"notes-v3-{row.get('id')}")
+                submitted = st.form_submit_button("registrar validação")
+                if submitted:
+                    concept_id = ""
+                    concept_label = ""
+                    if concept_choice != "nenhum":
+                        concept_payload = concept_options[concept_choice]
+                        concept_id = concept_payload.get("id", "")
+                        concept_label = concept_payload.get("label", "")
+                    store.add_validation(row.get("id"), "admin", entity_choice, concept_id, concept_label, decision, notes)
+                    updates = {"status": "validated" if decision != "rejected" else "rejected", "entity_prediction": entity_choice, "entity_confidence": 1.0}
+                    if concept_id:
+                        updates["concept_id"] = concept_id
+                        updates["concept_label"] = concept_label
+                    store.update_tag(row.get("id"), updates)
+                    if not related_suggestions.empty:
+                        for _, srow in related_suggestions.iterrows():
+                            store.close_suggestion(srow.get("id"), status="resolved")
+                    ml.train()
+                    st.success("validação registrada e modelo atualizado.")
+                    st.rerun()
+    with tabs[1]:
+        st.markdown("<div class='story-card'><div class='story-title'>campos semânticos compartilhados</div><div class='story-copy'>as tags aparecem por eixos comuns, coocorrência lexical, aproximação conceitual e pontes entre vocabulário social, metadados museológicos e referências externas.</div></div>", unsafe_allow_html=True)
+        if semantic_rows.empty:
+            st.info("ainda não há ligações semânticas suficientes.")
+        else:
+            semantic_rows["força"] = semantic_rows.get("score", semantic_rows.get("similaridade", 0.0))
+            render_bar_chart_df(semantic_rows.head(18), x="tag_a", y="força", height=360)
+            st.dataframe(semantic_rows.head(30), use_container_width=True, hide_index=True)
+    with tabs[2]:
+        st.markdown("<div class='story-card'><div class='story-title'>desambiguação ortográfica</div><div class='story-copy'>pares fortes de quase duplicata ajudam a consolidar grafias, revisar ruído e preservar a fala do público sem achatá-la prematuramente.</div></div>", unsafe_allow_html=True)
+        if typo_rows.empty:
+            st.info("não foram encontrados pares fortes de variante ortográfica.")
+        else:
+            if "score" in typo_rows.columns:
+                render_bar_chart_df(typo_rows.head(18), x="termo_a", y="score", height=360)
+            st.dataframe(typo_rows.head(30), use_container_width=True, hide_index=True)
+    with tabs[3]:
+        st.markdown("<div class='story-card'><div class='story-title'>obras no fluxo documental</div><div class='story-copy'>cada obra é lida por densidade de marcação, diversidade lexical e recorrência temporal. isso aproxima a documentação social da unidade museológica e do modelo conectado do Prado.</div></div>", unsafe_allow_html=True)
+        work_summary = tags_df.groupby(["work_title", "work_museum", "work_period", "work_technique", "work_material"]).agg(tags=("id", "count"), vocabulário=("normalized_tag", "nunique")).reset_index().sort_values(["tags", "vocabulário"], ascending=False)
+        if not work_summary.empty:
+            render_bar_chart_df(work_summary.head(12), x="work_title", y="tags", height=340)
+            if not work_time.empty and HAS_PLOTLY:
+                fig = px.line(work_time.sort_values("created_month"), x="created_month", y="tags", color="work_title", markers=True)
+                fig.update_layout(height=360, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", margin=dict(l=10, r=10, t=20, b=10))
+                safe_plotly_chart(fig, use_container_width=True)
+            st.dataframe(work_summary.head(20), use_container_width=True, hide_index=True)
+        else:
+            st.info("sem dados suficientes por obra.")
+    close_panel()
+
+
+def render_admin_ml(store: JsonStore, ml: SemanticLearner) -> None:
+    model_info = store.model_state()
+    tags_df = build_tag_dataframe(store)
+    summaries = _analysis_summary_blocks(store, ml)
+    open_panel("machine learning", "aprendizado supervisionado com seed vocab, metadados museológicos, conceitos, validações e sumários interpretativos.")
+    html = f"""
+    <div class="metric-strip">
+        <div class="metric-card"><div class="metric-caption">último treino</div><div class="metric-number">{model_info.get('last_trained_at', '') or 'agora'}</div><div class="metric-note">estado persistido</div></div>
+        <div class="metric-card"><div class="metric-caption">amostras</div><div class="metric-number">{model_info.get('sample_count', 0)}</div><div class="metric-note">seed, validação e metadados</div></div>
+        <div class="metric-card"><div class="metric-caption">acurácia</div><div class="metric-number">{model_info.get('accuracy', 0.0):.2f}</div><div class="metric-note">estimativa offline</div></div>
+        <div class="metric-card"><div class="metric-caption">classes</div><div class="metric-number">{len(ml.entity_labels)}</div><div class="metric-note">tipos semânticos</div></div>
+    </div>
+    """
+    st.markdown(html, unsafe_allow_html=True)
+    st.markdown(f"<div class='summary-block'><strong>sumário do aprendizado.</strong> {summaries['ml']}</div>", unsafe_allow_html=True)
+    c1, c2 = st.columns([1.05, 0.95])
+    with c1:
+        query = st.text_input("teste rápido do modelo", placeholder="escreva um termo para prever a categoria")
+        if query.strip():
+            pred = ml.predict_entity(query)
+            st.markdown(f"<div class='suggestion-card'><div class='suggestion-title'>previsão</div><div class='suggestion-meta'>categoria {pred.get('label')} · confiança {pred.get('confidence', 0.0):.2f}</div></div>", unsafe_allow_html=True)
+            concepts = ml.suggest_concepts(query, 6)
+            if concepts:
+                st.markdown("<div class='tag-preview-wrap'>" + "".join([f"<span class='tag-chip'>{c.get('label')} · {c.get('category')} · {c.get('similarity', 0.0):.2f}</span>" for c in concepts]) + "</div>", unsafe_allow_html=True)
+        if not tags_df.empty:
+            predicted = tags_df["entity_prediction"].replace("", "tema").value_counts().rename_axis("categoria").reset_index(name="frequência")
+            render_bar_chart_df(predicted, x="categoria", y="frequência", height=340)
+    with c2:
+        if st.button("re-treinar modelo agora", use_container_width=True):
+            ml.train()
+            st.success("modelo re-treinado com a base atual.")
+            st.rerun()
+        st.markdown("<div class='story-card'><div class='story-title'>aprendizado efetivo</div><div class='story-copy'>o modelo não usa só vocabulário seed. ele incorpora descrições de obras, tags institucionais, metadados museológicos e validações administrativas, gerando previsões mais estáveis e resumos analíticos sobre o que foi encontrado.</div></div>", unsafe_allow_html=True)
+        if not tags_df.empty and "entity_confidence" in tags_df.columns:
+            conf = tags_df["entity_confidence"].fillna(0).astype(float)
+            conf_df = pd.DataFrame({"faixa": ["0.00–0.39", "0.40–0.69", "0.70–1.00"], "quantidade": [int(((conf < 0.40)).sum()), int(((conf >= 0.40) & (conf < 0.70)).sum()), int((conf >= 0.70).sum())]})
+            render_bar_chart_df(conf_df, x="faixa", y="quantidade", height=280)
+    close_panel()
+
+
+def render_admin_automation(store: JsonStore, ml: SemanticLearner) -> None:
+    tags_df = build_tag_dataframe(store)
+    open_panel("análise temporal", "ritmo, sazonalidade, distribuição horária e crescimento do vocabulário. sem tabelas, apenas leitura temporal conectada.")
+    if tags_df.empty:
+        st.info("a análise temporal será exibida quando houver tags registradas.")
+        close_panel()
+        return
+
+    tags_df["created_ts"] = pd.to_datetime(tags_df["created_at"], errors="coerce")
+    tags_df = tags_df.sort_values("created_ts")
+    daily = tags_df.groupby("created_date").agg(tags=("id", "count"), vocabulário=("normalized_tag", "nunique"), participantes=("user_id", "nunique")).reset_index()
+    monthly = tags_df.groupby("created_month").agg(tags=("id", "count"), vocabulário=("normalized_tag", "nunique")).reset_index()
+    hourly = tags_df.groupby("created_hour").agg(tags=("id", "count")).reset_index()
+    weekday_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    weekday_map = {"Monday": "Seg", "Tuesday": "Ter", "Wednesday": "Qua", "Thursday": "Qui", "Friday": "Sex", "Saturday": "Sáb", "Sunday": "Dom"}
+    weekday = tags_df.groupby("created_weekday").agg(tags=("id", "count")).reset_index()
+    if not weekday.empty:
+        weekday["sort"] = weekday["created_weekday"].map(lambda value: weekday_order.index(value) if value in weekday_order else 99)
+        weekday = weekday.sort_values("sort")
+        weekday["dia"] = weekday["created_weekday"].map(lambda value: weekday_map.get(value, value))
+
+    lexical_curve = []
+    seen = set()
+    for _, row in tags_df.iterrows():
+        seen.add(row.get("normalized_tag", ""))
+        lexical_curve.append({"created_at": row.get("created_at", ""), "vocabulário_acumulado": len(seen)})
+    lexical_df = pd.DataFrame(lexical_curve)
+
+    c1, c2, c3, c4 = st.columns(4)
+    with c1: st.markdown(f"<div class='metric-card'><div class='metric-caption'>dias ativos</div><div class='metric-number'>{daily['created_date'].nunique()}</div><div class='metric-note'>com registros</div></div>", unsafe_allow_html=True)
+    with c2: st.markdown(f"<div class='metric-card'><div class='metric-caption'>pico diário</div><div class='metric-number'>{int(daily['tags'].max())}</div><div class='metric-note'>dia mais intenso</div></div>", unsafe_allow_html=True)
+    with c3: st.markdown(f"<div class='metric-card'><div class='metric-caption'>média diária</div><div class='metric-number'>{daily['tags'].mean():.1f}</div><div class='metric-note'>tags por dia</div></div>", unsafe_allow_html=True)
+    with c4: st.markdown(f"<div class='metric-card'><div class='metric-caption'>vocabulário final</div><div class='metric-number'>{int(tags_df['normalized_tag'].nunique())}</div><div class='metric-note'>formas normalizadas</div></div>", unsafe_allow_html=True)
+
+    st.markdown("<div class='summary-block'><strong>leitura temporal.</strong> O tempo é tratado como camada documental: a curva diária mostra intensidade de participação, a distribuição horária indica momentos de ativação e o vocabulário acumulado revela quando novas formas entram na rede social de descrição.</div>", unsafe_allow_html=True)
+
+    tabs = st.tabs(["ritmo diário", "sazonalidade", "crescimento lexical"])
+    with tabs[0]:
+        if HAS_PLOTLY:
+            fig = go.Figure()
+            fig.add_scatter(x=daily["created_date"], y=daily["tags"], mode="lines+markers", name="tags")
+            fig.add_scatter(x=daily["created_date"], y=daily["participantes"], mode="lines+markers", name="participantes")
+            fig.update_layout(height=380, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", margin=dict(l=10, r=10, t=20, b=10))
+            safe_plotly_chart(fig, use_container_width=True)
+        else:
+            st.line_chart(daily.set_index("created_date")[["tags", "participantes"]])
+    with tabs[1]:
+        c1, c2 = st.columns(2)
+        with c1:
+            render_bar_chart_df(hourly, x="created_hour", y="tags", height=320)
+        with c2:
+            if not weekday.empty:
+                render_bar_chart_df(weekday[["dia", "tags"]], x="dia", y="tags", height=320)
+            else:
+                st.info("sem dados suficientes por dia da semana.")
+        if not monthly.empty:
+            render_bar_chart_df(monthly, x="created_month", y="tags", height=320)
+    with tabs[2]:
+        if not lexical_df.empty:
+            if HAS_PLOTLY:
+                fig = px.line(lexical_df, x="created_at", y="vocabulário_acumulado", markers=True)
+                fig.update_layout(height=380, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", margin=dict(l=10, r=10, t=20, b=10))
+                safe_plotly_chart(fig, use_container_width=True)
+            else:
+                st.line_chart(lexical_df.set_index("created_at")["vocabulário_acumulado"])
+            st.markdown("<div class='story-card'><div class='story-title'>expansão do vocabulário</div><div class='story-copy'>quando a curva sobe rápido, a camada pública está trazendo termos novos; quando estabiliza, a descrição converge ou se concentra em eixos já conhecidos.</div></div>", unsafe_allow_html=True)
+    close_panel()
+
+
+def render_admin_graph(store: JsonStore) -> None:
+    open_panel("teia 3d do conhecimento", "rede espacial conectando obras, palavras, conceitos, metadados museológicos e open data externo.")
+    graph = build_knowledge_graph(store)
+    payload = _graph_payload(graph)
+    fig = graph_to_plot_3d(payload, max_nodes=240)
+    summaries = _analysis_summary_blocks(store, SemanticLearner(store))
+    if fig is not None:
+        safe_plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("instale plotly para visualizar a teia 3d completa.")
+    node_df = pd.DataFrame(payload.get("nodes", []))
+    edge_df = pd.DataFrame(payload.get("edges", []))
+    node_count = len(node_df)
+    edge_count = len(edge_df)
+    st.markdown(f"<div class='summary-block'><strong>rede conectada.</strong> {summaries['graph']} Nós {node_count} e arestas {edge_count}. A teia articula a marcação social com metadados museológicos, conceitos reconciliados e pontos externos de referência, formando um arranjo conectado e organizável para leitura curatorial.</div>", unsafe_allow_html=True)
+    tabs = st.tabs(["relações dominantes", "open data e metadados", "palavras mais conectadas"])
+    with tabs[0]:
+        if not edge_df.empty and "relation" in edge_df.columns:
+            relations = edge_df["relation"].value_counts().rename_axis("relação").reset_index(name="quantidade")
+            render_bar_chart_df(relations.head(18), x="relação", y="quantidade", height=340)
+            st.dataframe(relations.head(20), use_container_width=True, hide_index=True)
+        else:
+            st.info("sem relações suficientes para sintetizar.")
+    with tabs[1]:
+        works_df = to_dataframe(store.works())
+        if not works_df.empty:
+            cols = [c for c in ["title", "artist", "museum", "collection", "place", "period", "technique", "material", "external_reference_label"] if c in works_df.columns]
+            st.dataframe(works_df[cols], use_container_width=True, hide_index=True)
+        else:
+            st.info("sem metadados suficientes.")
+    with tabs[2]:
+        counts = _edge_count_map(payload.get("edges", []))
+        connected_rows = []
+        for row in payload.get("nodes", []):
+            nid = str(row.get("id", ""))
+            connected_rows.append({"rótulo": row.get("label", ""), "tipo": row.get("kind", ""), "grau": counts.get(nid, 0)})
+        connected_df = pd.DataFrame(connected_rows).sort_values("grau", ascending=False)
+        if not connected_df.empty:
+            render_bar_chart_df(connected_df.head(16), x="rótulo", y="grau", height=340)
+            st.dataframe(connected_df.head(24), use_container_width=True, hide_index=True)
+        else:
+            st.info("sem nós conectados suficientes.")
+    close_panel()
+
+
+# fortalecimento do corpus de treino com metadados e conceitos
+def _patched_build_training_corpus(self) -> pd.DataFrame:
+    rows: List[Dict[str, str]] = []
+    for label, samples in SEED_VOCAB.items():
+        for sample in samples:
+            rows.append({"text": sample, "label": label, "source": "seed"})
+    for concept in self.store.concepts():
+        category = str(concept.get("category", "")).strip()
+        if not category:
+            continue
+        label = str(concept.get("label", "")).strip()
+        if label:
+            rows.append({"text": label, "label": category, "source": "concept"})
+        for alias in concept.get("aliases", []) or []:
+            if str(alias).strip():
+                rows.append({"text": str(alias).strip(), "label": category, "source": "alias"})
+    for work in self.store.works():
+        meta = resolve_work_metadata(work)
+        description = work.get("description", "")
+        for tag in work.get("institutional_tags", []) or []:
+            rows.append({"text": f"{tag} {description}".strip(), "label": "tema", "source": "institutional"})
+        field_map = {
+            "place": "lugar",
+            "period": "periodo",
+            "technique": "tecnica",
+            "material": "material",
+            "museum": "lugar",
+            "collection": "tema",
+        }
+        for field, label in field_map.items():
+            value = str(meta.get(field, "")).strip()
+            if value:
+                rows.append({"text": value, "label": label, "source": "metadata"})
+                rows.append({"text": f"{value} {description}".strip(), "label": label, "source": "metadata_context"})
+        artist = str(work.get("artist", "")).strip()
+        if artist:
+            rows.append({"text": artist, "label": "pessoa", "source": "artist"})
+        for ext in meta.get("external_entities", []) or []:
+            ext = str(ext).strip()
+            if ext:
+                rows.append({"text": ext, "label": "tema", "source": "open_data"})
+    tag_index = {item.get("id"): item for item in self.store.tags()}
+    for validation in self.store.validations():
+        if validation.get("decision") not in {"approved", "auto-approved", "linked"}:
+            continue
+        tag_row = tag_index.get(validation.get("tag_id"))
+        if not tag_row:
+            continue
+        entity = validation.get("validated_entity") or tag_row.get("entity_prediction") or "tema"
+        tag_text = " ".join([str(tag_row.get("tag", "")).strip(), str(tag_row.get("comment", "")).strip()]).strip()
+        if tag_text:
+            rows.append({"text": tag_text, "label": entity, "source": "validation"})
+        if validation.get("validated_concept_label"):
+            rows.append({"text": validation.get("validated_concept_label"), "label": entity, "source": "validation_concept"})
+        if validation.get("notes"):
+            rows.append({"text": validation.get("notes"), "label": entity, "source": "validation_notes"})
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+    df = df[df["text"].astype(str).str.strip() != ""]
+    return df.reset_index(drop=True)
+
+
+SemanticLearner.build_training_corpus = _patched_build_training_corpus
+
+
+def main() -> None:
+    render_css()
+    render_css_patch_v3()
+    store = JsonStore()
+    init_session()
+    ml = SemanticLearner(store)
+    run_automation_engine(store, ml)
+
+    if not st.session_state.get("intro_complete", False) and store.settings().get("public_intro_enabled", True):
+        intro_flow(store)
+        render_footer()
+        return
+
+    topbar(store)
+    hero_panel(store)
+
+    public_tabs = st.tabs(["explorar obras", "administração"])
+    with public_tabs[0]:
+        render_public_explore(store, ml)
+    with public_tabs[1]:
+        if not st.session_state.get("admin_authenticated", False):
+            render_admin_login(store)
+        else:
+            admin_tabs = st.tabs(["painel geral", "validação", "conceitos", "machine learning", "análise temporal", "grafo", "dados e obras"])
+            with admin_tabs[0]:
+                render_admin_dashboard(store, ml)
+            with admin_tabs[1]:
+                render_admin_validation(store, ml)
+            with admin_tabs[2]:
+                render_admin_concepts(store, ml)
+            with admin_tabs[3]:
+                render_admin_ml(store, ml)
+            with admin_tabs[4]:
+                render_admin_automation(store, ml)
+            with admin_tabs[5]:
+                render_admin_graph(store)
+            with admin_tabs[6]:
+                render_admin_data(store, ml)
+            if st.button("sair da administração", use_container_width=True):
+                st.session_state["admin_authenticated"] = False
+                st.rerun()
+    render_footer()
+
+
 if __name__ == "__main__":
     main()
-
