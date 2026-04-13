@@ -5664,5 +5664,345 @@ def main() -> None:
     render_footer()
 
 
+
+# patched below
+
+
+def render_css_patch_v4() -> None:
+    st.markdown("""
+    <style>
+    .hero-panel {display:none !important;}
+    .story-copy {display:none !important;}
+    .public-guide {
+        margin: 0.4rem 0 1rem 0;
+        color: #3a3a3a;
+        font-size: 1.02rem;
+        line-height: 1.7;
+    }
+    .public-grid-note {
+        color: #555555;
+        font-size: 0.92rem;
+        margin-bottom: 0.9rem;
+    }
+    .work-card {
+        min-height: 250px !important;
+        padding: 0.65rem !important;
+        border-radius: 22px !important;
+        transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease !important;
+    }
+    .work-card:hover {
+        transform: translateY(-3px) !important;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.78), 0 16px 32px rgba(0,0,0,0.08) !important;
+    }
+    .work-card.is-selected {
+        border: 1px solid rgba(55,55,55,0.22) !important;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.84), 0 18px 34px rgba(0,0,0,0.09) !important;
+    }
+    .work-card img {
+        height: 210px !important;
+        object-fit: cover !important;
+        border-radius: 18px !important;
+        cursor: pointer !important;
+    }
+    .public-image-click {
+        text-align:center;
+        color:#525252;
+        font-size:0.86rem;
+        margin-top:0.45rem;
+        letter-spacing:0.01em;
+    }
+    .mini-tag-panel {
+        margin-top: 0.65rem;
+        padding: 0.8rem 0.9rem;
+        border-radius: 18px;
+        background: rgba(255,255,255,0.24);
+        border: 1px solid rgba(255,255,255,0.58);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.82), 0 12px 22px rgba(0,0,0,0.05);
+    }
+    .mini-tag-title {
+        color: #222222;
+        font-size: 0.95rem;
+        font-weight: 700;
+        margin-bottom: 0.45rem;
+    }
+    .mini-tag-help {
+        color: #565656;
+        font-size: 0.84rem;
+        line-height: 1.5;
+        margin-bottom: 0.55rem;
+    }
+    .tag-preview-wrap {
+        display:flex;
+        flex-wrap:wrap;
+        gap:0.42rem;
+        margin-top:0.7rem;
+    }
+    .tag-chip {
+        display:inline-flex;
+        align-items:center;
+        gap:0.28rem;
+        padding:0.36rem 0.7rem;
+        border-radius:999px;
+        background: rgba(255,255,255,0.55);
+        color:#1f1f1f;
+        border:1px solid rgba(255,255,255,0.8);
+        font-size:0.82rem;
+        font-weight:600;
+    }
+    .panel-title {
+        color: #151515 !important;
+    }
+    .panel-subtitle {
+        color: #555555 !important;
+    }
+    .summary-block,
+    .story-card,
+    .suggestion-card,
+    .queue-card {
+        background: rgba(255,255,255,0.20) !important;
+        border: 1px solid rgba(255,255,255,0.56) !important;
+        color: #222222 !important;
+    }
+    .story-title, .suggestion-title {
+        color: #151515 !important;
+    }
+    .story-copy, .suggestion-meta, .queue-text {
+        color: #404040 !important;
+    }
+    .stTextInput input,
+    .stTextArea textarea,
+    [data-baseweb="input"] input,
+    [data-baseweb="textarea"] textarea {
+        background: rgba(255,255,255,0.84) !important;
+        color: #101010 !important;
+        -webkit-text-fill-color: #101010 !important;
+        caret-color: #101010 !important;
+        border: 1px solid rgba(35,35,35,0.15) !important;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.95), 0 3px 10px rgba(0,0,0,0.04) !important;
+        font-weight: 600 !important;
+    }
+    .stTextInput input::placeholder,
+    .stTextArea textarea::placeholder {
+        color: #6b6b6b !important;
+        -webkit-text-fill-color: #6b6b6b !important;
+        opacity: 1 !important;
+    }
+    .stButton button, button[kind="secondary"] {
+        min-height: 2.7rem !important;
+    }
+    .tiny-action button {
+        min-height: 2.2rem !important;
+        font-size: 0.88rem !important;
+    }
+    .web-like-note {
+        color:#474747;
+        font-size:0.92rem;
+        line-height:1.65;
+        margin-top:0.55rem;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+
+def hero_panel(store: JsonStore) -> None:
+    return None
+
+
+def render_footer() -> None:
+    return None
+
+
+def render_public_explore(store: JsonStore, ml: SemanticLearner) -> None:
+    user = store.find_user(st.session_state.get("session_user_id", ""))
+    works = store.works()
+    open_panel("explorar obras", "toque em uma imagem para abrir um campo curto de marcação. os títulos e metadados ficam ocultos nesta etapa para não influenciar sua leitura.")
+    if not user or not works:
+        close_panel()
+        return
+
+    works = works[:3]
+    st.markdown("<div class='public-guide'>Escolha uma imagem e escreva uma palavra ou pequena expressão que melhor represente o que você percebe nela.</div>", unsafe_allow_html=True)
+    st.markdown("<div class='public-grid-note'>As informações analíticas e curatoriais ficam restritas à área administrativa. Aqui, o foco é apenas a sua marcação.</div>", unsafe_allow_html=True)
+
+    selected_id = st.session_state.get("selected_work_id", "")
+    cols = st.columns(3 if len(works) >= 3 else max(1, len(works)))
+    for idx, work in enumerate(works):
+        wid = work.get("id")
+        is_selected = str(selected_id) == str(wid)
+        with cols[idx % len(cols)]:
+            st.markdown(f"<div class='work-card {'is-selected' if is_selected else ''}'>", unsafe_allow_html=True)
+            st.image(work.get("image_url"), use_container_width=True)
+            st.markdown("<div class='public-image-click'>clique abaixo para marcar esta imagem</div>", unsafe_allow_html=True)
+            tiny_cols = st.columns([1, 1])
+            with tiny_cols[0]:
+                if st.button("marcar", key=f"public-open-v4-{wid}", use_container_width=True):
+                    st.session_state["selected_work_id"] = wid
+                    st.rerun()
+            with tiny_cols[1]:
+                if is_selected and st.button("fechar", key=f"public-close-v4-{wid}", use_container_width=True):
+                    st.session_state["selected_work_id"] = ""
+                    st.rerun()
+
+            if is_selected:
+                tags_df = build_tag_dataframe(store)
+                mine = tags_df[(tags_df["work_id"] == wid) & (tags_df["user_id"] == user.get("id"))] if not tags_df.empty else pd.DataFrame()
+                st.markdown("<div class='mini-tag-panel'>", unsafe_allow_html=True)
+                st.markdown("<div class='mini-tag-title'>registre sua tag</div>", unsafe_allow_html=True)
+                st.markdown("<div class='mini-tag-help'>Use uma palavra ou expressão curta. Você pode registrar mais de uma tag, uma por vez.</div>", unsafe_allow_html=True)
+                with st.form(f"tag-form-inline-{wid}", clear_on_submit=True):
+                    tag_value = st.text_input("sua tag", placeholder="ex.: silêncio, azul, movimento, retrato")
+                    submitted = st.form_submit_button("registrar tag", use_container_width=True)
+                    if submitted:
+                        if not tag_value.strip():
+                            st.warning("escreva uma tag antes de registrar.")
+                        else:
+                            store.submit_tag(wid, user.get("id"), tag_value, "", ml)
+                            run_automation_engine(store, ml)
+                            st.success("tag registrada.")
+                            st.rerun()
+                if not mine.empty:
+                    mine_counts = mine["tag"].value_counts().reset_index()
+                    mine_counts.columns = ["tag", "frequência"]
+                    chips = "".join([f"<span class='tag-chip'>{row['tag']} · {int(row['frequência'])}</span>" for _, row in mine_counts.iterrows()])
+                    st.markdown("<div class='mini-tag-help'>suas tags nesta imagem</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div class='tag-preview-wrap'>{chips}</div>", unsafe_allow_html=True)
+                st.markdown("</div>", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+
+    close_panel()
+
+
+def render_admin_graph(store: JsonStore) -> None:
+    open_panel("teia 3d do conhecimento", "rede espacial de palavras, obras, conceitos, metadados museológicos e referências externas conectadas em uma única estrutura.")
+    graph = build_knowledge_graph(store)
+    payload = _graph_payload(graph)
+    fig = graph_to_plot_3d(payload, max_nodes=260)
+    summaries = _analysis_summary_blocks(store, SemanticLearner(store))
+    node_df = pd.DataFrame(payload.get("nodes", []))
+    edge_df = pd.DataFrame(payload.get("edges", []))
+    node_count = len(node_df)
+    edge_count = len(edge_df)
+
+    st.markdown(
+        f"<div class='summary-block'><strong>leitura integrada.</strong> {summaries['graph']} A rede atual reúne {node_count} nós e {edge_count} relações. O objetivo desta visualização é mostrar como a linguagem do público se liga aos metadados institucionais, aos conceitos reconciliados e às referências externas em um mesmo espaço analítico.</div>",
+        unsafe_allow_html=True
+    )
+
+    if fig is not None:
+        safe_plotly_chart(fig, use_container_width=True)
+
+    tabs = st.tabs(["núcleos da rede", "metadados conectados", "palavras centrais"])
+    with tabs[0]:
+        if not edge_df.empty and "relation" in edge_df.columns:
+            relations = edge_df["relation"].value_counts().rename_axis("relação").reset_index(name="quantidade")
+            st.markdown("<div class='story-card'><div class='story-title'>ligações predominantes</div><div class='story-copy'>esta camada mostra quais tipos de relação mais sustentam a teia: marcação social, reconciliação conceitual, metadados museológicos e vínculos externos.</div></div>", unsafe_allow_html=True)
+            render_bar_chart_df(relations.head(18), x="relação", y="quantidade", height=340)
+        else:
+            st.markdown("<div class='web-like-note'>A rede ainda está começando. Quando novas tags e validações entrarem, os núcleos da teia ficarão mais densos.</div>", unsafe_allow_html=True)
+    with tabs[1]:
+        works_df = to_dataframe(store.works())
+        if not works_df.empty:
+            view_cols = [c for c in ["title", "artist", "museum", "collection", "place", "period", "technique", "material", "external_reference_label"] if c in works_df.columns]
+            st.markdown("<div class='story-card'><div class='story-title'>camadas documentais</div><div class='story-copy'>os metadados institucionais ajudam a estabilizar a leitura das tags e a aproximar a marcação livre de uma estrutura documental consistente.</div></div>", unsafe_allow_html=True)
+            st.dataframe(works_df[view_cols], use_container_width=True, hide_index=True)
+        else:
+            st.markdown("<div class='web-like-note'>Ainda não há metadados suficientes cadastrados para esta leitura.</div>", unsafe_allow_html=True)
+    with tabs[2]:
+        counts = _edge_count_map(payload.get("edges", []))
+        connected_rows = []
+        for row in payload.get("nodes", []):
+            nid = str(row.get("id", ""))
+            connected_rows.append({"rótulo": row.get("label", ""), "tipo": row.get("kind", ""), "grau": counts.get(nid, 0)})
+        connected_df = pd.DataFrame(connected_rows).sort_values("grau", ascending=False)
+        if not connected_df.empty:
+            st.markdown("<div class='story-card'><div class='story-title'>centros de gravidade vocabular</div><div class='story-copy'>os nós com maior grau funcionam como pontes entre obras, conceitos e descrições. Eles ajudam a encontrar convergências temáticas, redundâncias e ausências documentais.</div></div>", unsafe_allow_html=True)
+            render_bar_chart_df(connected_df.head(16), x="rótulo", y="grau", height=340)
+        else:
+            st.markdown("<div class='web-like-note'>Ainda não há nós centrais suficientes para a leitura de centralidade.</div>", unsafe_allow_html=True)
+    close_panel()
+
+
+def render_admin_dashboard(store: JsonStore, ml: SemanticLearner) -> None:
+    tags_df = build_tag_dataframe(store)
+    works_df = to_dataframe(store.works())
+    validations_df = to_dataframe(store.validations())
+    concepts_df = to_dataframe(store.concepts())
+    summaries = _analysis_summary_blocks(store, ml)
+
+    total_tags = int(len(tags_df))
+    unique_tags = int(tags_df["normalized_tag"].nunique()) if not tags_df.empty and "normalized_tag" in tags_df.columns else 0
+    participants = int(tags_df["user_id"].nunique()) if not tags_df.empty and "user_id" in tags_df.columns else len(store.users())
+    lexical_density = safe_float(unique_tags / total_tags, 0.0) if total_tags else 0.0
+    open_panel("painel geral", "visão resumida do estado atual da documentação social, da validação curatorial e da aprendizagem do sistema.")
+    html = f"""
+    <div class="metric-strip">
+        <div class="metric-card"><div class="metric-caption">obras</div><div class="metric-number">{len(works_df)}</div><div class="metric-note">imagens disponíveis</div></div>
+        <div class="metric-card"><div class="metric-caption">tags</div><div class="metric-number">{total_tags}</div><div class="metric-note">marcações registradas</div></div>
+        <div class="metric-card"><div class="metric-caption">validações</div><div class="metric-number">{len(validations_df)}</div><div class="metric-note">retorno curatorial</div></div>
+        <div class="metric-card"><div class="metric-caption">conceitos</div><div class="metric-number">{len(concepts_df)}</div><div class="metric-note">camada reconciliada</div></div>
+        <div class="metric-card"><div class="metric-caption">densidade lexical</div><div class="metric-number">{lexical_density:.2f}</div><div class="metric-note">únicas sobre total</div></div>
+    </div>
+    """
+    st.markdown(html, unsafe_allow_html=True)
+    st.markdown(f"<div class='summary-block'><strong>resumo analítico.</strong> {summaries['validation']}</div>", unsafe_allow_html=True)
+
+    col1, col2 = st.columns([1.15, 0.85])
+    with col1:
+        st.markdown("<div class='story-card'><div class='story-title'>o que observar neste painel</div><div class='story-copy'>acompanhe o crescimento das marcações, a diversidade do vocabulário, a necessidade de validação e as conexões que começam a surgir entre tags, conceitos e metadados.</div></div>", unsafe_allow_html=True)
+        if not tags_df.empty:
+            work_counts = tags_df.groupby("work_title").agg(tags=("id", "count")).reset_index().sort_values("tags", ascending=False)
+            render_bar_chart_df(work_counts.head(12), x="work_title", y="tags", height=340)
+    with col2:
+        st.markdown("<div class='story-card'><div class='story-title'>aprendizagem em uso</div><div class='story-copy'>o sistema aprende com vocabulário seed, metadados das obras e validações administrativas. À medida que a base cresce, as previsões de entidade e as aproximações conceituais tendem a ficar mais estáveis.</div></div>", unsafe_allow_html=True)
+        entity_df = pd.DataFrame()
+        if not tags_df.empty and "entity_prediction" in tags_df.columns:
+            entity_df = tags_df["entity_prediction"].replace("", "tema").value_counts().rename_axis("categoria").reset_index(name="frequência")
+        if not entity_df.empty:
+            render_bar_chart_df(entity_df.head(10), x="categoria", y="frequência", height=290)
+    close_panel()
+
+
+def main() -> None:
+    render_css()
+    render_css_patch_v3()
+    render_css_patch_v4()
+    store = JsonStore()
+    init_session()
+    ml = SemanticLearner(store)
+    run_automation_engine(store, ml)
+
+    if not st.session_state.get("intro_complete", False) and store.settings().get("public_intro_enabled", True):
+        intro_flow(store)
+        return
+
+    topbar(store)
+
+    public_tabs = st.tabs(["explorar obras", "administração"])
+    with public_tabs[0]:
+        render_public_explore(store, ml)
+    with public_tabs[1]:
+        if not st.session_state.get("admin_authenticated", False):
+            render_admin_login(store)
+        else:
+            admin_tabs = st.tabs(["painel geral", "validação", "conceitos", "machine learning", "análise temporal", "teia 3d", "dados e obras"])
+            with admin_tabs[0]:
+                render_admin_dashboard(store, ml)
+            with admin_tabs[1]:
+                render_admin_validation(store, ml)
+            with admin_tabs[2]:
+                render_admin_concepts(store, ml)
+            with admin_tabs[3]:
+                render_admin_ml(store, ml)
+            with admin_tabs[4]:
+                render_admin_automation(store, ml)
+            with admin_tabs[5]:
+                render_admin_graph(store)
+            with admin_tabs[6]:
+                render_admin_data(store, ml)
+            if st.button("sair da administração", use_container_width=True):
+                st.session_state["admin_authenticated"] = False
+                st.rerun()
+
+
 if __name__ == "__main__":
     main()
