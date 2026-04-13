@@ -6422,3 +6422,337 @@ def main() -> None:
 
 if __name__ == '__main__':
     main()
+
+
+# ===== OVERRIDE FINAL 2: foco real em validação, temporalidade, acessibilidade e teia 3D =====
+
+def intro_flow(store: JsonStore) -> None:
+    st.markdown("<div style='height:.35rem'></div>", unsafe_allow_html=True)
+    st.markdown("<div class='panel' style='padding:1.3rem 1.3rem 1rem 1.3rem'><div class='panel-title'>questionário inicial</div><div class='panel-subtitle'>responda às três perguntas para liberar a marcação das imagens.</div>", unsafe_allow_html=True)
+    c1, c2 = st.columns(2)
+    with c1:
+        familiarity = st.selectbox(
+            "1. qual é a sua frequência de visita a museus?",
+            ["nunca", "raramente", "ocasionalmente", "frequentemente"],
+            key="intro_familiarity_single",
+        )
+        documentation = st.selectbox(
+            "2. você já ouviu falar sobre documentação museológica?",
+            ["nenhum", "básico", "intermediário", "avançado"],
+            key="intro_documentation_single",
+        )
+    with c2:
+        understanding = st.text_area(
+            "3. o que você entende por tags aplicadas a acervos?",
+            height=180,
+            placeholder="descreva com suas palavras",
+            key="intro_understanding_single",
+        )
+    if st.button("liberar acesso às obras", key="intro_submit_single", use_container_width=True):
+        if not str(understanding).strip():
+            st.warning("preencha a terceira resposta para continuar.")
+        else:
+            store.create_or_get_user(familiarity, documentation, understanding)
+            st.session_state["intro_complete"] = True
+            st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+def _public_user(store: JsonStore) -> Optional[Dict[str, Any]]:
+    uid = str(st.session_state.get("session_user_id", "") or "")
+    if not uid:
+        return None
+    return store.find_user(uid)
+
+
+def render_public_explore(store: JsonStore, ml: SemanticLearner) -> None:
+    user = _public_user(store)
+    works = store.works()[:3]
+    if not user or not works:
+        st.info("nenhuma obra está disponível no momento.")
+        return
+
+    tags_df = build_tag_dataframe(store)
+    cols = st.columns(3 if len(works) >= 3 else max(1, len(works)))
+    for idx, work in enumerate(works):
+        wid = str(work.get("id", ""))
+        with cols[idx % len(cols)]:
+            st.markdown("<div class='work-card' style='padding:.55rem'>", unsafe_allow_html=True)
+            st.image(work.get("image_url"), use_container_width=True)
+            if st.button("Marcar", key=f"public_mark_{wid}", use_container_width=True):
+                st.session_state["selected_work_id"] = wid
+                st.rerun()
+            if str(st.session_state.get("selected_work_id", "")) == wid:
+                st.markdown("<div class='tag-compact-box' style='margin-top:.65rem;padding:.8rem'>", unsafe_allow_html=True)
+                tag_value = st.text_input(
+                    "sua tag",
+                    key=f"tag_inline_{wid}",
+                    placeholder="escreva uma palavra ou pequena expressão",
+                    label_visibility="collapsed",
+                )
+                c1, c2 = st.columns(2)
+                with c1:
+                    if st.button("Registrar", key=f"save_inline_{wid}", use_container_width=True):
+                        if not str(tag_value).strip():
+                            st.warning("escreva uma tag para registrar.")
+                        else:
+                            store.submit_tag(wid, user.get("id"), tag_value, "", ml)
+                            run_automation_engine(store, ml)
+                            st.session_state[f"tag_inline_{wid}"] = ""
+                            st.rerun()
+                with c2:
+                    if st.button("Fechar", key=f"close_inline_{wid}", use_container_width=True):
+                        st.session_state["selected_work_id"] = ""
+                        st.rerun()
+                mine = pd.DataFrame()
+                if not tags_df.empty:
+                    mine = tags_df[(tags_df["work_id"].astype(str) == wid) & (tags_df["user_id"].astype(str) == str(user.get("id", "")))]
+                if not mine.empty:
+                    counts = mine["tag"].astype(str).value_counts().reset_index()
+                    counts.columns = ["tag", "frequência"]
+                    st.markdown("<div class='tag-mini-note'>suas tags nesta imagem</div>", unsafe_allow_html=True)
+                    st.markdown("<div class='tag-preview-wrap'>" + "".join([f"<span class='tag-chip'>{row['tag']} {int(row['frequência'])}</span>" for _, row in counts.iterrows()]) + "</div>", unsafe_allow_html=True)
+                st.markdown("</div>", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+
+
+def _connected_search(store: JsonStore, query: str) -> pd.DataFrame:
+    qn = normalize_text(query)
+    if not qn:
+        return pd.DataFrame()
+    tags_df = build_tag_dataframe(store)
+    works_df = to_dataframe(store.works())
+    concepts_df = to_dataframe(store.concepts())
+    rows: List[Dict[str, Any]] = []
+    if not tags_df.empty:
+        for _, row in tags_df.iterrows():
+            hay = " ".join([
+                str(row.get("tag", "")), str(row.get("normalized_tag", "")), str(row.get("work_title", "")),
+                str(row.get("work_artist", "")), str(row.get("work_museum", "")), str(row.get("work_place", "")),
+                str(row.get("work_period", "")), str(row.get("work_technique", "")), str(row.get("work_material", "")),
+                str(row.get("concept_resolved_label", "")), str(row.get("validated_concept_label", "")), str(row.get("validated_entity", "")),
+            ])
+            hn = normalize_text(hay)
+            score = 0.0
+            if qn in hn:
+                score += 1.0
+            score += similarity_score(qn, str(row.get("tag", "")))
+            score += similarity_score(qn, str(row.get("concept_resolved_label", "")))
+            score += 0.6 * similarity_score(qn, str(row.get("work_title", "")))
+            score += 0.4 * similarity_score(qn, str(row.get("work_artist", "")))
+            score += 0.3 * similarity_score(qn, str(row.get("work_material", "")))
+            score += 0.3 * similarity_score(qn, str(row.get("work_technique", "")))
+            if score > 0.35:
+                rows.append({
+                    "tipo": "tag",
+                    "score": round(score, 3),
+                    "entrada": row.get("tag", ""),
+                    "obra": row.get("work_title", ""),
+                    "artista": row.get("work_artist", ""),
+                    "museu": row.get("work_museum", ""),
+                    "categoria_prevista": row.get("entity_prediction", ""),
+                    "conceito": row.get("concept_resolved_label", "") or row.get("validated_concept_label", ""),
+                })
+    if not works_df.empty:
+        for _, row in works_df.iterrows():
+            hay = " ".join([str(row.get(c, "")) for c in ["title", "artist", "museum", "collection", "place", "period", "technique", "material", "description"]])
+            hn = normalize_text(hay)
+            score = 0.0
+            if qn in hn:
+                score += 1.0
+            for c, w in [("title", 0.9), ("artist", 0.7), ("museum", 0.6), ("period", 0.6), ("technique", 0.6), ("material", 0.6), ("place", 0.5), ("description", 0.4)]:
+                score += w * similarity_score(qn, str(row.get(c, "")))
+            if score > 0.4:
+                rows.append({
+                    "tipo": "metadado",
+                    "score": round(score, 3),
+                    "entrada": row.get("title", ""),
+                    "obra": row.get("title", ""),
+                    "artista": row.get("artist", ""),
+                    "museu": row.get("museum", ""),
+                    "categoria_prevista": "metadado",
+                    "conceito": row.get("period", "") or row.get("technique", "") or row.get("material", ""),
+                })
+    if not concepts_df.empty:
+        for _, row in concepts_df.iterrows():
+            label = str(row.get("label", ""))
+            score = similarity_score(qn, label)
+            if qn in normalize_text(label):
+                score += 1.0
+            if score > 0.4:
+                rows.append({
+                    "tipo": "conceito",
+                    "score": round(score, 3),
+                    "entrada": label,
+                    "obra": "",
+                    "artista": "",
+                    "museu": "",
+                    "categoria_prevista": row.get("category", ""),
+                    "conceito": label,
+                })
+    if not rows:
+        return pd.DataFrame(columns=["tipo", "score", "entrada", "obra", "artista", "museu", "categoria_prevista", "conceito"])
+    return pd.DataFrame(rows).sort_values(["score", "tipo"], ascending=[False, True]).head(30)
+
+
+def render_admin_dashboard(store: JsonStore, ml: SemanticLearner) -> None:
+    tags_df = build_tag_dataframe(store)
+    works_df = to_dataframe(store.works())
+    validations_df = to_dataframe(store.validations())
+    total_tags = int(len(tags_df)) if not tags_df.empty else 0
+    participants = int(tags_df["user_id"].nunique()) if not tags_df.empty and "user_id" in tags_df.columns else len(store.users())
+    pending = int((validations_df.get("decision", pd.Series(dtype=str)).astype(str).str.lower() == "pending").sum()) if not validations_df.empty else 0
+    approved = int((validations_df.get("decision", pd.Series(dtype=str)).astype(str).str.lower().isin(["approved", "linked", "auto-approved"])) .sum()) if not validations_df.empty else 0
+    search_terms = int(tags_df.get("normalized_tag", pd.Series(dtype=str)).astype(str).nunique()) if not tags_df.empty else 0
+    open_panel("painel", "acompanhe o que foi coletado, o que está em validação e o que já pode circular na busca conectada entre metadados, tags e conceitos.")
+    st.markdown(f"""
+    <div class='metric-strip'>
+        <div class='metric-card'><div class='metric-caption'>obras</div><div class='metric-number'>{len(works_df)}</div><div class='metric-note'>itens monitorados</div></div>
+        <div class='metric-card'><div class='metric-caption'>tags coletadas</div><div class='metric-number'>{total_tags}</div><div class='metric-note'>entrada do público</div></div>
+        <div class='metric-card'><div class='metric-caption'>participantes</div><div class='metric-number'>{participants}</div><div class='metric-note'>sessões registradas</div></div>
+        <div class='metric-card'><div class='metric-caption'>fila curatorial</div><div class='metric-number'>{pending}</div><div class='metric-note'>aguardando supervisão</div></div>
+        <div class='metric-card'><div class='metric-caption'>termos na busca</div><div class='metric-number'>{search_terms}</div><div class='metric-note'>vocabulário recuperável</div></div>
+    </div>
+    """, unsafe_allow_html=True)
+    st.markdown(f"<div class='summary-block'><strong>síntese do acompanhamento.</strong> validações concluídas {approved}. pendências {pending}. o painel prioriza coleta, supervisão, recuperação e circulação de informação entre a linguagem do público e os metadados institucionais.</div>", unsafe_allow_html=True)
+    c1, c2 = st.columns([1.1, 0.9])
+    with c1:
+        st.markdown("<div class='story-card'><div class='story-title'>o que a instituição coleta</div><div class='story-copy'>acompanhe onde há mais marcações, onde surgem conflitos de preenchimento, quais obras concentram vocabulário social e onde ainda faltam campos para estabilizar a documentação.</div></div>", unsafe_allow_html=True)
+        if not tags_df.empty and 'work_title' in tags_df.columns:
+            flow = tags_df.groupby('work_title').agg(tags=('id','count')).reset_index().sort_values('tags', ascending=False)
+            flow.columns = ['obra', 'tags coletadas']
+            render_bar_chart_df(flow.head(10), x='obra', y='tags coletadas', height=320)
+    with c2:
+        st.markdown("<div class='story-card'><div class='story-title'>busca documental em formação</div><div class='story-copy'>cada validação devolve ao sistema exemplos que aproximam tags livres, conceitos e metadados. a meta é fazer a busca encontrar obra, artista, técnica, material, lugar e tema a partir das expressões usadas pelas pessoas.</div></div>", unsafe_allow_html=True)
+        if not tags_df.empty and 'entity_prediction' in tags_df.columns:
+            entity_df = tags_df['entity_prediction'].replace('', 'tema').astype(str).value_counts().rename_axis('categoria').reset_index(name='ocorrências')
+            render_bar_chart_df(entity_df.head(8), x='categoria', y='ocorrências', height=280)
+    close_panel()
+
+
+def render_admin_ml_focus(store: JsonStore, ml: SemanticLearner) -> None:
+    tags_df = build_tag_dataframe(store)
+    open_panel("busca e aprendizagem", "o mecanismo aprende com metadados, tags criadas, conceitos validados e exemplos curatoriais para melhorar a recuperação e a leitura das marcações.")
+    st.markdown("<div class='summary-block'><strong>aprendizagem em uso.</strong> esta área aproxima o comportamento descrito para o caso do Prado: reconhecimento de entidades, desambiguação, aproximação conceitual, revisão progressiva e redução de erro por supervisão continuada.</div>", unsafe_allow_html=True)
+    query = st.text_input("buscar na rede documental", placeholder="busque por tema, material, técnica, artista, lugar, museu ou uma tag criada pelo público", key="connected_search_input")
+    if query.strip():
+        results = _connected_search(store, query)
+        if results.empty:
+            st.info("nenhuma conexão forte apareceu com este termo ainda.")
+        else:
+            st.markdown("#### resultados conectados")
+            st.dataframe(results, use_container_width=True, hide_index=True)
+            st.markdown(f"<div class='story-card'><div class='story-title'>síntese da busca</div><div class='story-copy'>o termo procurado cruzou metadados institucionais, tags públicas e conceitos reconciliados. os resultados acima mostram por onde a busca já consegue circular com base no que foi aprendido até agora.</div></div>", unsafe_allow_html=True)
+    if not tags_df.empty:
+        sample = tags_df[['tag','work_title','entity_prediction','concept_resolved_label','work_museum','work_period','work_technique','work_material']].head(12).copy()
+        sample.columns = ['tag criada', 'obra', 'categoria sugerida', 'conceito', 'museu', 'período', 'técnica', 'material']
+        st.markdown("#### exemplos usados para aprender")
+        st.dataframe(sample, use_container_width=True, hide_index=True)
+    close_panel()
+
+
+def render_admin_temporal_focus(store: JsonStore, ml: SemanticLearner) -> None:
+    tags_df = build_tag_dataframe(store)
+    open_panel("análise temporal", "acompanhe as tags criadas por dia, mês e ano, vendo o que apareceu em cada período e como a circulação de termos vai se consolidando.")
+    if tags_df.empty or 'created_ts' not in tags_df.columns:
+        st.info('ainda não há marcações suficientes para a leitura temporal.')
+        close_panel()
+        return
+    frame = tags_df.copy()
+    frame['created_ts'] = pd.to_datetime(frame['created_ts'], errors='coerce')
+    frame = frame.dropna(subset=['created_ts'])
+    if frame.empty:
+        st.info('os registros temporais ainda não estão completos.')
+        close_panel()
+        return
+    frame['dia'] = frame['created_ts'].dt.strftime('%Y-%m-%d')
+    frame['mes'] = frame['created_ts'].dt.strftime('%Y-%m')
+    frame['ano'] = frame['created_ts'].dt.strftime('%Y')
+    t1, t2, t3 = st.tabs(['por dia', 'por mês', 'por ano'])
+    def detail_block(df, period_col, limit=8):
+        grouped = df.groupby(period_col).agg(total=('id','count')).reset_index().sort_values(period_col, ascending=False)
+        for _, period in grouped.head(limit).iterrows():
+            p = period[period_col]
+            subset = df[df[period_col] == p]
+            top_tags = subset['tag'].astype(str).value_counts().head(8)
+            works = subset['work_title'].astype(str).value_counts().head(3)
+            tags_line = ' · '.join([f"{k} {v}" for k, v in top_tags.items()]) or 'sem detalhamento'
+            works_line = ' · '.join([f"{k} {v}" for k, v in works.items()]) or 'sem obras destacadas'
+            st.markdown(f"<div class='story-card'><div class='story-title'>{p}</div><div class='story-copy'>tags registradas {int(len(subset))}<br>termos observados {tags_line}<br>obras em destaque {works_line}</div></div>", unsafe_allow_html=True)
+    with t1:
+        day_counts = frame.groupby('dia').agg(tags=('id','count')).reset_index().sort_values('dia')
+        render_line_chart_df(day_counts, x='dia', y='tags', height=280)
+        detail_block(frame, 'dia', limit=10)
+    with t2:
+        month_counts = frame.groupby('mes').agg(tags=('id','count')).reset_index().sort_values('mes')
+        render_bar_chart_df(month_counts, x='mes', y='tags', height=280)
+        detail_block(frame, 'mes', limit=8)
+    with t3:
+        year_counts = frame.groupby('ano').agg(tags=('id','count')).reset_index().sort_values('ano')
+        render_bar_chart_df(year_counts, x='ano', y='tags', height=240)
+        detail_block(frame, 'ano', limit=6)
+    close_panel()
+
+
+def render_admin_graph(store: JsonStore) -> None:
+    open_panel("teia 3d", "rede de compartilhamento e interoperabilidade entre obra, artista, museu, coleção, lugar, período, técnica, material, tags, conceitos e referências externas. arraste a teia para explorar as conexões em três dimensões.")
+    graph = build_knowledge_graph(store)
+    payload = _graph_payload(graph)
+    fig = graph_to_plot_3d(payload, max_nodes=280)
+    node_count = len(payload.get('nodes', []))
+    edge_count = len(payload.get('edges', []))
+    st.markdown(f"<div class='summary-block'><strong>rede conectada.</strong> a teia atual reúne {node_count} nós e {edge_count} relações. o foco aqui é mostrar circulação, interoperabilidade e compartilhamento de informação entre metadados da instituição, linguagem do público, conceitos reconciliados e referências externas.</div>", unsafe_allow_html=True)
+    if fig is not None:
+        safe_plotly_chart(fig, use_container_width=True)
+    else:
+        st.info('a teia 3d precisa do plotly para ser exibida nesta execução.')
+    edge_df = pd.DataFrame(payload.get('edges', []))
+    if not edge_df.empty and 'relation' in edge_df.columns:
+        rel = edge_df['relation'].astype(str).value_counts().head(12)
+        st.markdown("<div class='story-card'><div class='story-title'>ligações ativas na teia</div><div class='story-copy'>" + ' · '.join([f"{k} {v}" for k, v in rel.items()]) + "</div></div>", unsafe_allow_html=True)
+    close_panel()
+
+
+def main() -> None:
+    render_css()
+    render_css_patch_v3()
+    render_css_patch_v4()
+    render_accessibility_css_patch()
+    init_session()
+    store = JsonStore()
+    ml = SemanticLearner(store)
+    run_automation_engine(store, ml)
+
+    if not st.session_state.get('intro_complete', False) and store.settings().get('public_intro_enabled', True):
+        intro_flow(store)
+        return
+
+    topbar(store)
+    public_tabs = st.tabs(['explorar obras', 'administração'])
+    with public_tabs[0]:
+        render_public_explore(store, ml)
+        render_accessibility_hub(store)
+    with public_tabs[1]:
+        if not st.session_state.get('admin_authenticated', False):
+            render_admin_login(store)
+        else:
+            admin_tabs = st.tabs(['painel', 'validação', 'busca e aprendizagem', 'análise temporal', 'teia 3d', 'dados e obras'])
+            with admin_tabs[0]:
+                render_admin_dashboard(store, ml)
+            with admin_tabs[1]:
+                render_admin_validation(store, ml)
+                render_admin_concepts(store, ml)
+            with admin_tabs[2]:
+                render_admin_ml_focus(store, ml)
+            with admin_tabs[3]:
+                render_admin_temporal_focus(store, ml)
+            with admin_tabs[4]:
+                render_admin_graph(store)
+            with admin_tabs[5]:
+                render_admin_data(store, ml)
+            if st.button('sair da administração', key='admin_logout_final', use_container_width=True):
+                st.session_state['admin_authenticated'] = False
+                st.rerun()
+
+if __name__ == '__main__':
+    main()
