@@ -5951,7 +5951,7 @@ def render_admin_dashboard(store: JsonStore, ml: SemanticLearner) -> None:
         <div class="metric-card"><div class="metric-caption">tags</div><div class="metric-number">{total_tags}</div><div class="metric-note">marcações registradas</div></div>
         <div class="metric-card"><div class="metric-caption">validações</div><div class="metric-number">{len(validations_df)}</div><div class="metric-note">retorno curatorial</div></div>
         <div class="metric-card"><div class="metric-caption">conceitos</div><div class="metric-number">{len(concepts_df)}</div><div class="metric-note">camada reconciliada</div></div>
-        <div class="metric-card"><div class="metric-caption">densidade lexical</div><div class="metric-number">{lexical_density:.2f}</div><div class="metric-note">únicas sobre total</div></div>
+        <div class="metric-card"><div class="metric-caption">vocabulário registrado</div><div class="metric-number">{lexical_density:.2f}</div><div class="metric-note">termos distintos</div></div>
     </div>
     """
     st.markdown(html, unsafe_allow_html=True)
@@ -6259,8 +6259,6 @@ def main() -> None:
                 st.rerun()
 
 
-if __name__ == "__main__":
-    main()
 
 
 # ===== OVERRIDE FINAL: interface focada no pedido do usuário =====
@@ -6292,7 +6290,7 @@ def render_admin_dashboard(store: JsonStore, ml: SemanticLearner) -> None:
 
     c1, c2 = st.columns([1.1, 0.9])
     with c1:
-        st.markdown("<div class='story-card'><div class='story-title'>foco deste painel</div><div class='story-copy'>o objetivo aqui não é medir densidade lexical, mas acompanhar coleta, validação, preenchimento, comparativos entre obras e consolidação da busca documental. as marcações do público entram, passam por verificação, comparação com metadados e podem voltar para supervisão curatorial.</div></div>", unsafe_allow_html=True)
+        st.markdown("<div class='story-card'><div class='story-title'>foco deste painel</div><div class='story-copy'>o objetivo aqui não é medir vocabulário registrado, mas acompanhar coleta, validação, preenchimento, comparativos entre obras e consolidação da busca documental. as marcações do público entram, passam por verificação, comparação com metadados e podem voltar para supervisão curatorial.</div></div>", unsafe_allow_html=True)
         if not tags_df.empty and 'work_title' in tags_df.columns:
             work_counts = tags_df.groupby('work_title').agg(tags=('id','count')).reset_index().sort_values('tags', ascending=False)
             work_counts.columns = ['obra','tags coletadas']
@@ -6755,4 +6753,7 @@ def main() -> None:
                 st.rerun()
 
 if __name__ == '__main__':
+    main()
+
+if __name__ == "__main__":
     main()
