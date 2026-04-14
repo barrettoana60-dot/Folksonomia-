@@ -1655,9 +1655,52 @@ def check_login(username, password):
     h = hashlib.sha256(password.encode()).hexdigest()
     return username==ADMIN_USERNAME and h==hashlib.sha256(ADMIN_PASSWORD.encode()).hexdigest()
 
+def normalize_tags_dataframe(df):
+    if df is None or df.empty:
+        return pd.DataFrame(columns=['id','user_id','obra_id','tag','timestamp','status','grupo_tematico','ontologias','origem','automatico','versao_semantica','proveniencia'])
+    norm = df.copy()
+    defaults = {
+        'id': None,
+        'user_id': 'anonimo',
+        'obra_id': '—',
+        'tag': '',
+        'timestamp': now_str(),
+        'status': 'bruto',
+        'grupo_tematico': None,
+        'ontologias': [],
+        'origem': 'usuario',
+        'automatico': False,
+        'versao_semantica': 1,
+        'proveniencia': {},
+    }
+    for col, default in defaults.items():
+        if col not in norm.columns:
+            norm[col] = default
+    for i, idx in enumerate(norm.index):
+        current_id = norm.at[idx, 'id'] if 'id' in norm.columns else None
+        if pd.isna(current_id) or str(current_id).strip() == '' or str(current_id).lower() == 'nan':
+            norm.at[idx, 'id'] = i + 1
+        else:
+            norm.at[idx, 'id'] = safe_int(current_id, i + 1)
+    norm['tag'] = norm['tag'].astype(str)
+    norm['id'] = [safe_int(v, i + 1) for i, v in enumerate(norm['id'].tolist())]
+    norm['obra_id'] = [safe_int(v, 0) if str(v).strip() not in ['', '—', 'None', 'nan'] else 0 for v in norm['obra_id'].tolist()]
+    norm['grupo_tematico'] = [g if isinstance(g, str) and g.strip() else classify_tag_group(t) for g, t in zip(norm['grupo_tematico'].tolist(), norm['tag'].tolist())]
+    fixed_onts = []
+    for tag, onts in zip(norm['tag'].tolist(), norm['ontologias'].tolist()):
+        if isinstance(onts, list):
+            fixed_onts.append(onts)
+        elif isinstance(onts, str) and onts.strip():
+            fixed_onts.append([o.strip() for o in onts.split(',') if o.strip()])
+        else:
+            fixed_onts.append(match_ontologies_for_tag(tag))
+    norm['ontologias'] = fixed_onts
+    return norm
+
+
 def all_tags():
     t = load_json_file(TAGS_FILE, [])
-    return pd.DataFrame(t) if t else pd.DataFrame()
+    return normalize_tags_dataframe(pd.DataFrame(t)) if t else normalize_tags_dataframe(pd.DataFrame())
 
 def all_users():
     u = load_json_file(USERS_FILE, [])
@@ -2697,9 +2740,11 @@ def tab_validation_audit():
                 pivot = cross.pivot(index='familiaridade', columns='grupo_tematico', values='Qtd').fillna(0)
                 st.dataframe(pivot, use_container_width=True)
 
-            ids = rev['id'].tolist()
+            rev = normalize_tags_dataframe(rev)
+            ids = [safe_int(v, i + 1) for i, v in enumerate(rev['id'].tolist())]
             chosen = st.selectbox('Selecione o ID da tag para auditar', ids, key='audit_tag_id')
-            current = rev[rev['id'] == chosen].iloc[0]
+            current_matches = rev[rev['id'].astype(int) == safe_int(chosen, 1)]
+            current = current_matches.iloc[0] if not current_matches.empty else rev.iloc[0]
             grupos = list(THEME_GROUPS.keys()) + ['Outros']
             with st.form('form_auditoria_tag'):
                 sugestao_grupo = st.selectbox('Grupo sugerido para auditoria', grupos, index=grupos.index(current.get('grupo_tematico', 'Outros')) if current.get('grupo_tematico', 'Outros') in grupos else len(grupos)-1)
@@ -2751,15 +2796,20 @@ def tab_validation_audit():
                     comentario = st.text_area('Comentário sobre a sugestão ortográfica', value=f"Sugestão registrada: '{sug['tag']}' -> '{sug['sugestao']}'.")
                     registrar = st.form_submit_button('Registrar sugestão sem sobrescrever a tag')
                     if registrar:
-                        target = tdf[tdf['tag'] == escolha].sort_values('id')
+                        target = normalize_tags_dataframe(tdf[tdf['tag'] == escolha])
+                        if 'id' in target.columns:
+                            target = target.sort_values('id')
+                        elif 'timestamp' in target.columns:
+                            target = target.sort_values('timestamp')
                         if not target.empty:
                             row = target.iloc[0].to_dict()
+                            tag_entity_id = safe_int(row.get('id'), 1)
                             register_event(
                                 'orthography_suggestion_logged',
                                 st.session_state.get('admin_username', 'admin'),
                                 'admin',
                                 'tag',
-                                int(row['id']),
+                                tag_entity_id,
                                 {
                                     'tag_original_snapshot': row,
                                     'sugestao_ortografica': str(sug['sugestao']),
@@ -2907,8 +2957,11 @@ def tab_graph_open_data():
         if interop_df.empty and isinstance(matches_df, pd.DataFrame) and not matches_df.empty:
             interop_df = summarize_interoperability(open_sources, matches_df.to_dict(orient='records'))
         if not interop_df.empty:
+            interop_df = interop_df.copy()
+            if 'Fonte externa' not in interop_df.columns:
+                interop_df['Fonte externa'] = '—'
             st.dataframe(interop_df, use_container_width=True, hide_index=True)
-            grp = interop_df.groupby('Fonte externa').size()
+            grp = interop_df.groupby('Fonte externa').size() if 'Fonte externa' in interop_df.columns else pd.Series(dtype='int64')
             if not grp.empty:
                 st.bar_chart(grp)
         else:
