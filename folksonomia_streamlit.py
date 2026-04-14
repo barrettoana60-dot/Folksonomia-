@@ -201,6 +201,16 @@ def normalize_events_dataframe(df):
         'circulation_action': None,
         'circulation_trace': None,
         'event_hash': '',
+        'payload_cipher': '',
+        'snapshot_cipher': '',
+        'keyword_cipher': '',
+        'puzzle_shards': [],
+        'search_index': [],
+        'chain_anchor': '',
+        'recovery_checksum': '',
+        'redundancy_mesh': {},
+        'linked_records': [],
+        'integrity_status': 'ok',
     }
     for col, default in expected_defaults.items():
         if col not in norm.columns:
@@ -215,7 +225,227 @@ def normalize_events_dataframe(df):
     norm['event_hash'] = norm['event_hash'].astype(str)
     norm['previous_hash'] = norm['previous_hash'].astype(str)
     norm['entity_previous_hash'] = norm['entity_previous_hash'].astype(str)
+
+    for idx in norm.index:
+        row = norm.loc[idx]
+        search_idx = row.get('search_index', [])
+        if not isinstance(search_idx, list) or not search_idx:
+            norm.at[idx, 'search_index'] = tokenize_searchable_text(
+                row.get('event_type', ''), row.get('actor', ''), row.get('entity_type', ''),
+                row.get('entity_id', ''), row.get('origin', ''), row.get('status', ''),
+                row.get('payload', {}), row.get('semantic_snapshot', {}), row.get('interoperability_refs', [])
+            )
+        if not str(row.get('chain_anchor', '')).strip():
+            norm.at[idx, 'chain_anchor'] = hash_record({
+                'ledger_no': safe_int(row.get('ledger_no'), idx + 1),
+                'previous_hash': row.get('previous_hash', 'GENESIS'),
+                'entity_previous_hash': row.get('entity_previous_hash', 'GENESIS_ENTITY'),
+                'entity_type': row.get('entity_type', '—'),
+                'entity_id': row.get('entity_id', '—'),
+                'event_hash': row.get('event_hash', ''),
+            })
+        if not str(row.get('recovery_checksum', '')).strip():
+            norm.at[idx, 'recovery_checksum'] = hash_record({
+                'payload': row.get('payload', {}),
+                'semantic_snapshot': row.get('semantic_snapshot', {}),
+                'search_index': norm.at[idx, 'search_index'],
+            })
+        if not isinstance(row.get('redundancy_mesh', {}), dict) or not row.get('redundancy_mesh', {}):
+            norm.at[idx, 'redundancy_mesh'] = {
+                'global_chain_anchor': row.get('previous_hash', 'GENESIS'),
+                'entity_chain_anchor': row.get('entity_previous_hash', 'GENESIS_ENTITY'),
+                'keyword_index_size': len(norm.at[idx, 'search_index']),
+                'cipher_algorithm': 'xor_sha256_stream',
+                'recovery_strategy': 'malha_de_fragmentos+hash+redundancia_semantica',
+                'mirror_points': [row.get('semantic_archive_ref', '—')],
+            }
+        if not isinstance(row.get('linked_records', []), list):
+            norm.at[idx, 'linked_records'] = []
     return norm
+
+
+def derive_keystream(key_material, length):
+    seed = hashlib.sha256(str(key_material).encode('utf-8')).digest()
+    out = b''
+    counter = 0
+    while len(out) < max(1, length):
+        out += hashlib.sha256(seed + counter.to_bytes(4, 'big')).digest()
+        counter += 1
+    return out[:length]
+
+
+def xor_cipher_text(text, key_material):
+    raw = str(text).encode('utf-8')
+    if not raw:
+        return ''
+    ks = derive_keystream(key_material, len(raw))
+    enc = bytes([b ^ ks[i] for i, b in enumerate(raw)])
+    return base64.b64encode(enc).decode('ascii')
+
+
+def build_interleaved_shards(cipher_text, parts=4):
+    text = str(cipher_text or '')
+    if not text:
+        return []
+    shards = []
+    for idx in range(parts):
+        fragment = text[idx::parts]
+        shards.append({
+            'ordem': idx + 1,
+            'fragmento': fragment,
+            'hash_fragmento': hashlib.sha256(fragment.encode('utf-8')).hexdigest(),
+            'tamanho': len(fragment),
+        })
+    return shards
+
+
+def tokenize_searchable_text(*values):
+    chunks = []
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, (dict, list, tuple, set)):
+            try:
+                chunks.append(json.dumps(value, ensure_ascii=False, sort_keys=True, default=str))
+            except Exception:
+                chunks.append(str(value))
+        else:
+            chunks.append(str(value))
+    norm = normalize_text(' '.join(chunks))
+    if not norm:
+        return []
+    words = [w for w in re.split(r'\s+', norm) if w]
+    tokens = set()
+    for word in words:
+        tokens.add(word)
+        for size in range(1, min(len(word), 8) + 1):
+            tokens.add(word[:size])
+        if len(word) > 3:
+            for i in range(len(word) - 2):
+                tokens.add(word[i:i+3])
+    compact = norm.replace(' ', '')
+    for char in compact:
+        tokens.add(char)
+    return sorted(t for t in tokens if t)
+
+
+def extract_related_identifiers(payload, semantic_snapshot=None, interoperability_refs=None):
+    refs = set()
+    for source in [payload or {}, semantic_snapshot or {}, interoperability_refs or []]:
+        try:
+            raw = json.dumps(source, ensure_ascii=False, default=str)
+        except Exception:
+            raw = str(source)
+        for item in re.findall(r'(Q\d+|europeana:[^\s,\]\}]+|ibram:[^\s,\]\}]+|obra:?\d+|tag:?\d+)', raw, flags=re.IGNORECASE):
+            refs.add(str(item))
+    return sorted(refs)
+
+
+def find_related_hashes(events, actor, entity_type, entity_id, origin, interoperability_refs=None, limit=8):
+    related = []
+    refs = set(interoperability_refs or [])
+    for event in reversed(events):
+        if event.get('entity_type') == entity_type and str(event.get('entity_id')) == str(entity_id):
+            related.append(event.get('event_hash', ''))
+        elif actor and event.get('actor') == actor:
+            related.append(event.get('event_hash', ''))
+        elif origin and event.get('origin') == origin:
+            related.append(event.get('event_hash', ''))
+        elif refs and set(event.get('interoperability_refs', []) or []).intersection(refs):
+            related.append(event.get('event_hash', ''))
+        if len(related) >= limit:
+            break
+    return [h for h in dict.fromkeys(related) if h]
+
+
+def build_redundancy_mesh(record, events):
+    payload_blob = {
+        'event_type': record.get('event_type'),
+        'entity_type': record.get('entity_type'),
+        'entity_id': record.get('entity_id'),
+        'payload': record.get('payload'),
+        'previous_state': record.get('previous_state'),
+        'semantic_snapshot': record.get('semantic_snapshot'),
+        'provenance_source': record.get('provenance_source'),
+        'interoperability_refs': record.get('interoperability_refs'),
+    }
+    payload_txt = json.dumps(payload_blob, ensure_ascii=False, sort_keys=True, default=str)
+    snapshot_txt = json.dumps(record.get('semantic_snapshot', {}), ensure_ascii=False, sort_keys=True, default=str)
+    search_index = tokenize_searchable_text(
+        record.get('event_type', ''),
+        record.get('actor', ''),
+        record.get('entity_type', ''),
+        record.get('entity_id', ''),
+        record.get('origin', ''),
+        record.get('status', ''),
+        record.get('payload', {}),
+        record.get('semantic_snapshot', {}),
+        record.get('interoperability_refs', []),
+    )
+    key_material = '|'.join([
+        str(record.get('previous_hash', 'GENESIS')),
+        str(record.get('entity_previous_hash', 'GENESIS_ENTITY')),
+        str(record.get('entity_type', '—')),
+        str(record.get('entity_id', '—')),
+        str(record.get('timestamp', now_str())),
+        str(record.get('origin', 'sistema')),
+    ])
+    payload_cipher = xor_cipher_text(payload_txt, key_material + '|payload')
+    snapshot_cipher = xor_cipher_text(snapshot_txt, key_material + '|snapshot')
+    keyword_cipher = xor_cipher_text('|'.join(search_index), key_material + '|keywords')
+    linked_records = find_related_hashes(
+        events,
+        record.get('actor'),
+        record.get('entity_type'),
+        record.get('entity_id'),
+        record.get('origin'),
+        record.get('interoperability_refs', []),
+    )
+    linked_records.extend(extract_related_identifiers(record.get('payload', {}), record.get('semantic_snapshot', {}), record.get('interoperability_refs', [])))
+    linked_records = [v for v in dict.fromkeys(linked_records) if v]
+    chain_anchor = hash_record({
+        'ledger_no': record.get('ledger_no'),
+        'previous_hash': record.get('previous_hash'),
+        'entity_previous_hash': record.get('entity_previous_hash'),
+        'linked_records': linked_records,
+        'semantic_archive_ref': record.get('semantic_archive_ref'),
+        'interoperability_refs': record.get('interoperability_refs', []),
+    })
+    recovery_checksum = hash_record({
+        'payload_cipher': payload_cipher,
+        'snapshot_cipher': snapshot_cipher,
+        'keyword_cipher': keyword_cipher,
+        'search_index': search_index,
+    })
+    redundancy_mesh = {
+        'global_chain_anchor': record.get('previous_hash', 'GENESIS'),
+        'entity_chain_anchor': record.get('entity_previous_hash', 'GENESIS_ENTITY'),
+        'linked_records': linked_records[:12],
+        'keyword_index_size': len(search_index),
+        'cipher_algorithm': 'xor_sha256_stream',
+        'recovery_strategy': 'fragmentacao_intercalada+hashes+espelho_semantico+indice_prefixado',
+        'mirror_points': [
+            record.get('semantic_archive_ref', '—'),
+            f"{record.get('entity_type', '—')}::{record.get('entity_id', '—')}",
+            f"origin::{record.get('origin', 'sistema')}",
+        ],
+        'open_data_bridges': record.get('interoperability_refs', []) or [],
+        'payload_checksum': hashlib.sha256(payload_txt.encode('utf-8')).hexdigest(),
+        'snapshot_checksum': hashlib.sha256(snapshot_txt.encode('utf-8')).hexdigest(),
+    }
+    return {
+        'payload_cipher': payload_cipher,
+        'snapshot_cipher': snapshot_cipher,
+        'keyword_cipher': keyword_cipher,
+        'puzzle_shards': build_interleaved_shards(payload_cipher + snapshot_cipher + keyword_cipher, parts=4),
+        'search_index': search_index,
+        'chain_anchor': chain_anchor,
+        'recovery_checksum': recovery_checksum,
+        'redundancy_mesh': redundancy_mesh,
+        'linked_records': linked_records[:12],
+        'integrity_status': 'ok',
+    }
+
 
 def default_ontologies():
     return [
@@ -488,9 +718,11 @@ def all_events():
     ev = load_json_file(EVENTS_FILE, [])
     return normalize_events_dataframe(pd.DataFrame(ev)) if ev else pd.DataFrame()
 
+
 def get_last_event_hash():
     events = load_json_file(EVENTS_FILE, [])
     return events[-1]["event_hash"] if events else "GENESIS"
+
 
 def get_previous_entity_event(events, entity_type, entity_id):
     for event in reversed(events):
@@ -498,8 +730,77 @@ def get_previous_entity_event(events, entity_type, entity_id):
             return event
     return None
 
+
 def get_entity_event_count(events, entity_type, entity_id):
     return sum(1 for event in events if event.get('entity_type') == entity_type and str(event.get('entity_id')) == str(entity_id))
+
+
+def verify_blockchain_mesh(events_df):
+    df = normalize_events_dataframe(events_df)
+    if df.empty:
+        return {'total': 0, 'global_breaks': 0, 'entity_breaks': 0, 'integrity_pct': 100.0, 'search_terms': 0, 'shards': 0}
+    df = df.sort_values('ledger_no').reset_index(drop=True)
+    global_breaks = 0
+    entity_breaks = 0
+    previous_hash = 'GENESIS'
+    entity_last = {}
+    for _, row in df.iterrows():
+        if str(row.get('previous_hash', 'GENESIS')) != str(previous_hash):
+            global_breaks += 1
+        entity_key = f"{row.get('entity_type', '—')}::{row.get('entity_id', '—')}"
+        expected_entity_prev = entity_last.get(entity_key, 'GENESIS_ENTITY')
+        if str(row.get('entity_previous_hash', 'GENESIS_ENTITY')) != str(expected_entity_prev):
+            entity_breaks += 1
+        previous_hash = row.get('event_hash', previous_hash)
+        entity_last[entity_key] = row.get('event_hash', expected_entity_prev)
+    total = len(df)
+    search_terms = int(sum(len(v) if isinstance(v, list) else 0 for v in df.get('search_index', []))) if 'search_index' in df.columns else 0
+    shards = int(sum(len(v) if isinstance(v, list) else 0 for v in df.get('puzzle_shards', []))) if 'puzzle_shards' in df.columns else 0
+    broken = global_breaks + entity_breaks
+    integrity_pct = round(max(0.0, 100.0 - (broken / max(1, total * 2)) * 100.0), 2)
+    return {
+        'total': total,
+        'global_breaks': global_breaks,
+        'entity_breaks': entity_breaks,
+        'integrity_pct': integrity_pct,
+        'search_terms': search_terms,
+        'shards': shards,
+    }
+
+
+def search_blockchain_events(query, events_df):
+    df = normalize_events_dataframe(events_df)
+    if df.empty:
+        return pd.DataFrame()
+    q = normalize_text(query)
+    if not q:
+        return pd.DataFrame()
+    q_tokens = set(tokenize_searchable_text(q))
+    hits = []
+    for _, row in df.iterrows():
+        idx_terms = set(row.get('search_index', []) if isinstance(row.get('search_index', []), list) else [])
+        score = 0
+        if q in idx_terms:
+            score += 10 if len(q) > 1 else 4
+        score += sum(2 for tok in q_tokens if tok in idx_terms and tok != q)
+        payload_txt = normalize_text(json.dumps(row.get('payload', {}), ensure_ascii=False, default=str))
+        snap_txt = normalize_text(json.dumps(row.get('semantic_snapshot', {}), ensure_ascii=False, default=str))
+        refs_txt = normalize_text(' '.join(row.get('interoperability_refs', []) if isinstance(row.get('interoperability_refs', []), list) else []))
+        if q and q in payload_txt:
+            score += 6
+        if q and q in snap_txt:
+            score += 5
+        if q and q in refs_txt:
+            score += 4
+        if score > 0:
+            hit = row.to_dict()
+            hit['score_busca'] = score
+            hits.append(hit)
+    if not hits:
+        return pd.DataFrame()
+    out = pd.DataFrame(hits).sort_values(['score_busca', 'ledger_no'], ascending=[False, False])
+    return out
+
 
 def register_event(event_type, actor, actor_role, entity_type, entity_id, payload, origin="sistema", automatic=False, status="bruto", previous_state=None, circulation_action=None, interoperability_refs=None, semantic_snapshot=None, provenance_source=None):
     ensure_support_files()
@@ -538,10 +839,12 @@ def register_event(event_type, actor, actor_role, entity_type, entity_id, payloa
         "circulation_action": circulation_action,
         "circulation_trace": circulation_trace,
     }
+    record.update(build_redundancy_mesh(record, events))
     record["event_hash"] = hash_record(record)
     events.append(record)
     save_json_file(EVENTS_FILE, events)
     return record
+
 
 def ontology_terms_map(ontologies=None):
     ontologies = ontologies or load_ontologies()
@@ -2499,366 +2802,76 @@ def tab_users_quest():
 
     # ── QUESTIONÁRIO ─────────────────────────────────────────────────
     with t3:
-        st.markdown("#### Respostas do Questionário de Perfil")
-
-        c1,c2 = st.columns(2)
-        with c1:
-            st.markdown("**Q1 — Familiaridade com Museus**")
-            q1c = udf['q1'].value_counts()
-            st.bar_chart(q1c)
-            q1p = (q1c/q1c.sum()*100).round(1).reset_index()
-            q1p.columns=['Resposta','%']
-            st.dataframe(q1p, use_container_width=True, hide_index=True)
-
-        with c2:
-            st.markdown("**Q2 — Conhecimento sobre Documentação Museológica**")
-            q2c = udf['q2'].value_counts()
-            st.bar_chart(q2c)
-            q2p = (q2c/q2c.sum()*100).round(1).reset_index()
-            q2p.columns=['Resposta','%']
-            st.dataframe(q2p, use_container_width=True, hide_index=True)
-
-        st.markdown(divider(), unsafe_allow_html=True)
-        st.markdown("**Q3 — Respostas Abertas: O que você entende por 'tags'?**")
-        disp = udf.copy()
-        if 'animal_name' in disp.columns:
-            disp = disp.rename(columns={'animal_name':'Usuário Anônimo'})
-        disp['Palavras'] = disp['q3'].str.split().str.len()
-        st.markdown(
-            f"Comprimento médio das respostas: "
-            f"**{disp['Palavras'].mean():.0f} palavras** por participante"
-        )
-        st.bar_chart(disp['Palavras'].value_counts().sort_index().rename("Qtd Respostas"))
-
-        st.markdown(divider(), unsafe_allow_html=True)
-        st.dataframe(
-            disp[['Usuário Anônimo','q3','Palavras','timestamp']]
-            .sort_values('timestamp',ascending=False)
-            .rename(columns={'q3':'Resposta','timestamp':'Data/Hora'}),
-            use_container_width=True, hide_index=True)
-
-    # ── CRUZAMENTOS ───────────────────────────────────────────────────
-    with t4:
-        if tdf.empty:
-            st.info("Dados de tags insuficientes para cruzamentos.")
-            return
-
-        st.markdown("#### Cruzamentos: Perfil do Participante × Comportamento de Tagging")
-
-        m = merged.copy()
-        m['TTR'] = (m['Tags_Unicas']/m['Total_Tags'].replace(0,np.nan)).fillna(0)
-
-        st.markdown(divider(), unsafe_allow_html=True)
-        st.markdown("**Familiaridade com Museus × Média de Tags Criadas**")
-        avg_q1 = m.groupby('q1')['Total_Tags'].mean().sort_values(ascending=False)
-        st.bar_chart(avg_q1)
-        t_q1 = avg_q1.reset_index()
-        t_q1.columns = ['Familiaridade','Média de Tags']
-        t_q1['Média de Tags'] = t_q1['Média de Tags'].round(2)
-        st.dataframe(t_q1, use_container_width=True, hide_index=True)
-
-        st.markdown(divider(), unsafe_allow_html=True)
-        st.markdown("**Conhecimento Museológico × Tags Únicas**")
-        avg_q2 = m.groupby('q2')['Tags_Unicas'].mean().sort_values(ascending=False)
-        st.bar_chart(avg_q2)
-        t_q2 = avg_q2.reset_index()
-        t_q2.columns = ['Conhecimento','Média Tags Únicas']
-        t_q2['Média Tags Únicas'] = t_q2['Média Tags Únicas'].round(2)
-        st.dataframe(t_q2, use_container_width=True, hide_index=True)
-
-        st.markdown(divider(), unsafe_allow_html=True)
-        c1, c2 = st.columns(2)
-        with c1:
-            st.markdown("**Familiaridade × Riqueza Vocabular (TTR)**")
-            avg_ttr = m.groupby('q1')['TTR'].mean().sort_values(ascending=False)
-            st.bar_chart(avg_ttr)
-        with c2:
-            st.markdown("**Conhecimento Museológico × TTR**")
-            avg_ttr2 = m.groupby('q2')['TTR'].mean().sort_values(ascending=False)
-            st.bar_chart(avg_ttr2)
-
-        st.markdown(divider(), unsafe_allow_html=True)
-        st.markdown("#### Tabela Consolidada de Cruzamentos")
-        cross = m.groupby('q1').agg(
-            Usuários     =('user_id','count'),
-            Média_Tags   =('Total_Tags','mean'),
-            Média_Únicas =('Tags_Unicas','mean'),
-            Riqueza_TTR  =('TTR','mean'),
-        ).round(2).reset_index()
-        cross.columns = ['Familiaridade','Usuários','Média Tags','Média Únicas','Riqueza (TTR)']
-        st.dataframe(cross, use_container_width=True, hide_index=True)
-
-        st.markdown(insight(
-            "<strong>Interpretação:</strong> Compare se participantes mais familiarizados com museus "
-            "produzem mais tags, maior diversidade vocabular (TTR) ou tags mais descritivas. "
-            "A riqueza vocabular (TTR) mede a proporção de termos únicos sobre o total criado — "
-            "valores próximos de 1.0 indicam alta originalidade e variedade nas tags."
-        ), unsafe_allow_html=True)
-
-# ═════════════════════════════════════════════════════════════════════
-# ABA 5 — ONTOLOGIAS
-# ═════════════════════════════════════════════════════════════════════
-def tab_ontologies():
-    st.markdown("### Ontologias pré-marcadas e análise semântica")
-    tdf = all_tags()
-    ontologies = load_ontologies()
-
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.markdown(kpi("Ontologias", len(ontologies), "vocabulários ativos", "#a7e6ff"), unsafe_allow_html=True)
-    with c2:
-        st.markdown(kpi("Termos Controlados", sum(len(o.get('termos', [])) for o in ontologies), "termos cadastrados", "#6ee7b7"), unsafe_allow_html=True)
-    with c3:
-        usados = analyze_ontology_usage(tdf, ontologies)
-        ocorrencias = int(usados['Ocorrências'].sum()) if not usados.empty else 0
-        st.markdown(kpi("Correspondências", ocorrencias, "tags ligadas a ontologias", "#fcd34d"), unsafe_allow_html=True)
-
-    t1, t2, t3 = st.tabs([" Ontologias cadastradas", " Criar ontologia", " Analisar ontologias"])
-
-    with t1:
-        if not ontologies:
-            st.info("Nenhuma ontologia cadastrada.")
-        else:
-            for ont in ontologies:
-                termos = ont.get('termos', [])
-                st.markdown(
-                    f"""
-                    <div class='glass-card'>
-                        <h3 style='margin-bottom:.4rem'>{ont.get('nome','Ontologia')}</h3>
-                        <p><strong>Categoria:</strong> {ont.get('categoria','—')}</p>
-                        <p><strong>Descrição:</strong> {ont.get('descricao','—')}</p>
-                        <p><strong>Termos:</strong> {', '.join(termos) if termos else '—'}</p>
-                        <p><strong>Criado em:</strong> {ont.get('criado_em','—')}</p>
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-
-    with t2:
-        with st.form('nova_ontologia'):
-            nome = st.text_input('Nome da ontologia', placeholder='Ex: Iconografia religiosa')
-            categoria = st.selectbox('Categoria', ['tema', 'atributo', 'material', 'cor', 'periodo', 'personagem', 'evento'])
-            descricao = st.text_area('Descrição', placeholder='Explique para que serve esta ontologia...')
-            termos = st.text_area('Termos pré-marcados', placeholder='Separe por vírgula. Ex: santo, altar, cruz, anjo')
-            submit = st.form_submit_button('Salvar ontologia')
-            if submit:
-                if not nome.strip() or not termos.strip():
-                    st.error('Preencha ao menos o nome e os termos da ontologia.')
-                else:
-                    new_id = max([o.get('id', 0) for o in ontologies], default=0) + 1
-                    record = {
-                        'id': new_id,
-                        'nome': nome.strip(),
-                        'categoria': categoria,
-                        'descricao': descricao.strip(),
-                        'termos': [t.strip() for t in termos.split(',') if t.strip()],
-                        'criado_em': now_str(),
-                    }
-                    ontologies.append(record)
-                    save_ontologies(ontologies)
-                    register_event(
-                        'ontology_created',
-                        st.session_state.get('admin_username', 'admin'),
-                        'admin',
-                        'ontologia',
-                        new_id,
-                        record,
-                        origin='gestao_ontologias',
-                        automatic=False,
-                        status='validado'
-                    )
-                    st.success('Ontologia criada com sucesso.')
-                    st.rerun()
-
-    with t3:
-        st.markdown('#### Uso das ontologias sobre as tags existentes')
-        usage = analyze_ontology_usage(tdf, ontologies)
-        if usage.empty:
-            st.info('Ainda não há tags para cruzar com as ontologias.')
-        else:
-            st.dataframe(usage, use_container_width=True, hide_index=True)
-            st.bar_chart(usage.set_index('Ontologia')['Ocorrências'])
-
-        st.markdown(divider(), unsafe_allow_html=True)
-        st.markdown('#### Visualização por grupo temático')
-        theme_df = analyze_theme_groups(tdf)
-        if theme_df.empty:
-            st.info('Sem grupos temáticos calculados ainda.')
-        else:
-            st.dataframe(theme_df, use_container_width=True, hide_index=True)
-            st.bar_chart(theme_df.set_index('Grupo')['Qtd Tags'])
-
-
-# ═════════════════════════════════════════════════════════════════════
-# ABA 6 — VALIDAÇÃO E AUDITORIA
-# ═════════════════════════════════════════════════════════════════════
-def tab_validation_audit():
-    st.markdown("### Auditoria semântica, ortográfica e encadeamento de eventos")
-    tdf = all_tags()
-    udf = all_users()
-    events_df = all_events()
-    ontologies = load_ontologies()
-
-    if not tdf.empty and 'status' not in tdf.columns:
-        tdf['status'] = 'bruto'
-
-    c1, c2, c3, c4 = st.columns(4)
-    bruto = int((tdf['status'] == 'bruto').sum()) if not tdf.empty else 0
-    sugerido = int((tdf['status'] == 'sugerido').sum()) if not tdf.empty else 0
-    audit_events = int(events_df['event_type'].isin(['tag_group_audit', 'orthography_suggestion_logged']).sum()) if not events_df.empty else 0
-    eventos = len(events_df) if not events_df.empty else 0
-    with c1:
-        st.markdown(kpi('Tags brutas', bruto, 'sem apagar o original', '#f87171'), unsafe_allow_html=True)
-    with c2:
-        st.markdown(kpi('Sugestões registradas', sugerido, 'camada sugestiva', '#fcd34d'), unsafe_allow_html=True)
-    with c3:
-        st.markdown(kpi('Auditorias semânticas', audit_events, 'comentários e separações', '#6ee7b7'), unsafe_allow_html=True)
-    with c4:
-        st.markdown(kpi('Eventos no ledger', eventos, 'rastreabilidade encadeada', '#a78bfa'), unsafe_allow_html=True)
-
-    t1, t2, t3 = st.tabs([" Auditoria da separação", " Ortografia sem sobrescrever", " Blockchain documental"])
-
-    with t1:
-        if tdf.empty:
-            st.info('Nenhuma tag disponível para auditoria.')
-        else:
-            rev = tdf.copy().sort_values('timestamp', ascending=False)
-            rev['grupo_tematico'] = rev['tag'].apply(classify_tag_group)
-            if 'ontologias' not in rev.columns:
-                rev['ontologias'] = rev['tag'].apply(lambda x: match_ontologies_for_tag(x, ontologies))
-            user_map = {}
-            if not udf.empty and 'user_id' in udf.columns and 'q1' in udf.columns:
-                user_map = udf.set_index('user_id')['q1'].to_dict()
-            rev['familiaridade'] = rev['user_id'].map(user_map).fillna('Não informado') if user_map else 'Não informado'
-            rev['ontologias_txt'] = rev['ontologias'].apply(lambda x: ', '.join(x) if isinstance(x, list) and x else '—')
-            cols = [c for c in ['id','tag','grupo_tematico','ontologias_txt','familiaridade','obra_id','timestamp'] if c in rev.columns]
-            st.dataframe(rev[cols].rename(columns={'ontologias_txt':'Ontologias'}), use_container_width=True, hide_index=True)
-
-            cross = rev.groupby(['familiaridade','grupo_tematico']).size().reset_index(name='Qtd')
-            if not cross.empty:
-                st.markdown('#### Separação temática por familiaridade')
-                pivot = cross.pivot(index='familiaridade', columns='grupo_tematico', values='Qtd').fillna(0)
-                st.dataframe(pivot, use_container_width=True)
-
-            rev = normalize_tags_dataframe(rev)
-            ids = [safe_int(v, i + 1) for i, v in enumerate(rev['id'].tolist())]
-            chosen = st.selectbox('Selecione o ID da tag para auditar', ids, key='audit_tag_id')
-            current_matches = rev[rev['id'].astype(int) == safe_int(chosen, 1)]
-            current = current_matches.iloc[0] if not current_matches.empty else rev.iloc[0]
-            grupos = list(THEME_GROUPS.keys()) + ['Outros']
-            with st.form('form_auditoria_tag'):
-                sugestao_grupo = st.selectbox('Grupo sugerido para auditoria', grupos, index=grupos.index(current.get('grupo_tematico', 'Outros')) if current.get('grupo_tematico', 'Outros') in grupos else len(grupos)-1)
-                observacao = st.text_area('Comentário de auditoria', placeholder='Explique a separação, o vínculo semântico, a familiaridade do usuário e a justificativa documental.')
-                ont_ref = st.multiselect('Ontologias relacionadas', [o.get('nome','Ontologia') for o in ontologies], default=current.get('ontologias', []) if isinstance(current.get('ontologias', []), list) else [])
-                enviar = st.form_submit_button('Registrar auditoria sem alterar a tag original')
-                if enviar:
-                    payload = {
-                        'tag_original_snapshot': current.to_dict(),
-                        'grupo_atual': current.get('grupo_tematico', 'Outros'),
-                        'grupo_sugerido': sugestao_grupo,
-                        'comentario': observacao.strip(),
-                        'familiaridade_usuario': current.get('familiaridade', 'Não informado'),
-                        'ontologias_relacionadas': ont_ref,
-                    }
-                    register_event(
-                        'tag_group_audit',
-                        st.session_state.get('admin_username', 'admin'),
-                        'admin',
-                        'tag',
-                        int(chosen),
-                        payload,
-                        origin='auditoria_semantica',
-                        automatic=False,
-                        status='revisado',
-                        previous_state=current.to_dict(),
-                        semantic_snapshot={
-                            'grupo_sugerido': sugestao_grupo,
-                            'ontologias_relacionadas': ont_ref,
-                        },
-                        provenance_source='auditoria_semantica_manual',
-                    )
-                    st.success('Auditoria registrada. A tag original permanece intacta.')
-                    st.rerun()
-
-    with t2:
-        if tdf.empty:
-            st.info('Sem tags para analisar.')
-        else:
-            suggestions = build_spell_suggestions(tdf, ontologies)
-            if suggestions.empty:
-                st.success('Nenhum possível erro ortográfico encontrado com as regras atuais.')
-            else:
-                st.dataframe(suggestions, use_container_width=True, hide_index=True)
-                tag_map = {r['tag']: r for _, r in suggestions.iterrows()}
-                escolha = st.selectbox('Selecione uma tag para registrar sugestão', list(tag_map.keys()), key='spell_tag_choice')
-                sug = tag_map[escolha]
-                with st.form('form_spell_audit'):
-                    comentario = st.text_area('Comentário sobre a sugestão ortográfica', value=f"Sugestão registrada: '{sug['tag']}' -> '{sug['sugestao']}'.")
-                    registrar = st.form_submit_button('Registrar sugestão sem sobrescrever a tag')
-                    if registrar:
-                        target = normalize_tags_dataframe(tdf[tdf['tag'] == escolha])
-                        if 'id' in target.columns:
-                            target = target.sort_values('id')
-                        elif 'timestamp' in target.columns:
-                            target = target.sort_values('timestamp')
-                        if not target.empty:
-                            row = target.iloc[0].to_dict()
-                            tag_entity_id = safe_int(row.get('id'), 1)
-                            register_event(
-                                'orthography_suggestion_logged',
-                                st.session_state.get('admin_username', 'admin'),
-                                'admin',
-                                'tag',
-                                tag_entity_id,
-                                {
-                                    'tag_original_snapshot': row,
-                                    'sugestao_ortografica': str(sug['sugestao']),
-                                    'distancia': int(sug['distancia']),
-                                    'comentario': comentario.strip(),
-                                },
-                                origin='auditoria_ortografica',
-                                automatic=False,
-                                status='sugerido',
-                                previous_state=row,
-                                semantic_snapshot={'grupo_tematico': row.get('grupo_tematico', classify_tag_group(row.get('tag', '')))},
-                                provenance_source='auditoria_ortografica_manual',
-                            )
-                            st.success('Sugestão registrada na trilha de auditoria sem alterar o dado original.')
-                            st.rerun()
-
-    with t3:
-        st.markdown('#### Blockchain documental: registro encadeado, proveniência e interoperabilidade')
+        st.markdown('#### Blockchain documental conectado aos metadados, open data e recuperação semântica')
         if events_df.empty:
             st.info('Nenhum evento foi registrado ainda.')
         else:
             preview = normalize_events_dataframe(events_df).copy().sort_values('ledger_no', ascending=False)
+            health = verify_blockchain_mesh(preview)
+
+            c1, c2, c3, c4 = st.columns(4)
+            with c1:
+                st.markdown(kpi('Integridade global', f"{health['integrity_pct']:.1f}%", 'malha encadeada', '#a78bfa'), unsafe_allow_html=True)
+            with c2:
+                st.markdown(kpi('Índice pesquisável', health['search_terms'], 'prefixos, letras e palavras', '#60a5fa'), unsafe_allow_html=True)
+            with c3:
+                st.markdown(kpi('Fragmentos cifrados', health['shards'], 'quebra-cabeça protegido', '#34d399'), unsafe_allow_html=True)
+            with c4:
+                st.markdown(kpi('Quebras detectadas', health['global_breaks'] + health['entity_breaks'], 'global + entidade', '#fcd34d'), unsafe_allow_html=True)
+
+            st.markdown(insight(
+                '<strong>Modelo:</strong> cada evento cria uma cápsula documental conectada ao hash global anterior, ao hash anterior da própria entidade, às referências de interoperabilidade e a uma malha redundante de fragmentos cifrados. O dado original não é destruído; ele é espelhado em índice semântico, shards intercalados, checksum de recuperação e vínculos com outros registros e fontes externas.'
+            ), unsafe_allow_html=True)
+
+            q = st.text_input('Buscar no blockchain documental por letra, prefixo ou palavra', placeholder='Ex.: g, guer, guernica, picasso, wikidata, azul…', key='blockchain_search')
+            if q.strip():
+                hits = search_blockchain_events(q, preview)
+                if hits.empty:
+                    st.warning('Nenhum registro encontrou esse termo na malha indexada.')
+                else:
+                    hits = hits.copy().sort_values(['score_busca', 'ledger_no'], ascending=[False, False])
+                    hits['Registro'] = [ledger_label(v, i + 1) for i, v in enumerate(hits['ledger_no'].tolist())]
+                    hits['Entidade'] = hits['entity_type'].astype(str) + ' #' + hits['entity_id'].astype(str)
+                    hits['Refs externas'] = hits['interoperability_refs'].apply(lambda x: ', '.join(x) if isinstance(x, list) and x else '—')
+                    cols = [c for c in ['Registro','score_busca','timestamp','event_type','actor','Entidade','entity_version','status','origin','Refs externas'] if c in hits.columns]
+                    st.dataframe(hits[cols].head(30), use_container_width=True, hide_index=True)
+
             preview['Registro'] = [ledger_label(v, i + 1) for i, v in enumerate(preview['ledger_no'].tolist())]
             preview['Hash Atual'] = preview['event_hash'].astype(str).str[:16] + '…'
             preview['Hash Anterior'] = preview['previous_hash'].astype(str).str[:16] + '…'
             preview['Hash Entidade'] = preview['entity_previous_hash'].astype(str).str[:16] + '…'
+            preview['Âncora'] = preview['chain_anchor'].astype(str).str[:16] + '…'
             preview['Entidade'] = preview['entity_type'].astype(str) + ' #' + preview['entity_id'].astype(str)
             preview['Refs externas'] = preview['interoperability_refs'].apply(lambda x: ', '.join(x) if isinstance(x, list) and x else '—')
-            cols = [c for c in ['Registro','timestamp','event_type','actor','Entidade','entity_version','status','Hash Atual','Hash Anterior','Hash Entidade','origin','Refs externas'] if c in preview.columns]
+            preview['Conexões'] = preview['linked_records'].apply(lambda x: ', '.join(map(str, x[:4])) if isinstance(x, list) and x else '—')
+            cols = [c for c in ['Registro','timestamp','event_type','actor','Entidade','entity_version','status','Hash Atual','Hash Anterior','Hash Entidade','Âncora','origin','Refs externas','Conexões'] if c in preview.columns]
             st.dataframe(preview[cols], use_container_width=True, hide_index=True)
 
             st.markdown(divider(), unsafe_allow_html=True)
-            st.markdown('#### Blockchain documental de interoperabilidade')
+            st.markdown('#### Estrutura do blockchain documental e da malha de recuperação')
             st.markdown(insight(
-                '<strong>1.</strong> cada alteração em tags, obras, metadados ou sincronizações externas gera um evento numerado; '
-                '<strong>2.</strong> cada evento recebe hash próprio e preserva o hash global anterior; '
-                '<strong>3.</strong> cada revisão mantém referência ao hash global anterior e ao hash anterior da própria entidade, formando uma cadeia verificável por registro e por entidade; '
-                '<strong>4.</strong> a correção humana registra previous_state sem apagar o histórico e sem destruir o dado bruto original; '
-                '<strong>5.</strong> cada exportação ou sincronização com Wikidata, Europeana e Portal de Dados Abertos registra trilha de circulação, proveniência, confiança e interoperabilidade.'
+                '<strong>1.</strong> cada alteração gera um evento; '
+                '<strong>2.</strong> cada evento recebe hash próprio, checksum de recuperação e âncora de cadeia; '
+                '<strong>3.</strong> cada evento herda o hash global anterior e o hash anterior da entidade; '
+                '<strong>4.</strong> payload, snapshot e índice de busca são cifrados e repartidos em fragmentos intercalados; '
+                '<strong>5.</strong> os mesmos significados reaparecem como índice prefixado, referências abertas e links entre registros; '
+                '<strong>6.</strong> exportações, sincronizações e auditorias atravessam a mesma malha, conectando metadados internos, tags, ontologias e open data.'
             ), unsafe_allow_html=True)
 
-            top_events = preview.head(12)
+            top_events = preview.head(10)
             for _, row in top_events.iterrows():
                 refs = row.get('interoperability_refs', [])
                 refs_txt = ', '.join(refs) if isinstance(refs, list) and refs else '—'
                 trace = row.get('circulation_trace') or {}
                 trace_txt = trace.get('acao', '—') if isinstance(trace, dict) else '—'
+                mesh = row.get('redundancy_mesh') or {}
+                shard_count = len(row.get('puzzle_shards', []) or [])
                 payload = row.get('payload') or {}
-                payload_txt = json.dumps(payload, ensure_ascii=False, default=str)[:600]
+                payload_txt = json.dumps(payload, ensure_ascii=False, default=str)[:420]
+                linked = row.get('linked_records', []) or []
+                linked_txt = ', '.join(map(str, linked[:8])) if linked else '—'
+                mirror_points = mesh.get('mirror_points', []) if isinstance(mesh, dict) else []
+                mirror_txt = ', '.join(map(str, mirror_points[:4])) if isinstance(mirror_points, list) and mirror_points else '—'
                 st.markdown(
                     f"<div class='sc sc-p'>"
                     f"<strong>{row.get('Registro','—')}</strong> · {row.get('timestamp','—')}<br>"
@@ -2866,9 +2879,14 @@ def tab_validation_audit():
                     f"Hash atual: <code>{row.get('event_hash','—')}</code><br>"
                     f"Hash global anterior: <code>{row.get('previous_hash','—')}</code><br>"
                     f"Hash anterior da entidade: <code>{row.get('entity_previous_hash','—')}</code><br>"
-                    f"Origem: <strong>{row.get('origin','—')}</strong> · Proveniência: <strong>{row.get('provenance_source','—')}</strong><br>"
-                    f"Circulação: <strong>{trace_txt}</strong> · Interoperabilidade: <strong>{refs_txt}</strong><br>"
-                    f"Snapshot semântico/payload: <code>{payload_txt}</code>"
+                    f"Âncora da malha: <code>{row.get('chain_anchor','—')}</code><br>"
+                    f"Checksum de recuperação: <code>{row.get('recovery_checksum','—')}</code><br>"
+                    f"Origem: <strong>{row.get('origin','—')}</strong> · Proveniência: <strong>{row.get('provenance_source','—')}</strong> · Circulação: <strong>{trace_txt}</strong><br>"
+                    f"Interoperabilidade: <strong>{refs_txt}</strong><br>"
+                    f"Conexões redundantes: <strong>{linked_txt}</strong><br>"
+                    f"Fragmentos cifrados: <strong>{shard_count}</strong> · Estratégia: <strong>{mesh.get('recovery_strategy','—') if isinstance(mesh, dict) else '—'}</strong><br>"
+                    f"Espelhos semânticos: <strong>{mirror_txt}</strong><br>"
+                    f"Snapshot/payload resumido: <code>{payload_txt}</code>"
                     f"</div>", unsafe_allow_html=True
                 )
 
