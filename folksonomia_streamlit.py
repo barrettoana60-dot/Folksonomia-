@@ -1,22 +1,17 @@
-
 from __future__ import annotations
 
-import base64
-import csv
-import hashlib
 import html
+import hashlib
 import json
 import math
-import os
-import random
 import re
 import unicodedata
 from collections import Counter, defaultdict
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-import numpy as np
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -28,80 +23,59 @@ except Exception:
     PLOTLY_AVAILABLE = False
 
 try:
-    from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import getSampleStyleSheet
-    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
     REPORTLAB_AVAILABLE = True
 except Exception:
     REPORTLAB_AVAILABLE = False
 
-APP_TITLE = "folksonomia"
-APP_DIR = Path("data_folksonomia_final")
+APP_DIR = Path("data_folksonomia_clean")
 WORKS_FILE = APP_DIR / "works.json"
-USERS_FILE = APP_DIR / "users.json"
 TAGS_FILE = APP_DIR / "tags.json"
+QUESTIONNAIRE_FILE = APP_DIR / "questionnaire.json"
 VALIDATIONS_FILE = APP_DIR / "validations.json"
-CONCEPTS_FILE = APP_DIR / "concepts.json"
 ONTOLOGIES_FILE = APP_DIR / "ontologies.json"
 ADMIN_FILE = APP_DIR / "admin.json"
 
 ADMIN_LOGIN = "nugep239@"
 ADMIN_PASSWORD = "nugep123"
-
-CATEGORY_OPTIONS = [
-    "tema", "pessoa", "lugar", "periodo", "material", "tecnica",
-    "iconografia", "evento_historico", "grupo_social_cultural"
-]
-
-GLOSSARY = {
-    "acervo": "Conjunto de obras, objetos e documentos mantidos por uma instituição.",
-    "metadados": "Informações que descrevem a obra, como título, autor, data, técnica, material e procedência.",
-    "interoperabilidade": "Capacidade de diferentes sistemas trocarem e reaproveitarem dados entre si.",
-    "iconografia": "Leitura dos temas, figuras e símbolos que aparecem na imagem.",
-    "ontologia": "Estrutura organizada de conceitos e relações usada para conectar e normalizar informações.",
-    "desambiguação": "Processo de reconhecer quando nomes ou termos diferentes apontam para a mesma entidade.",
-    "tecnica": "Modo de execução da obra, como óleo sobre tela, gravura, escultura ou fotografia.",
-    "material": "Matéria física usada na obra, como tela, madeira, bronze ou papel.",
-    "proveniência": "Histórico de origem e circulação de uma obra."
+CATEGORIES = ["tema", "pessoa", "lugar", "período", "técnica", "material", "evento", "conceito", "outro"]
+NODE_COLORS = {
+    "obra": "#1d4ed8",
+    "artista": "#7c3aed",
+    "museu": "#0f766e",
+    "período": "#dc2626",
+    "técnica": "#b45309",
+    "material": "#0ea5e9",
+    "tag": "#111827",
+    "conceito": "#16a34a",
+    "open_data": "#9333ea",
 }
 
-
-def ensure_dir():
-    APP_DIR.mkdir(parents=True, exist_ok=True)
+st.set_page_config(page_title="folksonomia", layout="wide", initial_sidebar_state="collapsed")
 
 
-def now_iso() -> str:
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+def slug(text: str) -> str:
+    text = unicodedata.normalize("NFKD", str(text)).encode("ascii", "ignore").decode("ascii")
+    text = re.sub(r"[^a-zA-Z0-9]+", "-", text.lower()).strip("-")
+    return text or "item"
 
 
-def uid(prefix: str = "id") -> str:
-    return f"{prefix}_{base64.urlsafe_b64encode(os.urandom(8)).decode().strip('=')}"
-
-
-def normalize_text(text: Any) -> str:
-    text = str(text or "").strip().lower()
-    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("utf-8")
-    text = re.sub(r"[^a-z0-9\s\-_/]", " ", text)
-    text = re.sub(r"\s+", " ", text).strip()
+def normalize(text: str) -> str:
+    if text is None:
+        return ""
+    text = unicodedata.normalize("NFKD", str(text)).encode("ascii", "ignore").decode("ascii")
+    text = re.sub(r"\s+", " ", text.lower()).strip()
     return text
 
 
-def tokenize(text: Any) -> List[str]:
-    return [tok for tok in normalize_text(text).split(" ") if tok]
+def tokenize(text: str) -> List[str]:
+    return [t for t in re.split(r"[^a-zA-ZÀ-ÿ0-9]+", normalize(text)) if len(t) > 1]
 
 
-def sequence_ratio(a: str, b: str) -> float:
-    a2, b2 = normalize_text(a), normalize_text(b)
-    if not a2 or not b2:
-        return 0.0
-    if a2 == b2:
-        return 1.0
-    common = len(set(tokenize(a2)) & set(tokenize(b2)))
-    base = max(len(set(tokenize(a2)) | set(tokenize(b2))), 1)
-    token_score = common / base
-    prefix = 1.0 if a2 in b2 or b2 in a2 else 0.0
-    return max(token_score, 0.75 if prefix else 0.0)
+def ensure_dir() -> None:
+    APP_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def load_json(path: Path, default: Any) -> Any:
@@ -114,1209 +88,981 @@ def load_json(path: Path, default: Any) -> Any:
     return default
 
 
-def save_json(path: Path, data: Any):
+def save_json(path: Path, data: Any) -> None:
     ensure_dir()
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def now_str() -> str:
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def default_works() -> List[Dict[str, Any]]:
+    return [
+        {
+            "id": "obra-guernica",
+            "title": "Guernica",
+            "artist": "Pablo Picasso",
+            "museum": "Museo Nacional Centro de Arte Reina Sofía",
+            "period": "modernismo do século XX",
+            "technique": "óleo sobre tela",
+            "material": "tinta a óleo",
+            "place": "Espanha",
+            "collection": "arte moderna europeia",
+            "institution_tags": ["guerra", "bombardeio", "cavalo", "touro", "violência"],
+            "open_data": ["Dbpedia", "Wikidata"],
+            "image": "https://upload.wikimedia.org/wikipedia/en/7/74/PicassoGuernica.jpg",
+        },
+        {
+            "id": "obra-starry-night",
+            "title": "A Noite Estrelada",
+            "artist": "Vincent van Gogh",
+            "museum": "The Museum of Modern Art",
+            "period": "pós-impressionismo",
+            "technique": "óleo sobre tela",
+            "material": "tinta a óleo",
+            "place": "França",
+            "collection": "pintura moderna",
+            "institution_tags": ["céu", "noite", "vila", "movimento", "paisagem"],
+            "open_data": ["Dbpedia", "Wikidata"],
+            "image": "https://upload.wikimedia.org/wikipedia/commons/e/ea/The_Starry_Night.jpg",
+        },
+        {
+            "id": "obra-monalisa",
+            "title": "Mona Lisa",
+            "artist": "Leonardo da Vinci",
+            "museum": "Musée du Louvre",
+            "period": "renascimento",
+            "technique": "óleo sobre madeira",
+            "material": "madeira e tinta",
+            "place": "Itália",
+            "collection": "renascimento europeu",
+            "institution_tags": ["retrato", "sorriso", "mulher", "paisagem"],
+            "open_data": ["Dbpedia", "Wikidata"],
+            "image": "https://upload.wikimedia.org/wikipedia/commons/6/6a/Mona_Lisa.jpg",
+        },
+    ]
+
+
+@dataclass
 class Store:
-    def __init__(self):
+    def __post_init__(self) -> None:
         ensure_dir()
         self.bootstrap()
 
-    def bootstrap(self):
+    def bootstrap(self) -> None:
         if not WORKS_FILE.exists():
-            works = [
-                {
-                    "id": "w1",
-                    "title": "Guernica",
-                    "artist": "Pablo Picasso",
-                    "year": "1937",
-                    "image": "https://upload.wikimedia.org/wikipedia/en/7/74/PicassoGuernica.jpg",
-                    "museum": "Museo Nacional Centro de Arte Reina Sofía",
-                    "collection": "Coleção principal",
-                    "place": "Espanha",
-                    "period": "modernismo do século XX",
-                    "technique": "óleo sobre tela",
-                    "material": "tela",
-                    "institution_tags": ["guerra", "violência", "civis", "bombardeio", "cavalo", "touro", "espanha"],
-                    "description": "Grande composição em preto, branco e cinza com figuras fragmentadas, cavalo central, touro à esquerda, mulher com criança, lâmpada no alto e sensação de ruína e dor.",
-                    "open_data": ["Wikidata", "Wikipedia", "Reina Sofía"]
-                },
-                {
-                    "id": "w2",
-                    "title": "A Noite Estrelada",
-                    "artist": "Vincent van Gogh",
-                    "year": "1889",
-                    "image": "https://upload.wikimedia.org/wikipedia/commons/e/ea/The_Starry_Night.JPG",
-                    "museum": "The Museum of Modern Art",
-                    "collection": "European Painting",
-                    "place": "França",
-                    "period": "pós-impressionismo",
-                    "technique": "óleo sobre tela",
-                    "material": "tela",
-                    "institution_tags": ["céu", "noite", "estrelas", "vila", "paisagem", "movimento"],
-                    "description": "Paisagem noturna com céu em movimento, espirais luminosas, lua ou estrela intensa à direita, cipreste escuro em primeiro plano e vila ao fundo.",
-                    "open_data": ["Wikidata", "Wikipedia", "MoMA"]
-                },
-                {
-                    "id": "w3",
-                    "title": "Mona Lisa",
-                    "artist": "Leonardo da Vinci",
-                    "year": "1503",
-                    "image": "https://upload.wikimedia.org/wikipedia/commons/6/6a/Mona_Lisa.jpg",
-                    "museum": "Musée du Louvre",
-                    "collection": "Renaissance",
-                    "place": "Itália",
-                    "period": "renascimento",
-                    "technique": "óleo sobre madeira",
-                    "material": "madeira",
-                    "institution_tags": ["retrato", "mulher", "sorriso", "paisagem", "renascimento"],
-                    "description": "Retrato feminino em meia figura, mãos cruzadas, fundo com paisagem distante e expressão facial sutil.",
-                    "open_data": ["Wikidata", "Wikipedia", "Louvre"]
-                },
-            ]
-            save_json(WORKS_FILE, works)
-
-        if not USERS_FILE.exists():
-            save_json(USERS_FILE, [])
+            save_json(WORKS_FILE, default_works())
         if not TAGS_FILE.exists():
             save_json(TAGS_FILE, [])
+        if not QUESTIONNAIRE_FILE.exists():
+            save_json(QUESTIONNAIRE_FILE, [])
         if not VALIDATIONS_FILE.exists():
             save_json(VALIDATIONS_FILE, [])
-        if not CONCEPTS_FILE.exists():
-            save_json(CONCEPTS_FILE, [
-                {"id": "c1", "label": "guerra", "category": "tema", "aliases": ["conflito", "bombardeio"]},
-                {"id": "c2", "label": "Pablo Picasso", "category": "pessoa", "aliases": ["picasso"]},
-                {"id": "c3", "label": "Espanha", "category": "lugar", "aliases": ["espanha republicana"]},
-                {"id": "c4", "label": "retrato", "category": "iconografia", "aliases": ["figura humana"]},
-                {"id": "c5", "label": "pós-impressionismo", "category": "periodo", "aliases": ["pos impressionismo"]},
-                {"id": "c6", "label": "óleo sobre tela", "category": "tecnica", "aliases": ["oleo sobre tela"]},
-            ])
         if not ONTOLOGIES_FILE.exists():
             save_json(ONTOLOGIES_FILE, [
-                {
-                    "id": "o1",
-                    "label": "Obra",
-                    "broader": "",
-                    "description": "Classe principal para representar objetos museológicos.",
-                    "aliases": ["item", "obra de arte"]
-                },
-                {
-                    "id": "o2",
-                    "label": "Pessoa",
-                    "broader": "",
-                    "description": "Classe para artistas, retratados e agentes históricos.",
-                    "aliases": ["autor", "indivíduo"]
-                },
+                {"id": "ont-tema", "label": "tema", "description": "conceitos temáticos"},
+                {"id": "ont-material", "label": "material", "description": "materiais e suportes"},
+                {"id": "ont-tecnica", "label": "técnica", "description": "modos de feitura"},
             ])
         if not ADMIN_FILE.exists():
-            save_json(ADMIN_FILE, {
-                "login": ADMIN_LOGIN,
-                "password_hash": hashlib.sha256(ADMIN_PASSWORD.encode()).hexdigest()
-            })
+            save_json(ADMIN_FILE, {"login": ADMIN_LOGIN, "password_hash": hashlib.sha256(ADMIN_PASSWORD.encode()).hexdigest()})
 
     def works(self) -> List[Dict[str, Any]]:
-        return load_json(WORKS_FILE, [])
+        return load_json(WORKS_FILE, default_works())
 
     def tags(self) -> List[Dict[str, Any]]:
         return load_json(TAGS_FILE, [])
 
-    def users(self) -> List[Dict[str, Any]]:
-        return load_json(USERS_FILE, [])
-
     def validations(self) -> List[Dict[str, Any]]:
         return load_json(VALIDATIONS_FILE, [])
-
-    def concepts(self) -> List[Dict[str, Any]]:
-        return load_json(CONCEPTS_FILE, [])
 
     def ontologies(self) -> List[Dict[str, Any]]:
         return load_json(ONTOLOGIES_FILE, [])
 
-    def update_admin_credentials(self, login: str, password: str):
-        save_json(ADMIN_FILE, {
-            "login": login,
-            "password_hash": hashlib.sha256(password.encode()).hexdigest()
-        })
+    def questionnaire(self) -> List[Dict[str, Any]]:
+        return load_json(QUESTIONNAIRE_FILE, [])
 
-    def authenticate(self, login: str, password: str) -> bool:
-        if login == ADMIN_LOGIN and password == ADMIN_PASSWORD:
-            self.update_admin_credentials(ADMIN_LOGIN, ADMIN_PASSWORD)
-            return True
-        admin = load_json(ADMIN_FILE, {})
-        stored_hash = admin.get("password_hash", "")
-        return login == admin.get("login", ADMIN_LOGIN) and hashlib.sha256(password.encode()).hexdigest() == stored_hash
+    def save_tags(self, data: List[Dict[str, Any]]) -> None:
+        save_json(TAGS_FILE, data)
 
-    def save_user_intro(self, user_id: str, familiarity: str, documentation: str, understanding: str):
-        users = self.users()
-        existing = next((u for u in users if u.get("id") == user_id), None)
-        payload = {
-            "id": user_id,
-            "familiarity": familiarity,
-            "documentation": documentation,
-            "understanding": understanding,
-            "created_at": now_iso(),
-        }
-        if existing:
-            existing.update(payload)
-        else:
-            users.append(payload)
-        save_json(USERS_FILE, users)
+    def save_works(self, data: List[Dict[str, Any]]) -> None:
+        save_json(WORKS_FILE, data)
 
-    def add_tag(self, user_id: str, work_id: str, label: str):
-        tags = self.tags()
-        tags.append({
-            "id": uid("tag"),
-            "user_id": user_id,
+    def save_validations(self, data: List[Dict[str, Any]]) -> None:
+        save_json(VALIDATIONS_FILE, data)
+
+    def save_ontologies(self, data: List[Dict[str, Any]]) -> None:
+        save_json(ONTOLOGIES_FILE, data)
+
+    def add_tag(self, work_id: str, tag: str, user_id: str) -> None:
+        data = self.tags()
+        data.append({
+            "id": f"tag-{len(data)+1}",
             "work_id": work_id,
-            "label": label.strip(),
-            "created_at": now_iso()
+            "tag": tag.strip(),
+            "normalized": normalize(tag),
+            "user_id": user_id,
+            "timestamp": now_str(),
         })
-        save_json(TAGS_FILE, tags)
+        self.save_tags(data)
 
-    def tags_for_user_work(self, user_id: str, work_id: str) -> List[Dict[str, Any]]:
-        return [t for t in self.tags() if t.get("user_id") == user_id and t.get("work_id") == work_id]
+    def add_questionnaire(self, item: Dict[str, Any]) -> None:
+        data = self.questionnaire()
+        data.append(item)
+        save_json(QUESTIONNAIRE_FILE, data)
 
-    def add_validation(self, payload: Dict[str, Any]):
-        rows = self.validations()
-        rows.append(payload)
-        save_json(VALIDATIONS_FILE, rows)
+    def add_validation(self, item: Dict[str, Any]) -> None:
+        data = self.validations()
+        data.append(item)
+        self.save_validations(data)
 
-    def add_ontology(self, label: str, broader: str, description: str, aliases: List[str]):
-        rows = self.ontologies()
-        rows.append({
-            "id": uid("onto"),
-            "label": label.strip(),
-            "broader": broader.strip(),
-            "description": description.strip(),
-            "aliases": aliases,
-        })
-        save_json(ONTOLOGIES_FILE, rows)
+    def add_ontology(self, label: str, description: str) -> None:
+        data = self.ontologies()
+        data.append({"id": f"ont-{slug(label)}-{len(data)+1}", "label": label.strip(), "description": description.strip()})
+        self.save_ontologies(data)
 
-    def delete_ontology(self, ontology_id: str):
-        rows = [r for r in self.ontologies() if r.get("id") != ontology_id]
-        save_json(ONTOLOGIES_FILE, rows)
+    def delete_ontology(self, ontology_id: str) -> None:
+        self.save_ontologies([o for o in self.ontologies() if o["id"] != ontology_id])
 
-    def add_work(self, payload: Dict[str, Any]):
-        rows = self.works()
-        rows.append(payload)
-        save_json(WORKS_FILE, rows)
+    def add_work(self, work: Dict[str, Any]) -> None:
+        data = self.works()
+        data.append(work)
+        self.save_works(data)
 
-    def delete_work(self, work_id: str):
-        save_json(WORKS_FILE, [r for r in self.works() if r.get("id") != work_id])
-        save_json(TAGS_FILE, [r for r in self.tags() if r.get("work_id") != work_id])
+    def delete_work(self, work_id: str) -> None:
+        self.save_works([w for w in self.works() if w["id"] != work_id])
+        self.save_tags([t for t in self.tags() if t["work_id"] != work_id])
+        self.save_validations([v for v in self.validations() if v.get("work_id") != work_id])
+
+    def admin_ok(self, login: str, password: str) -> bool:
+        admin = load_json(ADMIN_FILE, {})
+        typed_hash = hashlib.sha256(password.encode()).hexdigest()
+        if login == ADMIN_LOGIN and password == ADMIN_PASSWORD:
+            if admin.get("login") != ADMIN_LOGIN or admin.get("password_hash") != typed_hash:
+                save_json(ADMIN_FILE, {"login": ADMIN_LOGIN, "password_hash": typed_hash})
+            return True
+        return login == admin.get("login") and typed_hash == admin.get("password_hash")
 
 
-def init_state():
+def get_user_id() -> str:
     if "public_user_id" not in st.session_state:
-        st.session_state.public_user_id = uid("user")
-    if "intro_done" not in st.session_state:
-        st.session_state.intro_done = False
-    if "selected_work" not in st.session_state:
-        st.session_state.selected_work = None
-    if "accessibility_work" not in st.session_state:
-        st.session_state.accessibility_work = None
-    if "admin_logged_in" not in st.session_state:
-        st.session_state.admin_logged_in = False
-    if "font_scale" not in st.session_state:
-        st.session_state.font_scale = 1.0
-    if "high_contrast" not in st.session_state:
-        st.session_state.high_contrast = False
+        st.session_state["public_user_id"] = hashlib.sha1(str(datetime.now().timestamp()).encode()).hexdigest()[:12]
+    return st.session_state["public_user_id"]
 
 
-def inject_css():
-    st.markdown("""
+def inject_css() -> None:
+    scale = float(st.session_state.get("font_scale", 1.0))
+    contrast = bool(st.session_state.get("high_contrast", False))
+    base_font = max(16, int(18 * scale))
+    text = "#111111" if not contrast else "#000000"
+    sub = "#4b5563" if not contrast else "#1f2937"
+    glass = "rgba(255,255,255,0.44)" if not contrast else "rgba(255,255,255,0.78)"
+    border = "rgba(17,24,39,0.12)"
+    button = "linear-gradient(135deg, rgba(255,255,255,0.18), rgba(9,21,48,0.74))"
+    st.markdown(f"""
     <style>
-    :root{
-        --bg:#ededee;
-        --card:rgba(255,255,255,.34);
-        --card-strong:rgba(255,255,255,.42);
-        --line:rgba(0,0,0,.08);
-        --text:#1d1e22;
-        --text-sub:#57585f;
-        --accent:#e65b5b;
-        --glass-shadow:0 10px 32px rgba(0,0,0,.08);
-    }
-    html, body, [class*="css"] {
-        font-family:"Times New Roman", Times, serif !important;
-        color:var(--text) !important;
-    }
-    .stApp{
-        background:linear-gradient(180deg,#f2f2f3 0%, #ececec 100%);
-        color:var(--text);
-    }
-    .main .block-container{
-        max-width:1100px;
-        padding-top:1.2rem;
-        padding-bottom:4rem;
-    }
-    h1,h2,h3,h4,h5,h6,p,div,span,label{
-        color:var(--text) !important;
-    }
-    .folk-title{
-        font-size:4rem;
-        line-height:1;
-        margin:0 0 .3rem 0;
-        color:#17181b;
-        font-weight:700;
-        letter-spacing:-0.03em;
-    }
-    .folk-sub{
-        margin:0 0 1rem 0;
-        color:#5a5b61 !important;
-        font-size:1.15rem;
-    }
-    .glass-wrap{
-        background:var(--card);
-        backdrop-filter: blur(18px) saturate(130%);
-        -webkit-backdrop-filter: blur(18px) saturate(130%);
-        border:1px solid rgba(255,255,255,.55);
-        box-shadow:var(--glass-shadow);
-        border-radius:28px;
-        padding:1.1rem 1.2rem;
-    }
-    .work-card{
-        background:transparent;
-        border:none;
-        box-shadow:none;
-        padding:0;
-        margin:0 0 1rem 0;
-    }
-    .work-img{
+    :root {{
+        --txt: {text};
+        --sub: {sub};
+        --glass: {glass};
+        --border: {border};
+        --button: {button};
+        --baseFont: {base_font}px;
+    }}
+    html, body, [data-testid="stAppViewContainer"], .stApp {{
+        background: radial-gradient(circle at top, #f3f3f3 0%, #ececec 36%, #e8e8e8 100%);
+        color: var(--txt);
+        font-family: "Times New Roman", Georgia, serif;
+        font-size: var(--baseFont);
+    }}
+    #MainMenu, header, footer {{visibility:hidden;}}
+    .block-container {{max-width: 1280px; padding-top: 1rem; padding-bottom: 2rem;}}
+    .glass {{
+        background: var(--glass);
+        border: 1px solid var(--border);
+        border-radius: 28px;
+        backdrop-filter: blur(18px);
+        box-shadow: inset 0 8px 22px rgba(255,255,255,0.35), 0 8px 24px rgba(0,0,0,0.04);
+    }}
+    .titleBar {{padding: 1rem 1.25rem; margin-bottom: .8rem;}}
+    .titleBar h1 {{margin:0; font-size: clamp(2.2rem, 4vw, 3.2rem); color: var(--txt);}}
+    .titleBar p {{margin:.25rem 0 0 0; color: var(--sub);}}
+    .helper {{color: var(--sub); line-height: 1.7;}}
+    .workCard {{padding:.7rem; margin-bottom:1rem;}}
+    .workCard img {{width:100%; display:block; border-radius:22px;}}
+    .smallPanel {{padding:.9rem 1rem;}}
+    .tagPill {{display:inline-block; margin:.12rem .2rem .12rem 0; padding:.24rem .68rem; border-radius:999px; background:rgba(255,255,255,.6); border:1px solid rgba(17,24,39,.1); color:var(--txt);}}
+    .metric {{padding:1rem 1.1rem; min-height:116px;}}
+    .metric .t {{color: var(--sub); text-transform: uppercase; letter-spacing: .12em; font-size:.82rem;}}
+    .metric .v {{font-size: 2rem; font-weight:700; margin-top:.3rem; color:var(--txt);}}
+    .metric .n {{margin-top:.25rem; color: var(--sub);}}
+    .sectionTitle {{font-size:2rem; font-weight:700; color:var(--txt); margin:.1rem 0 .6rem 0;}}
+
+    .stButton > button, div[data-testid="stFormSubmitButton"] button {{
         width:100%;
-        height:auto;
-        border-radius:24px;
-        display:block;
-        box-shadow:var(--glass-shadow);
-    }
-    .small-note{
-        color:var(--text-sub) !important;
-        font-size:1rem;
-    }
-    .pill-title{
-        letter-spacing:.14em;
-        text-transform:uppercase;
-        font-size:0.9rem;
-        color:#5a5b61 !important;
-        margin-bottom:.25rem;
-    }
-    .metric-card{
-        background:var(--card);
-        backdrop-filter: blur(16px);
-        border-radius:24px;
-        border:1px solid rgba(255,255,255,.56);
-        box-shadow:var(--glass-shadow);
-        padding:1rem 1.2rem;
-        min-height:125px;
-    }
-    .metric-value{
-        font-size:2.1rem;
-        font-weight:700;
-        line-height:1.1;
-    }
-    .metric-label{
-        font-size:1rem;
-        color:var(--text-sub) !important;
-    }
-    .helper-box{
-        background:var(--card);
-        border:1px solid rgba(255,255,255,.56);
-        box-shadow:var(--glass-shadow);
-        border-radius:24px;
-        padding:1rem 1.2rem;
-    }
-    .tag-chip{
-        display:inline-block;
-        padding:.34rem .82rem;
-        margin:.2rem .3rem .2rem 0;
-        border-radius:999px;
-        background:rgba(255,255,255,.42);
-        border:1px solid rgba(255,255,255,.64);
-        color:var(--text);
-        font-size:.95rem;
-    }
-    .stTabs [data-baseweb="tab-list"]{
-        gap:0.6rem;
-        background:rgba(255,255,255,.22);
-        border-radius:30px;
-        padding:0.4rem;
-        border:1px solid rgba(0,0,0,.06);
-        box-shadow:var(--glass-shadow);
-        margin-bottom:1rem;
-    }
-    .stTabs [data-baseweb="tab"]{
-        border-radius:26px;
-        padding:.72rem 1.2rem;
-        background:rgba(255,255,255,.38);
-        color:var(--text) !important;
-        border:1px solid rgba(255,255,255,.68);
-        box-shadow:0 8px 24px rgba(0,0,0,.04);
-        font-size:1rem;
-    }
-    .stTabs [aria-selected="true"]{
-        background:rgba(255,255,255,.68) !important;
-        color:var(--text) !important;
-        border-color:rgba(255,255,255,.9) !important;
-        box-shadow:0 10px 26px rgba(0,0,0,.06) !important;
-    }
-    .stButton>button, .stDownloadButton>button{
-        width:100%;
-        background:rgba(255,255,255,.18) !important;
-        border:1px solid rgba(255,255,255,.62) !important;
-        color:#191a1f !important;
-        border-radius:24px !important;
-        backdrop-filter: blur(18px) saturate(140%) !important;
-        -webkit-backdrop-filter: blur(18px) saturate(140%) !important;
-        box-shadow:var(--glass-shadow) !important;
-        min-height:56px !important;
-        font-size:1rem !important;
-        font-family:"Times New Roman", Times, serif !important;
-    }
-    .stButton>button:hover, .stDownloadButton>button:hover{
-        background:rgba(255,255,255,.35) !important;
-        color:#111215 !important;
-        border:1px solid rgba(255,255,255,.82) !important;
-    }
-    .stTextInput input, .stTextArea textarea, .stSelectbox select{
-        background:rgba(255,255,255,.66) !important;
-        border:1px solid rgba(0,0,0,.08) !important;
-        color:#1b1c20 !important;
-        border-radius:22px !important;
-        font-size:1rem !important;
-        font-family:"Times New Roman", Times, serif !important;
-    }
-    .stTextInput input::placeholder, .stTextArea textarea::placeholder{
-        color:#6f7077 !important;
-    }
-    .stSlider [data-testid="stTickBar"]{
-        color:#d35f5f !important;
-    }
-    .stAlert{
-        border-radius:20px !important;
-    }
-    .audio-buttons{margin-top:.4rem;}
-    #MainMenu, header, footer{visibility:hidden;}
+        border-radius: 22px !important;
+        background: var(--button) !important;
+        border: 1px solid rgba(255,255,255,0.26) !important;
+        color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
+        font-weight: 700 !important;
+        text-shadow: 0 1px 2px rgba(0,0,0,.32) !important;
+        box-shadow: 0 10px 24px rgba(0,0,0,.14), inset 0 1px 0 rgba(255,255,255,.18) !important;
+        padding: .82rem 1rem !important;
+    }}
+    .stButton > button:hover, div[data-testid="stFormSubmitButton"] button:hover {{filter: brightness(1.04);}}
+
+    .stTextInput input, .stTextArea textarea {{
+        background: rgba(255,255,255,.88) !important;
+        color: #111111 !important;
+        -webkit-text-fill-color: #111111 !important;
+        border: 1px solid rgba(17,24,39,.18) !important;
+        border-radius: 18px !important;
+        caret-color: #111111 !important;
+    }}
+    .stTextInput input::placeholder, .stTextArea textarea::placeholder {{color:#6b7280 !important; opacity:1 !important;}}
+    .stTextArea textarea {{min-height: 120px;}}
+
+    .stSelectbox [data-baseweb="select"] > div {{
+        background: rgba(20,24,40,.9) !important;
+        color: #ffffff !important;
+        border: 1px solid rgba(255,255,255,.14) !important;
+        border-radius: 18px !important;
+    }}
+    .stSelectbox [data-baseweb="select"] * {{
+        color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
+        fill: #ffffff !important;
+    }}
+    div[data-baseweb="popover"] *, ul[role="listbox"] *, div[role="listbox"] * {{
+        color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
+    }}
+    div[data-baseweb="popover"] ul, div[data-baseweb="popover"] li, ul[role="listbox"], li[role="option"], div[role="option"] {{
+        background: rgba(17,24,39,.96) !important;
+        color: #ffffff !important;
+    }}
+    li[aria-selected="true"], div[aria-selected="true"] {{
+        background: rgba(59,130,246,.3) !important;
+    }}
+
+    .stTabs [data-baseweb="tab-list"] {{
+        gap: .45rem; background: rgba(255,255,255,.24); border-radius: 28px; padding:.35rem; border:1px solid rgba(17,24,39,.1);
+    }}
+    .stTabs [data-baseweb="tab"] {{border-radius:22px; color: var(--txt);}}
+    .stTabs [aria-selected="true"] {{background: rgba(255,255,255,.75) !important; box-shadow: inset 0 -4px 0 #ef4444;}}
+    label, .stMarkdown, p, li, span, strong, h1, h2, h3 {{color: var(--txt) !important; font-family:"Times New Roman", Georgia, serif !important;}}
+    .hr {{height:1px; background: rgba(17,24,39,.08); margin:.9rem 0;}}
     </style>
     """, unsafe_allow_html=True)
 
 
-def semantic_description(work: Dict[str, Any], user_tags: List[str]) -> str:
-    parts = [
-        f"Imagem intitulada {work.get('title','obra sem título')}, de {work.get('artist','autor não informado')}.",
-        f"A obra pertence ao museu {work.get('museum','instituição não informada')} e está associada ao período {work.get('period','período não informado')}.",
-        f"Técnica registrada: {work.get('technique','não informada')}. Material registrado: {work.get('material','não informado')}.",
-        f"Descrição visual base: {work.get('description','descrição não disponível')}.",
+def render_brand() -> None:
+    st.markdown(
+        """
+        <div class="glass titleBar">
+            <h1>folksonomia</h1>
+            <p>marcação pública, acessibilidade, validação, ontologias, análise temporal e teia 3d conectada.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def speech_html(text: str, key: str) -> None:
+    safe = json.dumps(text)
+    components.html(
+        f"""
+        <div style='display:flex;gap:8px;'>
+          <button onclick='window.speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance({safe}); u.lang="pt-BR"; u.rate=0.95; window.speechSynthesis.speak(u);' style='padding:10px 14px;border-radius:14px;border:none;background:#0f172a;color:white;'>ouvir descrição</button>
+          <button onclick='window.speechSynthesis.cancel();' style='padding:10px 14px;border-radius:14px;border:none;background:#334155;color:white;'>parar leitura</button>
+        </div>
+        """,
+        height=56,
+        key=key,
+    )
+
+
+def build_description(work: Dict[str, Any], user_tags: List[str]) -> str:
+    title = work["title"]
+    base = [
+        f"Imagem da obra {title}, de {work['artist']}, pertencente ao museu {work['museum']}.",
+        f"Período {work['period']}, técnica {work['technique']} e material {work['material']}.",
     ]
+    title_n = normalize(title)
+    if "guernica" in title_n:
+        base.append("A cena é monocromática, em preto, branco e cinzas. Aparecem figuras fragmentadas, um cavalo central em tensão, um touro à esquerda, braços erguidos, rostos partidos e uma atmosfera de bombardeio, dor e movimento brusco.")
+    elif "noite estrelada" in title_n or "starry" in title_n:
+        base.append("A imagem mostra um céu noturno em espirais intensas, estrelas brilhantes, lua amarela e uma vila ao fundo. O movimento das pinceladas faz o céu parecer girar sobre a paisagem.")
+    elif "mona" in title_n:
+        base.append("Trata-se de um retrato frontal de uma mulher sentada, com expressão serena e sorriso discreto. O fundo mostra uma paisagem suave e nebulosa, em tons terrosos e verdes.")
     if user_tags:
-        parts.append(f"As tags já registradas por você nesta imagem são: {', '.join(user_tags)}.")
-    inst_tags = work.get("institution_tags", [])
-    if inst_tags:
-        parts.append(f"Termos institucionais ligados a esta imagem: {', '.join(inst_tags[:8])}.")
-    return " ".join(parts)
+        base.append("As tags registradas nesta imagem até agora incluem: " + ", ".join(user_tags[:10]) + ".")
+    base.append("Essa descrição foi montada a partir dos metadados institucionais e das marcações públicas disponíveis.")
+    return " ".join(base)
 
 
-def explain_words(text: str) -> List[Tuple[str, str]]:
-    found = []
-    normalized = normalize_text(text)
-    for term, meaning in GLOSSARY.items():
-        if term in normalized:
-            found.append((term, meaning))
+def explain_words(text: str) -> Dict[str, str]:
+    glossary = {
+        "bombardeio": "ataque com explosões lançadas sobre um local.",
+        "fragmentadas": "divididas em partes, sem continuidade visual completa.",
+        "monocromática": "imagem construída com uma variação muito restrita de cores.",
+        "pós-impressionismo": "movimento artístico posterior ao impressionismo, com cor e forma mais expressivas.",
+        "renascimento": "período artístico europeu marcado por estudo da perspectiva, anatomia e equilíbrio formal.",
+        "ontologia": "estrutura que organiza conceitos, categorias e relações entre elementos de um domínio.",
+        "interoperabilidade": "capacidade de sistemas e bases diferentes trocarem e entenderem informações entre si.",
+        "reconciliação": "processo de ligar termos livres a conceitos organizados e equivalentes.",
+    }
+    found = {}
+    for word, meaning in glossary.items():
+        if word in normalize(text):
+            found[word] = meaning
     return found
 
 
-def learner_map(store: Store) -> Dict[str, Dict[str, Any]]:
-    mapping: Dict[str, Dict[str, Any]] = defaultdict(lambda: {"count": 0, "categories": Counter(), "concepts": Counter()})
-    concepts = store.concepts()
-    concepts_by_label = {normalize_text(c["label"]): c for c in concepts}
-    for c in concepts:
-        all_terms = [c["label"]] + c.get("aliases", [])
-        for term in all_terms:
-            key = normalize_text(term)
-            mapping[key]["count"] += 2
-            mapping[key]["categories"][c["category"]] += 2
-            mapping[key]["concepts"][c["label"]] += 2
-    for work in store.works():
-        meta_terms = [
-            (work.get("artist", ""), "pessoa"),
-            (work.get("place", ""), "lugar"),
-            (work.get("period", ""), "periodo"),
-            (work.get("technique", ""), "tecnica"),
-            (work.get("material", ""), "material"),
-        ]
-        for term, cat in meta_terms:
-            key = normalize_text(term)
-            if key:
-                mapping[key]["count"] += 1
-                mapping[key]["categories"][cat] += 1
-        for term in work.get("institution_tags", []):
-            key = normalize_text(term)
-            mapping[key]["count"] += 1
-            mapping[key]["categories"]["tema"] += 1
+def get_user_tags_for_work(store: Store, work_id: str) -> List[str]:
+    uid = get_user_id()
+    return [t["tag"] for t in store.tags() if t["work_id"] == work_id and t.get("user_id") == uid]
+
+
+def render_accessibility_controls(store: Store, work: Dict[str, Any]) -> None:
+    user_tags = get_user_tags_for_work(store, work["id"])
+    description = build_description(work, user_tags)
+    st.markdown('<div class="glass smallPanel">', unsafe_allow_html=True)
+    st.markdown("**acessibilidade**")
+    col_a, col_b = st.columns([1, 1])
+    with col_a:
+        st.session_state["font_scale"] = st.slider("tamanho da fonte", 0.9, 1.6, float(st.session_state.get("font_scale", 1.0)), 0.05, key=f"font_{work['id']}")
+        st.session_state["high_contrast"] = st.toggle("contraste reforçado", value=bool(st.session_state.get("high_contrast", False)), key=f"contrast_{work['id']}")
+    with col_b:
+        speech_html(description, key=f"speech_{work['id']}")
+    st.markdown("**descrição detalhada da imagem**")
+    st.markdown(f'<div class="helper">{html.escape(description)}</div>', unsafe_allow_html=True)
+    words = explain_words(description)
+    if words:
+        choice = st.selectbox("explicar palavra complexa", ["nenhuma"] + list(words.keys()), key=f"explain_sel_{work['id']}")
+        if choice != "nenhuma":
+            st.info(words[choice])
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+def render_gallery(store: Store) -> None:
+    works = store.works()
+    for work in works:
+        st.markdown('<div class="glass workCard">', unsafe_allow_html=True)
+        st.image(work["image"], use_container_width=True)
+        col_btn1, col_btn2 = st.columns([1, 1])
+        with col_btn1:
+            if st.button("Marcar", key=f"mark_{work['id']}"):
+                current = st.session_state.get("open_work")
+                st.session_state["open_work"] = None if current == work["id"] else work["id"]
+                st.session_state["show_accessibility"] = None
+                st.rerun()
+        with col_btn2:
+            if st.button("Acessibilidade", key=f"acc_{work['id']}"):
+                current = st.session_state.get("show_accessibility")
+                st.session_state["show_accessibility"] = None if current == work["id"] else work["id"]
+                st.session_state["open_work"] = None
+                st.rerun()
+
+        if st.session_state.get("open_work") == work["id"]:
+            st.markdown('<div class="glass smallPanel">', unsafe_allow_html=True)
+            st.markdown('<div class="helper">sua tag</div>', unsafe_allow_html=True)
+            tag_text = st.text_input("sua tag", placeholder="escreva a tag", label_visibility="collapsed", key=f"tag_input_{work['id']}")
+            c1, c2 = st.columns([1, 1])
+            with c1:
+                if st.button("registrar tag", key=f"save_tag_{work['id']}"):
+                    if tag_text.strip():
+                        store.add_tag(work["id"], tag_text, get_user_id())
+                        st.success("Tag registrada.")
+                        st.session_state[f"tag_input_{work['id']}"] = ""
+                        st.rerun()
+                    else:
+                        st.warning("Escreva uma tag antes de registrar.")
+            with c2:
+                if st.button("fechar", key=f"close_tag_{work['id']}"):
+                    st.session_state["open_work"] = None
+                    st.rerun()
+            tags = get_user_tags_for_work(store, work["id"])
+            st.markdown("**suas tags nesta imagem**")
+            if tags:
+                st.markdown(" ".join([f'<span class="tagPill">{html.escape(t)}</span>' for t in tags]), unsafe_allow_html=True)
+            else:
+                st.markdown('<div class="helper">Nenhuma tag registrada por você nesta imagem ainda.</div>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+
+        if st.session_state.get("show_accessibility") == work["id"]:
+            render_accessibility_controls(store, work)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+
+def build_learning_index(store: Store) -> List[Dict[str, Any]]:
+    works = {w["id"]: w for w in store.works()}
+    validations = {v["tag_id"]: v for v in store.validations() if v.get("decision") == "approved"}
+    ontology_labels = [o["label"] for o in store.ontologies()]
+    index = []
     for tag in store.tags():
-        key = normalize_text(tag.get("label", ""))
-        if key:
-            mapping[key]["count"] += 1
-    for row in store.validations():
-        key = normalize_text(row.get("label", ""))
-        if key:
-            if row.get("decision") == "approved":
-                mapping[key]["count"] += 3
-            mapping[key]["categories"][row.get("category", "")] += 3
-            mapping[key]["concepts"][row.get("concept", "")] += 3
-    return mapping
+        work = works.get(tag["work_id"])
+        if not work:
+            continue
+        val = validations.get(tag["id"], {})
+        index.append({
+            "tag_id": tag["id"],
+            "tag": tag["tag"],
+            "norm": normalize(tag["tag"]),
+            "work_id": work["id"],
+            "title": work["title"],
+            "artist": work["artist"],
+            "museum": work["museum"],
+            "period": work["period"],
+            "technique": work["technique"],
+            "material": work["material"],
+            "metadata_tokens": list({*tokenize(work["title"]), *tokenize(work["artist"]), *tokenize(work["museum"]), *tokenize(work["period"]), *tokenize(work["technique"]), *tokenize(work["material"]), *[normalize(x) for x in work.get("institution_tags", [])]}),
+            "validated_category": val.get("category", ""),
+            "validated_concept": val.get("concept_label", ""),
+            "ontology_matches": [o for o in ontology_labels if o in normalize(tag["tag"])],
+        })
+    return index
 
 
-def predict_label(store: Store, label: str, work: Dict[str, Any]) -> Tuple[str, str, float]:
-    label_n = normalize_text(label)
-    mapping = learner_map(store)
-    best_cat = "tema"
-    best_concept = ""
-    conf = 0.35
-
-    # learned exact term
-    if label_n in mapping:
-        info = mapping[label_n]
-        if info["categories"]:
-            best_cat = info["categories"].most_common(1)[0][0] or "tema"
-            conf = 0.82
-        if info["concepts"]:
-            best_concept = info["concepts"].most_common(1)[0][0]
-    # concepts similarity
-    for concept in store.concepts():
-        for term in [concept["label"]] + concept.get("aliases", []):
-            score = sequence_ratio(label_n, term)
-            if score > conf:
-                conf = score
-                best_cat = concept["category"]
-                best_concept = concept["label"]
-    # metadata cues
-    metadata_fields = {
-        "pessoa": [work.get("artist", "")],
-        "lugar": [work.get("place", ""), work.get("museum", "")],
-        "periodo": [work.get("period", ""), work.get("year", "")],
-        "tecnica": [work.get("technique", "")],
-        "material": [work.get("material", "")],
-    }
-    for cat, values in metadata_fields.items():
-        for value in values:
-            if sequence_ratio(label_n, value) > 0.75:
-                return cat, value, 0.9
-    return best_cat or "tema", best_concept, round(float(conf), 2)
+def predict_category_and_concept(store: Store, raw_tag: str, work: Dict[str, Any]) -> Dict[str, Any]:
+    tag_n = normalize(raw_tag)
+    ontology_labels = [o["label"] for o in store.ontologies()]
+    validations = [v for v in store.validations() if v.get("decision") == "approved"]
+    by_cat = Counter()
+    by_concept = Counter()
+    for v in validations:
+        source = next((t for t in store.tags() if t["id"] == v.get("tag_id")), None)
+        if not source:
+            continue
+        sim = token_overlap(tag_n, normalize(source["tag"]))
+        if sim > 0:
+            by_cat[v.get("category", "outro")] += sim
+            if v.get("concept_label"):
+                by_concept[v["concept_label"]] += sim
+    category = by_cat.most_common(1)[0][0] if by_cat else infer_category_from_metadata(tag_n, work)
+    concept = by_concept.most_common(1)[0][0] if by_concept else next((o for o in ontology_labels if o in tag_n), "")
+    conf = 0.55 if by_cat else 0.45
+    return {"category": category, "concept": concept, "confidence": round(conf, 2)}
 
 
-def connected_search(store: Store, query: str) -> List[Dict[str, Any]]:
-    q_tokens = set(tokenize(query))
+def infer_category_from_metadata(tag_n: str, work: Dict[str, Any]) -> str:
+    if tag_n in [normalize(x) for x in work.get("institution_tags", [])]:
+        return "tema"
+    if any(t in tag_n for t in tokenize(work["artist"])):
+        return "pessoa"
+    if any(t in tag_n for t in tokenize(work["place"])):
+        return "lugar"
+    if any(t in tag_n for t in tokenize(work["technique"])):
+        return "técnica"
+    if any(t in tag_n for t in tokenize(work["material"])):
+        return "material"
+    if any(t in tag_n for t in tokenize(work["period"])):
+        return "período"
+    return "tema"
+
+
+def token_overlap(a: str, b: str) -> float:
+    sa, sb = set(tokenize(a)), set(tokenize(b))
+    if not sa or not sb:
+        return 0.0
+    return len(sa & sb) / len(sa | sb)
+
+
+def similar_examples(store: Store, raw_tag: str, work_id: str) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    rows = build_learning_index(store)
+    examples = []
+    parallels = []
+    for row in rows:
+        sim = max(token_overlap(raw_tag, row["tag"]), char_similarity(raw_tag, row["tag"]))
+        if sim <= 0:
+            continue
+        item = {"tag": row["tag"], "work": row["title"], "score": round(sim, 2)}
+        if row["work_id"] == work_id:
+            examples.append(item)
+        else:
+            parallels.append(item)
+    examples.sort(key=lambda x: x["score"], reverse=True)
+    parallels.sort(key=lambda x: x["score"], reverse=True)
+    return examples[:3], parallels[:5]
+
+
+def char_similarity(a: str, b: str) -> float:
+    a, b = normalize(a), normalize(b)
+    if not a or not b:
+        return 0.0
+    same = sum(1 for ch1, ch2 in zip(a, b) if ch1 == ch2)
+    return same / max(len(a), len(b))
+
+
+def render_validation(store: Store) -> None:
+    st.markdown('<div class="glass smallPanel">', unsafe_allow_html=True)
+    st.markdown('<div class="sectionTitle">validação</div>', unsafe_allow_html=True)
+    st.markdown('<div class="helper">Aqui a equipe de documentação revisa as tags, aproxima conceitos, administra ontologias e reduz erros por repetição, grafia e confusão semântica.</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+    works = {w["id"]: w for w in store.works()}
+    validated = {v["tag_id"] for v in store.validations()}
+    pending = [t for t in store.tags() if t["id"] not in validated]
+    if not pending:
+        st.info("Não há tags pendentes de validação neste momento.")
+        return
+    for tag in pending:
+        work = works.get(tag["work_id"])
+        if not work:
+            continue
+        pred = predict_category_and_concept(store, tag["tag"], work)
+        ex1, ex2 = similar_examples(store, tag["tag"], work["id"])
+        st.markdown('<div class="glass smallPanel">', unsafe_allow_html=True)
+        st.markdown(f"### {tag['tag']} · {work['title']}")
+        st.markdown(f"<div class='helper'>previsão de categoria: <strong>{pred['category']}</strong> · confiança {pred['confidence']}<br>conceito sugerido: <strong>{pred['concept'] or 'nenhum'}</strong><br>museu: {html.escape(work['museum'])} · período: {html.escape(work['period'])} · técnica: {html.escape(work['technique'])}</div>", unsafe_allow_html=True)
+        if ex1:
+            st.markdown("**3 exemplos próximos na mesma obra**")
+            for item in ex1:
+                st.markdown(f"- {item['tag']} · similaridade {item['score']}")
+        if ex2:
+            st.markdown("**ligações em comum com outras obras**")
+            for item in ex2:
+                st.markdown(f"- {item['tag']} · {item['work']} · similaridade {item['score']}")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            category = st.selectbox("categoria validada", CATEGORIES, index=max(0, CATEGORIES.index(pred['category']) if pred['category'] in CATEGORIES else 0), key=f"cat_{tag['id']}")
+        ontology_options = ["nenhum"] + [o["label"] for o in store.ontologies()]
+        with col2:
+            concept_label = st.selectbox("conceito reconciliado", ontology_options, index=ontology_options.index(pred['concept']) if pred['concept'] in ontology_options else 0, key=f"concept_{tag['id']}")
+        with col3:
+            decision = st.selectbox("decisão", ["approved", "rejected"], key=f"decision_{tag['id']}")
+        notes = st.text_area("notas curatoriais", key=f"notes_{tag['id']}", height=90)
+        if st.button("registrar validação", key=f"save_val_{tag['id']}"):
+            store.add_validation({
+                "id": f"val-{len(store.validations())+1}",
+                "tag_id": tag["id"],
+                "work_id": work["id"],
+                "decision": decision,
+                "category": category,
+                "concept_label": "" if concept_label == "nenhum" else concept_label,
+                "notes": notes.strip(),
+                "timestamp": now_str(),
+            })
+            st.success("Validação registrada.")
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+
+
+def render_ontologies(store: Store) -> None:
+    st.markdown('<div class="glass smallPanel">', unsafe_allow_html=True)
+    st.markdown('<div class="sectionTitle">ontologias</div>', unsafe_allow_html=True)
+    st.markdown('<div class="helper">Crie, revise e exclua ontologias conceituais usadas para reconciliar termos livres do público com categorias organizadas.</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+    with st.container():
+        c1, c2 = st.columns([1, 1])
+        with c1:
+            label = st.text_input("nome da ontologia", key="ont_label")
+        with c2:
+            desc = st.text_input("descrição", key="ont_desc")
+        if st.button("criar ontologia", key="create_ontology"):
+            if label.strip():
+                store.add_ontology(label, desc)
+                st.success("Ontologia criada.")
+                st.rerun()
+    for ont in store.ontologies():
+        col1, col2 = st.columns([5, 1])
+        with col1:
+            st.markdown(f'<div class="glass smallPanel"><strong>{html.escape(ont["label"])}</strong><br><span class="helper">{html.escape(ont.get("description", ""))}</span></div>', unsafe_allow_html=True)
+        with col2:
+            if st.button("excluir", key=f"del_ont_{ont['id']}"):
+                store.delete_ontology(ont["id"])
+                st.rerun()
+
+
+def real_search(store: Store, query: str) -> List[Dict[str, Any]]:
+    q = normalize(query)
     results = []
+    validations_by_tag = {v["tag_id"]: v for v in store.validations() if v.get("decision") == "approved"}
+    work_tags = defaultdict(list)
+    concepts_by_work = defaultdict(list)
+    for tag in store.tags():
+        work_tags[tag["work_id"]].append(tag["tag"])
+        val = validations_by_tag.get(tag["id"])
+        if val and val.get("concept_label"):
+            concepts_by_work[tag["work_id"]].append(val["concept_label"])
     for work in store.works():
-        bag = []
-        bag.extend(tokenize(work.get("title", "")))
-        bag.extend(tokenize(work.get("artist", "")))
-        bag.extend(tokenize(work.get("museum", "")))
-        bag.extend(tokenize(work.get("collection", "")))
-        bag.extend(tokenize(work.get("place", "")))
-        bag.extend(tokenize(work.get("period", "")))
-        bag.extend(tokenize(work.get("technique", "")))
-        bag.extend(tokenize(work.get("material", "")))
-        bag.extend([normalize_text(t) for t in work.get("institution_tags", [])])
-        user_tags = [t["label"] for t in store.tags() if t.get("work_id") == work.get("id")]
-        bag.extend([normalize_text(t) for t in user_tags])
-        validations = [v for v in store.validations() if v.get("work_id") == work.get("id")]
-        bag.extend([normalize_text(v.get("concept", "")) for v in validations if v.get("concept")])
-        bag_set = set([x for x in bag if x])
-        common = q_tokens & bag_set
-        score = len(common)
+        metadata = [work["title"], work["artist"], work["museum"], work["period"], work["technique"], work["material"], work["place"], work["collection"]] + work.get("institution_tags", []) + work.get("open_data", [])
+        score = 0.0
+        matched_metadata, matched_tags, matched_concepts = [], [], []
+        for item in metadata:
+            if not item:
+                continue
+            norm = normalize(item)
+            s = max(token_overlap(q, norm), char_similarity(q, norm))
+            if s > 0:
+                score += s * 1.5
+                matched_metadata.append(item)
+        for tag in work_tags.get(work["id"], []):
+            s = max(token_overlap(q, normalize(tag)), char_similarity(q, normalize(tag)))
+            if s > 0:
+                score += s * 2.0
+                matched_tags.append(tag)
+        for concept in concepts_by_work.get(work["id"], []):
+            s = max(token_overlap(q, normalize(concept)), char_similarity(q, normalize(concept)))
+            if s > 0:
+                score += s * 2.3
+                matched_concepts.append(concept)
         if score > 0:
             results.append({
-                "work": work,
-                "score": score,
-                "matches": sorted(common)
+                "title": work["title"], "artist": work["artist"], "museum": work["museum"],
+                "score": round(score, 2),
+                "matched_metadata": matched_metadata[:8],
+                "matched_tags": matched_tags[:8],
+                "matched_concepts": matched_concepts[:8],
             })
     return sorted(results, key=lambda x: x["score"], reverse=True)
 
 
-def temporal_rows(store: Store) -> List[Dict[str, Any]]:
-    rows = []
-    works_by_id = {w["id"]: w for w in store.works()}
-    for tag in store.tags():
-        dt = datetime.strptime(tag["created_at"], "%Y-%m-%d %H:%M:%S")
-        work = works_by_id.get(tag.get("work_id"), {})
-        rows.append({
-            "tag": tag.get("label", ""),
-            "day": dt.strftime("%Y-%m-%d"),
-            "month": dt.strftime("%Y-%m"),
-            "year": dt.strftime("%Y"),
-            "work_title": work.get("title", ""),
-            "museum": work.get("museum", "")
-        })
-    return rows
+def render_search_learning(store: Store) -> None:
+    st.markdown('<div class="glass smallPanel">', unsafe_allow_html=True)
+    st.markdown('<div class="sectionTitle">busca conectada e aprendizagem</div>', unsafe_allow_html=True)
+    st.markdown('<div class="helper">A busca cruza metadados institucionais, tags públicas, validações e ontologias. O mecanismo aprende com as validações aprovadas e melhora a reconciliação dos termos.</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+    query = st.text_input("busca conectada", placeholder="tema, técnica, material, lugar, artista, conceito ou tag", key="search_query_real")
+    if query.strip():
+        results = real_search(store, query)
+        if not results:
+            st.info("Nenhum resultado relevante foi encontrado.")
+        for item in results:
+            st.markdown(f'<div class="glass smallPanel"><strong>{html.escape(item["title"])} · {html.escape(item["artist"])} </strong><br><span class="helper">museu: {html.escape(item["museum"])} · score {item["score"]}</span><br><span class="helper">metadados: {", ".join(item["matched_metadata"]) or "nenhum"}<br>tags: {", ".join(item["matched_tags"]) or "nenhuma"}<br>conceitos: {", ".join(item["matched_concepts"]) or "nenhum"}</span></div>', unsafe_allow_html=True)
 
 
-def build_network(store: Store) -> Tuple[List[Dict[str, Any]], List[Tuple[str, str, str]]]:
-    nodes = {}
+def temporal_summary(store: Store) -> Dict[str, List[Dict[str, Any]]]:
+    tags = store.tags()
+    works = {w["id"]: w["title"] for w in store.works()}
+    out = {"day": defaultdict(list), "month": defaultdict(list), "year": defaultdict(list)}
+    for tag in tags:
+        ts = datetime.strptime(tag["timestamp"], "%Y-%m-%d %H:%M:%S")
+        out["day"][ts.strftime("%Y-%m-%d")].append(tag)
+        out["month"][ts.strftime("%Y-%m")].append(tag)
+        out["year"][ts.strftime("%Y")].append(tag)
+    result = {}
+    for key, buckets in out.items():
+        data = []
+        for period, items in sorted(buckets.items()):
+            data.append({
+                "period": period,
+                "count": len(items),
+                "works": sorted({works.get(i["work_id"], i["work_id"]) for i in items}),
+                "tags": sorted({i["tag"] for i in items}),
+            })
+        result[key] = data
+    return result
+
+
+def render_temporal(store: Store) -> None:
+    st.markdown('<div class="glass smallPanel">', unsafe_allow_html=True)
+    st.markdown('<div class="sectionTitle">análise temporal</div>', unsafe_allow_html=True)
+    st.markdown('<div class="helper">A leitura temporal acompanha as tags criadas por dia, mês e ano, mostrando termos observados e obras envolvidas em cada período.</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+    summary = temporal_summary(store)
+    if not summary["day"]:
+        st.info("Ainda não há tags suficientes para análise temporal.")
+        return
+    tabs = st.tabs(["por dia", "por mês", "por ano"])
+    for tab, key in zip(tabs, ["day", "month", "year"]):
+        with tab:
+            for bucket in summary[key]:
+                st.markdown(f'<div class="glass smallPanel"><strong>{bucket["period"]}</strong><br><span class="helper">total de tags: {bucket["count"]}<br>obras: {", ".join(bucket["works"])}<br>tags observadas: {", ".join(bucket["tags"][:20])}</span></div>', unsafe_allow_html=True)
+
+
+def build_network(store: Store) -> Optional[Any]:
+    if not PLOTLY_AVAILABLE:
+        return None
+    selected = st.session_state.get("network_types", list(NODE_COLORS.keys()))
+    node_size = st.session_state.get("network_size", 11)
+    works = store.works()
+    validations = {v["tag_id"]: v for v in store.validations() if v.get("decision") == "approved"}
+
+    nodes = []
     edges = []
+    index = {}
 
-    def add_node(node_id: str, label: str, kind: str):
-        if node_id not in nodes:
-            nodes[node_id] = {"id": node_id, "label": label, "kind": kind}
+    def add_node(node_id: str, label: str, kind: str) -> None:
+        if kind not in selected:
+            return
+        if node_id not in index:
+            index[node_id] = len(nodes)
+            nodes.append({"id": node_id, "label": label, "kind": kind})
 
-    for work in store.works():
-        wid = work["id"]
+    def add_edge(a: str, b: str) -> None:
+        if a in index and b in index:
+            edges.append((a, b))
+
+    for work in works:
+        wid = f"obra:{work['id']}"
         add_node(wid, work["title"], "obra")
-        meta_map = {
-            f"artist:{work['artist']}": ("artist", work["artist"]),
-            f"museum:{work['museum']}": ("museu", work["museum"]),
-            f"place:{work['place']}": ("lugar", work["place"]),
-            f"period:{work['period']}": ("periodo", work["period"]),
-            f"tech:{work['technique']}": ("tecnica", work["technique"]),
-            f"mat:{work['material']}": ("material", work["material"]),
-            f"collection:{work['collection']}": ("colecao", work["collection"]),
-        }
-        for nid, (kind, label) in meta_map.items():
-            add_node(nid, label, kind)
-            edges.append((wid, nid, kind))
-        for term in work.get("institution_tags", []):
-            nid = f"inst:{normalize_text(term)}"
-            add_node(nid, term, "tag_institucional")
-            edges.append((wid, nid, "tag_institucional"))
+        artist = f"artista:{work['artist']}"
+        museum = f"museu:{work['museum']}"
+        period = f"periodo:{work['period']}"
+        tech = f"tecnica:{work['technique']}"
+        material = f"material:{work['material']}"
+        add_node(artist, work["artist"], "artista")
+        add_node(museum, work["museum"], "museu")
+        add_node(period, work["period"], "período")
+        add_node(tech, work["technique"], "técnica")
+        add_node(material, work["material"], "material")
+        add_edge(wid, artist)
+        add_edge(wid, museum)
+        add_edge(wid, period)
+        add_edge(wid, tech)
+        add_edge(wid, material)
+        for od in work.get("open_data", []):
+            oid = f"open:{od}"
+            add_node(oid, od, "open_data")
+            add_edge(wid, oid)
 
     for tag in store.tags():
-        label = tag["label"]
-        nid = f"tag:{normalize_text(label)}"
-        add_node(nid, label, "tag_publica")
-        edges.append((tag["work_id"], nid, "tag_publica"))
+        work = next((w for w in works if w["id"] == tag["work_id"]), None)
+        if not work:
+            continue
+        tid = f"tag:{tag['id']}"
+        add_node(tid, tag["tag"], "tag")
+        add_edge(f"obra:{work['id']}", tid)
+        val = validations.get(tag["id"])
+        if val and val.get("concept_label"):
+            cid = f"conceito:{val['concept_label']}"
+            add_node(cid, val["concept_label"], "conceito")
+            add_edge(tid, cid)
 
-    for val in store.validations():
-        concept = val.get("concept", "")
-        label = val.get("label", "")
-        if concept:
-            cid = f"concept:{normalize_text(concept)}"
-            add_node(cid, concept, "conceito")
-            edges.append((val["work_id"], cid, "conceito"))
-        if label:
-            tid = f"tag:{normalize_text(label)}"
-            if tid in nodes and concept:
-                edges.append((tid, cid, "reconciliacao"))
-
-    for onto in store.ontologies():
-        oid = f"onto:{normalize_text(onto['label'])}"
-        add_node(oid, onto["label"], "ontologia")
-        if onto.get("broader"):
-            bid = f"onto:{normalize_text(onto['broader'])}"
-            add_node(bid, onto["broader"], "ontologia")
-            edges.append((oid, bid, "hierarquia"))
-
-    return list(nodes.values()), edges
-
-
-def network_html(store: Store) -> str:
-    nodes, edges = build_network(store)
-    if not nodes:
-        return "<div style='padding:16px;color:#222;'>Nenhuma relação disponível.</div>"
-    colors = {
-        "obra": "#1d1e22",
-        "museu": "#4065d6",
-        "artist": "#a64bd4",
-        "lugar": "#13a17f",
-        "periodo": "#d65b5b",
-        "tecnica": "#d6954b",
-        "material": "#9a8c5d",
-        "colecao": "#3c77a0",
-        "tag_institucional": "#555",
-        "tag_publica": "#111",
-        "conceito": "#842f9c",
-        "ontologia": "#0b6f84",
-    }
-    rnd = random.Random(7)
-    payload_nodes = []
-    for i, node in enumerate(nodes):
-        phi = rnd.random() * 2 * math.pi
-        costheta = rnd.uniform(-1, 1)
-        theta = math.acos(costheta)
-        r = 140 + (i % 7) * 18
-        x = r * math.sin(theta) * math.cos(phi)
-        y = r * math.sin(theta) * math.sin(phi)
-        z = r * math.cos(theta)
-        payload_nodes.append({
-            "id": node["id"], "label": node["label"], "kind": node["kind"],
-            "x": x, "y": y, "z": z, "color": colors.get(node["kind"], "#333")
-        })
-    payload = json.dumps({"nodes": payload_nodes, "edges": edges}, ensure_ascii=False)
-    html_code = f"""
-    <div style="width:100%;height:620px;background:rgba(255,255,255,.34);border:1px solid rgba(255,255,255,.55);border-radius:24px;box-shadow:0 10px 32px rgba(0,0,0,.08);overflow:hidden">
-      <canvas id="netCanvas" width="900" height="620" style="width:100%;height:100%"></canvas>
-    </div>
-    <script>
-    const payload = {payload};
-    const canvas = document.getElementById("netCanvas");
-    const ctx = canvas.getContext("2d");
-    let rx = 0.6, ry = -0.6, dragging=false, lx=0, ly=0;
-    function rotX(p,a) {{
-      return {{x:p.x, y:p.y*Math.cos(a)-p.z*Math.sin(a), z:p.y*Math.sin(a)+p.z*Math.cos(a)}};
-    }}
-    function rotY(p,a) {{
-      return {{x:p.x*Math.cos(a)+p.z*Math.sin(a), y:p.y, z:-p.x*Math.sin(a)+p.z*Math.cos(a)}};
-    }}
-    function project(p) {{
-      const scale = 420 / (420 + p.z + 250);
-      return {{x: canvas.width/2 + p.x*scale, y: canvas.height/2 + p.y*scale, s: scale}};
-    }}
-    function draw() {{
-      ctx.clearRect(0,0,canvas.width,canvas.height);
-      const rotated = {{}};
-      payload.nodes.forEach(n => {{
-        let p = rotY(rotX(n, rx), ry);
-        rotated[n.id] = p;
-      }});
-      ctx.strokeStyle = "rgba(30,30,35,.20)";
-      ctx.lineWidth = 1;
-      payload.edges.forEach(e => {{
-        const a = project(rotated[e[0]]);
-        const b = project(rotated[e[1]]);
-        ctx.beginPath();
-        ctx.moveTo(a.x,a.y);
-        ctx.lineTo(b.x,b.y);
-        ctx.stroke();
-      }});
-      const sorted = payload.nodes.map(n => {{
-        const p = rotated[n.id];
-        const pr = project(p);
-        return {{...n, p, pr}};
-      }}).sort((a,b)=>a.p.z-b.p.z);
-      sorted.forEach(n => {{
-        ctx.beginPath();
-        ctx.fillStyle = n.color;
-        ctx.globalAlpha = 0.9;
-        ctx.arc(n.pr.x, n.pr.y, Math.max(4, 12*n.pr.s), 0, Math.PI*2);
-        ctx.fill();
-        ctx.globalAlpha = 1;
-        if(n.pr.s > 0.55) {{
-          ctx.fillStyle = "#1b1c20";
-          ctx.font = "14px Times New Roman";
-          ctx.fillText(n.label, n.pr.x + 10, n.pr.y - 6);
-        }}
-      }});
-      requestAnimationFrame(draw);
-    }}
-    canvas.addEventListener("mousedown", e=>{{dragging=true; lx=e.clientX; ly=e.clientY;}});
-    canvas.addEventListener("mouseup", ()=>dragging=false);
-    canvas.addEventListener("mouseleave", ()=>dragging=false);
-    canvas.addEventListener("mousemove", e=>{{
-      if(!dragging) return;
-      const dx = e.clientX-lx; const dy = e.clientY-ly;
-      ry += dx*0.01; rx += dy*0.01;
-      lx=e.clientX; ly=e.clientY;
-    }});
-    draw();
-    </script>
-    """
-    return html_code
-
-
-def plotly_network(store: Store):
-    nodes, edges = build_network(store)
     if not nodes:
         return None
-    rng = np.random.default_rng(7)
-    positions = {}
+
+    n = len(nodes)
+    golden = math.pi * (3 - math.sqrt(5))
+    xs, ys, zs = [], [], []
     for i, node in enumerate(nodes):
-        phi = rng.random() * 2 * math.pi
-        costheta = rng.uniform(-1, 1)
-        theta = math.acos(costheta)
-        r = 8 + (i % 6) * 1.3
-        positions[node["id"]] = (
-            r * math.sin(theta) * math.cos(phi),
-            r * math.sin(theta) * math.sin(phi),
-            r * math.cos(theta),
-        )
-    edge_x, edge_y, edge_z = [], [], []
-    for a, b, _ in edges:
-        if a in positions and b in positions:
-            x0, y0, z0 = positions[a]
-            x1, y1, z1 = positions[b]
-            edge_x += [x0, x1, None]
-            edge_y += [y0, y1, None]
-            edge_z += [z0, z1, None]
+        y = 1 - (i / float(max(1, n - 1))) * 2
+        radius = math.sqrt(max(0.0, 1 - y * y))
+        theta = golden * i
+        x = math.cos(theta) * radius
+        z = math.sin(theta) * radius
+        xs.append(x)
+        ys.append(y)
+        zs.append(z)
+
+    x_edge, y_edge, z_edge = [], [], []
+    for a, b in edges:
+        ia, ib = index[a], index[b]
+        x_edge += [xs[ia], xs[ib], None]
+        y_edge += [ys[ia], ys[ib], None]
+        z_edge += [zs[ia], zs[ib], None]
+
     fig = go.Figure()
     fig.add_trace(go.Scatter3d(
-        x=edge_x, y=edge_y, z=edge_z,
-        mode="lines", line=dict(color="rgba(30,30,35,.25)", width=2), hoverinfo="none"
+        x=x_edge, y=y_edge, z=z_edge,
+        mode="lines",
+        line=dict(color="rgba(80,80,80,0.25)", width=2),
+        hoverinfo="none",
+        showlegend=False,
     ))
-    kinds = [n["kind"] for n in nodes]
-    labels = [n["label"] for n in nodes]
-    xs = [positions[n["id"]][0] for n in nodes]
-    ys = [positions[n["id"]][1] for n in nodes]
-    zs = [positions[n["id"]][2] for n in nodes]
-    fig.add_trace(go.Scatter3d(
-        x=xs, y=ys, z=zs, mode="markers+text",
-        text=labels, textposition="top center",
-        marker=dict(size=6, color=np.linspace(0,1,len(nodes)), colorscale="Viridis"),
-        hovertext=kinds, hoverinfo="text"
-    ))
+
+    by_kind = defaultdict(list)
+    for i, node in enumerate(nodes):
+        by_kind[node["kind"]].append((i, node))
+    for kind, items in by_kind.items():
+        fig.add_trace(go.Scatter3d(
+            x=[xs[i] for i, _ in items],
+            y=[ys[i] for i, _ in items],
+            z=[zs[i] for i, _ in items],
+            mode="markers+text",
+            text=[node["label"] for _, node in items],
+            textposition="top center",
+            marker=dict(size=node_size, color=NODE_COLORS.get(kind, "#111827"), opacity=0.92),
+            name=kind,
+            hovertemplate="%{text}<extra>" + kind + "</extra>",
+        ))
+
     fig.update_layout(
-        margin=dict(l=0,r=0,t=0,b=0),
+        margin=dict(l=0, r=0, t=0, b=0),
+        height=760,
+        paper_bgcolor="rgba(255,255,255,0)",
+        plot_bgcolor="rgba(255,255,255,0)",
         scene=dict(
+            bgcolor="rgba(255,255,255,0)",
             xaxis=dict(visible=False), yaxis=dict(visible=False), zaxis=dict(visible=False),
-            bgcolor="rgba(0,0,0,0)"
+            camera=dict(eye=dict(x=1.45, y=1.4, z=1.15)),
+            dragmode="turntable",
         ),
-        paper_bgcolor="rgba(0,0,0,0)",
-        height=620
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
     )
     return fig
 
 
-def export_pdf_bytes(store: Store) -> bytes:
-    if REPORTLAB_AVAILABLE:
-        path = APP_DIR / "tmp_report.pdf"
-        doc = SimpleDocTemplate(str(path), pagesize=A4)
-        styles = getSampleStyleSheet()
-        story = []
-        story.append(Paragraph("Relatório folksonomia", styles["Title"]))
-        story.append(Spacer(1, 12))
-        story.append(Paragraph(f"Gerado em {now_iso()}", styles["Normal"]))
-        story.append(Spacer(1, 12))
-        story.append(Paragraph("Resumo", styles["Heading2"]))
-        story.append(Paragraph(f"Obras: {len(store.works())}. Tags: {len(store.tags())}. Validações: {len(store.validations())}. Ontologias: {len(store.ontologies())}.", styles["Normal"]))
-        story.append(Spacer(1, 12))
-        rows = [["Obra", "Museu", "Total de tags"]]
-        counts = Counter([t["work_id"] for t in store.tags()])
-        for w in store.works():
-            rows.append([w["title"], w["museum"], str(counts.get(w["id"], 0))])
-        table = Table(rows, repeatRows=1)
-        table.setStyle(TableStyle([
-            ("BACKGROUND", (0,0), (-1,0), colors.lightgrey),
-            ("GRID", (0,0), (-1,-1), .4, colors.grey),
-            ("FONTNAME", (0,0), (-1,-1), "Times-Roman"),
-            ("PADDING", (0,0), (-1,-1), 6),
-        ]))
-        story.append(table)
-        doc.build(story)
-        data = path.read_bytes()
-        try:
-            path.unlink()
-        except Exception:
-            pass
-        return data
-
-    # fallback minimal PDF
-    lines = [
-        "Relatorio folksonomia",
-        f"Gerado em {now_iso()}",
-        f"Obras: {len(store.works())}",
-        f"Tags: {len(store.tags())}",
-        f"Validações: {len(store.validations())}",
-        f"Ontologias: {len(store.ontologies())}",
-        "",
-        "Obras:",
-    ]
-    counts = Counter([t["work_id"] for t in store.tags()])
-    for w in store.works():
-        lines.append(f"- {w['title']} | {w['museum']} | tags: {counts.get(w['id'],0)}")
-    def esc(s: str) -> str:
-        return s.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
-    content_lines = ["BT", "/F1 12 Tf", "72 800 Td"]
-    first = True
-    for line in lines:
-        if not first:
-            content_lines.append("0 -16 Td")
-        first = False
-        content_lines.append(f"({esc(line)}) Tj")
-    content_lines.append("ET")
-    stream = "\n".join(content_lines).encode("latin-1", "replace")
-    objs = []
-    def obj(n, body: bytes):
-        return f"{n} 0 obj\n".encode() + body + b"\nendobj\n"
-    objs.append(obj(1, b"<< /Type /Catalog /Pages 2 0 R >>"))
-    objs.append(obj(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>"))
-    objs.append(obj(3, b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>"))
-    objs.append(obj(4, b"<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman >>"))
-    objs.append(obj(5, b"<< /Length " + str(len(stream)).encode() + b" >>\nstream\n" + stream + b"\nendstream"))
-    pdf = b"%PDF-1.4\n"
-    offsets = [0]
-    for o in objs:
-        offsets.append(len(pdf))
-        pdf += o
-    xref_pos = len(pdf)
-    pdf += f"xref\n0 {len(objs)+1}\n".encode()
-    pdf += b"0000000000 65535 f \n"
-    for off in offsets[1:]:
-        pdf += f"{off:010d} 00000 n \n".encode()
-    pdf += f"trailer\n<< /Size {len(objs)+1} /Root 1 0 R >>\nstartxref\n{xref_pos}\n%%EOF".encode()
-    return pdf
-
-
-def render_header():
-    st.markdown(f"<div class='folk-title'>{APP_TITLE}</div>", unsafe_allow_html=True)
-    st.markdown("<div class='folk-sub'>interface translúcida para marcação, validação, busca conectada, ontologias e teia 3d</div>", unsafe_allow_html=True)
-
-
-def intro_flow(store: Store):
-    st.markdown("<div class='glass-wrap'><h2 style='margin-top:0'>acesso inicial</h2><div class='small-note'>primeiro responda ao questionário. só depois a interface de marcação das obras será liberada.</div></div>", unsafe_allow_html=True)
-    with st.form("intro_form_single"):
-        familiarity = st.selectbox("1. qual é a sua frequência de visita a museus?", ["nunca", "raramente", "ocasionalmente", "frequentemente"], key="intro_familiarity")
-        documentation = st.selectbox("2. você já ouviu falar sobre documentação museológica?", ["nenhum", "já ouvi", "tenho noção básica", "conheço bem"], key="intro_documentation")
-        understanding = st.text_area("3. o que você entende por tags aplicadas a acervos?\ndescreva com suas palavras.", key="intro_understanding", placeholder="escreva com suas palavras", height=170)
-        submitted = st.form_submit_button("liberar acesso às obras")
-    if submitted:
-        if not understanding.strip():
-            st.error("preencha a terceira resposta para liberar o acesso.")
-            return
-        store.save_user_intro(st.session_state.public_user_id, familiarity, documentation, understanding)
-        st.session_state.intro_done = True
-        st.rerun()
-
-
-def render_accessibility(work: Dict[str, Any], tags_user: List[str]):
-    st.markdown("<div class='glass-wrap'><h3 style='margin-top:0'>acessibilidade</h3></div>", unsafe_allow_html=True)
-    st.session_state.font_scale = st.slider("tamanho da fonte", 0.9, 1.6, float(st.session_state.font_scale), 0.05, key=f"font_{work['id']}")
-    st.session_state.high_contrast = st.toggle("contraste reforçado", value=bool(st.session_state.high_contrast), key=f"contrast_{work['id']}")
-    desc = semantic_description(work, tags_user)
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("ouvir descrição", key=f"speak_{work['id']}"):
-            components.html(f"""
-            <script>
-            const txt = {json.dumps(desc)};
-            window.speechSynthesis.cancel();
-            const u = new SpeechSynthesisUtterance(txt);
-            u.lang = 'pt-BR';
-            u.rate = 1.0;
-            speechSynthesis.speak(u);
-            </script>
-            """, height=0)
-    with c2:
-        if st.button("parar leitura", key=f"stop_{work['id']}"):
-            components.html("<script>window.speechSynthesis.cancel();</script>", height=0)
-    st.markdown("<div class='helper-box'><strong>descrição detalhada</strong><br>" + html.escape(desc) + "</div>", unsafe_allow_html=True)
-    explanations = explain_words(desc)
-    if explanations:
-        st.markdown("<div class='helper-box' style='margin-top:0.7rem'><strong>palavras complexas explicadas</strong><br>" +
-                    "<br>".join([f"<strong>{html.escape(k)}</strong>: {html.escape(v)}" for k, v in explanations]) +
-                    "</div>", unsafe_allow_html=True)
-
-
-def render_public(store: Store):
-    works = store.works()
-    for work in works:
-        my_tags = [t["label"] for t in store.tags_for_user_work(st.session_state.public_user_id, work["id"])]
-        st.markdown("<div class='work-card'>", unsafe_allow_html=True)
-        st.image(work["image"], use_container_width=True)
-        c1, c2 = st.columns([1, 1])
-        with c1:
-            if st.button("Marcar", key=f"mark_{work['id']}"):
-                st.session_state.selected_work = work["id"]
-                st.session_state.accessibility_work = None if st.session_state.accessibility_work == work["id"] else st.session_state.accessibility_work
-        with c2:
-            if st.button("Acessibilidade", key=f"acc_{work['id']}"):
-                st.session_state.accessibility_work = None if st.session_state.accessibility_work == work["id"] else work["id"]
-                st.session_state.selected_work = None if st.session_state.selected_work == work["id"] else st.session_state.selected_work
-
-        if st.session_state.selected_work == work["id"]:
-            with st.form(f"tag_form_{work['id']}"):
-                tag_value = st.text_input("sua tag", key=f"tag_input_{work['id']}", placeholder="escreva a tag")
-                c3, c4 = st.columns(2)
-                with c3:
-                    save_pressed = st.form_submit_button("registrar tag")
-                with c4:
-                    close_pressed = st.form_submit_button("fechar")
-                if save_pressed:
-                    if tag_value.strip():
-                        store.add_tag(st.session_state.public_user_id, work["id"], tag_value)
-                        st.success("tag registrada.")
-                        st.rerun()
-                    else:
-                        st.error("escreva uma tag antes de registrar.")
-                if close_pressed:
-                    st.session_state.selected_work = None
-                    st.rerun()
-            st.markdown("<div class='small-note' style='margin-top:0.6rem'>suas tags nesta imagem</div>", unsafe_allow_html=True)
-            if my_tags:
-                st.markdown("".join([f"<span class='tag-chip'>{html.escape(t)}</span>" for t in my_tags]), unsafe_allow_html=True)
-            else:
-                st.markdown("<div class='helper-box'>Nenhuma tag registrada por você nesta imagem ainda.</div>", unsafe_allow_html=True)
-
-        if st.session_state.accessibility_work == work["id"]:
-            render_accessibility(work, my_tags)
-        st.markdown("</div>", unsafe_allow_html=True)
-
-
-def render_admin_login(store: Store):
-    st.markdown("<div class='glass-wrap'><h2 style='margin-top:0'>login administrativo</h2></div>", unsafe_allow_html=True)
-    with st.form("admin_login_form"):
-        login = st.text_input("login", value="nugep239@", key="admin_login_input")
-        password = st.text_input("senha", type="password", value="nugep123", key="admin_password_input")
-        submitted = st.form_submit_button("entrar")
-    if submitted:
-        if store.authenticate(login, password):
-            st.session_state.admin_logged_in = True
-            st.success("acesso liberado.")
-            st.rerun()
-        else:
-            st.error("credenciais inválidas.")
-
-
-def render_admin_panel(store: Store):
-    tags = store.tags()
-    validations = store.validations()
-    ontologies = store.ontologies()
-    works = store.works()
-    users = store.users()
-    c1, c2, c3, c4, c5 = st.columns(5)
-    metrics = [
-        ("obras", len(works)),
-        ("tags coletadas", len(tags)),
-        ("participantes", len(users)),
-        ("fila curatorial", len([v for v in validations if v.get("decision") != "approved"])),
-        ("ontologias", len(ontologies)),
-    ]
-    for col, (label, value) in zip([c1,c2,c3,c4,c5], metrics):
-        with col:
-            st.markdown(f"<div class='metric-card'><div class='pill-title'>{html.escape(label)}</div><div class='metric-value'>{value}</div><div class='metric-label'>painel principal</div></div>", unsafe_allow_html=True)
-    st.markdown("<div style='height:0.8rem'></div>", unsafe_allow_html=True)
-    query = st.text_input("busca conectada", placeholder="busque por artista, técnica, material, lugar, tema, tag pública ou conceito", key="connected_query")
-    if query.strip():
-        res = connected_search(store, query)
-        if res:
-            for item in res[:8]:
-                work = item["work"]
-                st.markdown(f"<div class='helper-box'><strong>{html.escape(work['title'])}</strong> · {html.escape(work['artist'])}<br>correspondências: {html.escape(', '.join(item['matches']))}</div>", unsafe_allow_html=True)
-        else:
-            st.info("nenhuma obra apareceu nessa busca.")
-
-
-def examples_for_tag(store: Store, label: str) -> List[str]:
-    label_n = normalize_text(label)
-    ex = []
-    for tag in store.tags():
-        other = tag.get("label", "")
-        if other and other != label and sequence_ratio(label_n, other) >= 0.45:
-            work = next((w for w in store.works() if w["id"] == tag["work_id"]), {})
-            ex.append(f"{other} · {work.get('title','obra')}")
-    return ex[:3]
-
-
-def render_validation(store: Store):
-    works_by_id = {w["id"]: w for w in store.works()}
-    tags = store.tags()
-    if not tags:
-        st.info("ainda não há tags para validar.")
+def render_network(store: Store) -> None:
+    st.markdown('<div class="glass smallPanel">', unsafe_allow_html=True)
+    st.markdown('<div class="sectionTitle">teia 3d de conectividade</div>', unsafe_allow_html=True)
+    st.markdown('<div class="helper">Rede de compartilhamento e interoperabilidade entre metadados institucionais, tags públicas, conceitos validados, ontologias e fontes externas. Você pode girar, aproximar, afastar, filtrar camadas e redimensionar os nós.</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+    if not PLOTLY_AVAILABLE:
+        st.error("Plotly não está disponível nesta execução. Instale a dependência para usar a teia 3D.")
         return
-    for row in tags[-20:][::-1]:
-        work = works_by_id.get(row["work_id"], {})
-        category, concept, confidence = predict_label(store, row["label"], work)
-        similar = examples_for_tag(store, row["label"])
-        box = f"<div class='helper-box'><strong>{html.escape(row['label'])}</strong> · {html.escape(work.get('title','obra'))}<br>previsão {html.escape(category)} · confiança {confidence}<br>"
-        if concept:
-            box += f"conceito sugerido {html.escape(concept)}<br>"
-        box += f"museu {html.escape(work.get('museum',''))} · período {html.escape(work.get('period',''))} · técnica {html.escape(work.get('technique',''))}</div>"
-        st.markdown(box, unsafe_allow_html=True)
-        if similar:
-            st.markdown("<div class='small-note'>3 exemplos próximos</div>", unsafe_allow_html=True)
-            st.markdown("".join([f"<span class='tag-chip'>{html.escape(s)}</span>" for s in similar]), unsafe_allow_html=True)
-        with st.form(f"val_form_{row['id']}"):
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                category_v = st.selectbox("categoria validada", CATEGORY_OPTIONS, index=max(CATEGORY_OPTIONS.index(category), 0) if category in CATEGORY_OPTIONS else 0, key=f"cat_{row['id']}")
-            with c2:
-                concept_options = [""] + [c["label"] for c in store.concepts()]
-                concept_v = st.selectbox("conceito reconciliado", concept_options, index=concept_options.index(concept) if concept in concept_options else 0, key=f"concept_{row['id']}")
-            with c3:
-                decision_v = st.selectbox("decisão", ["approved", "review", "rejected"], key=f"decision_{row['id']}")
-            note = st.text_area("notas curatoriais", key=f"note_{row['id']}", height=90)
-            submitted = st.form_submit_button("registrar validação")
-        if submitted:
-            store.add_validation({
-                "id": uid("val"),
-                "tag_id": row["id"],
-                "work_id": row["work_id"],
-                "label": row["label"],
-                "category": category_v,
-                "concept": concept_v,
-                "decision": decision_v,
-                "note": note,
-                "created_at": now_iso()
-            })
-            st.success("validação registrada.")
-            st.rerun()
-        st.markdown("<div style='height:.8rem'></div>", unsafe_allow_html=True)
-
-
-def render_ontologies(store: Store):
-    st.markdown("<div class='glass-wrap'><h3 style='margin-top:0'>criação e administração de ontologias</h3><div class='small-note'>cadastre classes, conceitos amplos, relações hierárquicas e sinônimos de apoio.</div></div>", unsafe_allow_html=True)
-    with st.form("ontology_add_form"):
-        label = st.text_input("nome da ontologia")
-        broader = st.text_input("conceito mais amplo")
-        description = st.text_area("descrição")
-        aliases = st.text_input("sinônimos, separados por vírgula")
-        submitted = st.form_submit_button("criar ontologia")
-    if submitted and label.strip():
-        store.add_ontology(label, broader, description, [a.strip() for a in aliases.split(",") if a.strip()])
-        st.success("ontologia criada.")
-        st.rerun()
-    for onto in store.ontologies():
-        st.markdown(f"<div class='helper-box'><strong>{html.escape(onto['label'])}</strong><br>mais amplo: {html.escape(onto.get('broader','') or 'nenhum')}<br>{html.escape(onto.get('description',''))}</div>", unsafe_allow_html=True)
-        if onto.get("aliases"):
-            st.markdown("".join([f"<span class='tag-chip'>{html.escape(a)}</span>" for a in onto["aliases"]]), unsafe_allow_html=True)
-        if st.button("excluir ontologia", key=f"del_onto_{onto['id']}"):
-            store.delete_ontology(onto["id"])
-            st.rerun()
-
-
-def render_temporal(store: Store):
-    rows = temporal_rows(store)
-    if not rows:
-        st.info("a análise temporal aparecerá quando houver tags registradas.")
-        return
-    st.markdown("<div class='glass-wrap'><h3 style='margin-top:0'>análise temporal</h3><div class='small-note'>leitura de tags criadas por dia, mês e ano, com detalhamento das obras e termos registrados.</div></div>", unsafe_allow_html=True)
-    daily = defaultdict(list)
-    monthly = defaultdict(list)
-    yearly = defaultdict(list)
-    for r in rows:
-        daily[r["day"]].append(r)
-        monthly[r["month"]].append(r)
-        yearly[r["year"]].append(r)
-
-    def series_chart(grouped: Dict[str, List[Dict[str, Any]]], title: str, key: str):
-        labels = sorted(grouped.keys())
-        values = [len(grouped[k]) for k in labels]
-        st.markdown(f"<div class='helper-box'><strong>{title}</strong></div>", unsafe_allow_html=True)
-        if PLOTLY_AVAILABLE:
-            fig = go.Figure(go.Bar(x=labels, y=values, marker_color="#6a8bd6"))
-            fig.update_layout(margin=dict(l=0,r=0,t=10,b=0), height=280, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(255,255,255,.0)")
-            st.plotly_chart(fig, use_container_width=True, key=key)
-        else:
-            st.bar_chart({"quantidade": values}, x_label=labels)
-        for label in labels[-6:][::-1]:
-            tags = [r["tag"] for r in grouped[label]]
-            works = sorted(set([r["work_title"] for r in grouped[label] if r["work_title"]]))
-            st.markdown(f"<div class='helper-box'><strong>{html.escape(label)}</strong><br>tags: {html.escape(', '.join(tags[:12]))}<br>obras: {html.escape(', '.join(works[:6]))}</div>", unsafe_allow_html=True)
-
-    series_chart(daily, "por dia", "temporal_day")
-    series_chart(monthly, "por mês", "temporal_month")
-    series_chart(yearly, "por ano", "temporal_year")
-
-
-def render_teia_3d(store: Store):
-    st.markdown("<div class='glass-wrap'><h3 style='margin-top:0'>teia 3d de conectividade</h3><div class='small-note'>rede de compartilhamento e interoperabilidade entre metadados institucionais, tags públicas, conceitos validados e ontologias.</div></div>", unsafe_allow_html=True)
-    if PLOTLY_AVAILABLE:
-        fig = plotly_network(store)
+    col1, col2 = st.columns([3, 1])
+    with col2:
+        st.session_state["network_types"] = st.multiselect("camadas visíveis", list(NODE_COLORS.keys()), default=st.session_state.get("network_types", list(NODE_COLORS.keys())), key="net_types")
+        st.session_state["network_size"] = st.slider("tamanho dos nós", 8, 20, int(st.session_state.get("network_size", 11)), 1, key="net_size")
+    with col1:
+        fig = build_network(store)
         if fig is not None:
-            st.plotly_chart(fig, use_container_width=True, key="network3d_plotly")
-            return
-    components.html(network_html(store), height=640, scrolling=False)
+            st.plotly_chart(fig, use_container_width=True, config={"displaylogo": False, "scrollZoom": True, "modeBarButtonsToAdd": ["toggleSpikelines"], "responsive": True}, key="network_3d_main")
 
 
-def render_works_admin(store: Store):
-    st.markdown("<div class='glass-wrap'><h3 style='margin-top:0'>obras na área administrativa</h3><div class='small-note'>cadastre novas obras e exclua obras existentes.</div></div>", unsafe_allow_html=True)
-    with st.form("add_work_form"):
-        title = st.text_input("título")
-        artist = st.text_input("artista")
-        year = st.text_input("ano")
-        image = st.text_input("url da imagem")
-        museum = st.text_input("museu")
-        collection = st.text_input("coleção")
-        place = st.text_input("lugar")
-        period = st.text_input("período")
-        technique = st.text_input("técnica")
-        material = st.text_input("material")
-        institution_tags = st.text_input("tags institucionais separadas por vírgula")
-        description = st.text_area("descrição")
-        open_data = st.text_input("fontes externas separadas por vírgula")
-        submitted = st.form_submit_button("adicionar obra")
-    if submitted:
-        if title.strip() and image.strip():
-            store.add_work({
-                "id": uid("w"),
-                "title": title.strip(),
-                "artist": artist.strip(),
-                "year": year.strip(),
-                "image": image.strip(),
-                "museum": museum.strip(),
-                "collection": collection.strip(),
-                "place": place.strip(),
-                "period": period.strip(),
-                "technique": technique.strip(),
-                "material": material.strip(),
-                "institution_tags": [x.strip() for x in institution_tags.split(",") if x.strip()],
-                "description": description.strip(),
-                "open_data": [x.strip() for x in open_data.split(",") if x.strip()],
-            })
-            st.success("obra adicionada.")
-            st.rerun()
-        else:
-            st.error("preencha ao menos título e url da imagem.")
+def render_works_admin(store: Store) -> None:
+    st.markdown('<div class="glass smallPanel"><div class="sectionTitle">obras</div><div class="helper">Cadastre novas obras, revise metadados e exclua registros quando necessário.</div></div>', unsafe_allow_html=True)
+    with st.expander("adicionar nova obra"):
+        title = st.text_input("título", key="new_title")
+        artist = st.text_input("artista", key="new_artist")
+        museum = st.text_input("museu", key="new_museum")
+        period = st.text_input("período", key="new_period")
+        technique = st.text_input("técnica", key="new_technique")
+        material = st.text_input("material", key="new_material")
+        place = st.text_input("lugar", key="new_place")
+        collection = st.text_input("coleção", key="new_collection")
+        image = st.text_input("url da imagem", key="new_image")
+        institution_tags = st.text_input("tags institucionais separadas por vírgula", key="new_inst_tags")
+        open_data = st.text_input("fontes externas separadas por vírgula", key="new_open_data")
+        if st.button("adicionar obra", key="save_new_work"):
+            if title.strip() and image.strip():
+                store.add_work({
+                    "id": f"obra-{slug(title)}-{len(store.works())+1}",
+                    "title": title.strip(), "artist": artist.strip(), "museum": museum.strip(), "period": period.strip(),
+                    "technique": technique.strip(), "material": material.strip(), "place": place.strip(), "collection": collection.strip(),
+                    "institution_tags": [x.strip() for x in institution_tags.split(",") if x.strip()],
+                    "open_data": [x.strip() for x in open_data.split(",") if x.strip()],
+                    "image": image.strip(),
+                })
+                st.success("Obra adicionada.")
+                st.rerun()
+            else:
+                st.warning("Preencha pelo menos título e URL da imagem.")
     for work in store.works():
-        st.markdown(f"<div class='helper-box'><strong>{html.escape(work['title'])}</strong> · {html.escape(work['artist'])}<br>{html.escape(work['museum'])}</div>", unsafe_allow_html=True)
-        if st.button("excluir obra", key=f"del_work_{work['id']}"):
-            store.delete_work(work["id"])
-            st.rerun()
+        col1, col2 = st.columns([5, 1])
+        with col1:
+            st.markdown(f'<div class="glass smallPanel"><strong>{html.escape(work["title"])} · {html.escape(work["artist"] or "sem artista")}</strong><br><span class="helper">{html.escape(work["museum"])} · {html.escape(work["period"])} · {html.escape(work["technique"])} · {html.escape(work["material"])} </span></div>', unsafe_allow_html=True)
+        with col2:
+            if st.button("excluir", key=f"del_work_{work['id']}"):
+                store.delete_work(work["id"])
+                st.rerun()
 
 
-def render_export(store: Store):
-    pdf_data = export_pdf_bytes(store)
-    st.download_button("exportar em pdf", pdf_data, file_name="relatorio_folksonomia.pdf", mime="application/pdf")
-    def to_csv_bytes(rows: List[Dict[str, Any]]) -> bytes:
-        if not rows:
-            return b""
-        headers = sorted({k for r in rows for k in r.keys()})
-        out = []
-        out.append(",".join(headers))
-        for r in rows:
-            vals = []
-            for h in headers:
-                v = r.get(h, "")
-                if isinstance(v, list):
-                    v = "; ".join(map(str, v))
-                vals.append('"' + str(v).replace('"', '""') + '"')
-            out.append(",".join(vals))
-        return "\n".join(out).encode("utf-8")
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.download_button("csv de tags", to_csv_bytes(store.tags()), file_name="tags.csv", mime="text/csv")
-    with c2:
-        st.download_button("csv de obras", to_csv_bytes(store.works()), file_name="obras.csv", mime="text/csv")
-    with c3:
-        st.download_button("csv de ontologias", to_csv_bytes(store.ontologies()), file_name="ontologias.csv", mime="text/csv")
+def export_pdf(store: Store) -> Optional[bytes]:
+    if not REPORTLAB_AVAILABLE:
+        return None
+    pdf_path = APP_DIR / f"relatorio_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+    doc = SimpleDocTemplate(str(pdf_path), pagesize=A4)
+    styles = getSampleStyleSheet()
+    story = []
+    story.append(Paragraph("Relatório Folksonomia", styles["Title"]))
+    story.append(Spacer(1, 12))
+    story.append(Paragraph(f"Obras monitoradas: {len(store.works())}", styles["BodyText"]))
+    story.append(Paragraph(f"Tags coletadas: {len(store.tags())}", styles["BodyText"]))
+    story.append(Paragraph(f"Validações: {len(store.validations())}", styles["BodyText"]))
+    story.append(Paragraph(f"Ontologias: {len(store.ontologies())}", styles["BodyText"]))
+    story.append(Spacer(1, 12))
+    for work in store.works():
+        story.append(Paragraph(f"{work['title']} · {work['artist']}", styles["Heading3"]))
+        story.append(Paragraph(f"Museu: {work['museum']}", styles["BodyText"]))
+        story.append(Paragraph(f"Período: {work['period']} · Técnica: {work['technique']} · Material: {work['material']}", styles["BodyText"]))
+        related = [t['tag'] for t in store.tags() if t['work_id'] == work['id']]
+        story.append(Paragraph("Tags: " + (", ".join(related[:20]) if related else "nenhuma"), styles["BodyText"]))
+        story.append(Spacer(1, 8))
+    doc.build(story)
+    return pdf_path.read_bytes()
 
 
-def admin_area(store: Store):
-    if not st.session_state.admin_logged_in:
-        render_admin_login(store)
+def render_export(store: Store) -> None:
+    st.markdown('<div class="glass smallPanel"><div class="sectionTitle">exportar</div><div class="helper">Exporte o relatório em PDF ou os dados em CSV para análise externa e documentação institucional.</div></div>', unsafe_allow_html=True)
+    pdf_data = export_pdf(store)
+    if pdf_data is None:
+        st.warning("Não foi possível gerar o PDF nesta execução porque reportlab não está disponível.")
+    else:
+        st.download_button("exportar pdf", pdf_data, file_name=f"folksonomia_relatorio_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf", mime="application/pdf", key="dl_pdf")
+    st.download_button("exportar tags csv", data=json.dumps(store.tags(), ensure_ascii=False, indent=2), file_name="tags.json", mime="application/json", key="dl_tags")
+    st.download_button("exportar obras csv", data=json.dumps(store.works(), ensure_ascii=False, indent=2), file_name="works.json", mime="application/json", key="dl_works")
+    st.download_button("exportar ontologias csv", data=json.dumps(store.ontologies(), ensure_ascii=False, indent=2), file_name="ontologies.json", mime="application/json", key="dl_ont")
+
+
+def render_admin(store: Store) -> None:
+    if not st.session_state.get("admin_logged", False):
+        st.markdown('<div class="glass smallPanel"><div class="sectionTitle">área administrativa</div><div class="helper">Use suas credenciais para entrar na área de monitoramento, validação, ontologias, análise temporal e teia 3d.</div></div>', unsafe_allow_html=True)
+        login = st.text_input("login", key="admin_login")
+        password = st.text_input("senha", type="password", key="admin_password")
+        if st.button("entrar", key="admin_enter"):
+            if store.admin_ok(login, password):
+                st.session_state["admin_logged"] = True
+                st.rerun()
+            else:
+                st.error("credenciais inválidas.")
         return
-    tabs = st.tabs(["painel", "validação", "ontologias", "análise temporal", "teia 3d", "obras", "exportar"])
+
+    tabs = st.tabs(["painel", "validação", "ontologias", "busca e aprendizagem", "análise temporal", "teia 3d", "obras", "exportar"])
     with tabs[0]:
-        render_admin_panel(store)
+        c1, c2, c3, c4 = st.columns(4)
+        metrics = [
+            ("obras monitoradas", len(store.works()), "base institucional ativa"),
+            ("tags coletadas", len(store.tags()), "marcação social acumulada"),
+            ("fila curatorial", max(0, len(store.tags()) - len(store.validations())), "itens em revisão"),
+            ("ontologias", len(store.ontologies()), "estrutura conceitual"),
+        ]
+        for col, (t, v, n) in zip([c1, c2, c3, c4], metrics):
+            with col:
+                st.markdown(f'<div class="glass metric"><div class="t">{t}</div><div class="v">{v}</div><div class="n">{n}</div></div>', unsafe_allow_html=True)
+        st.markdown('<div class="glass smallPanel"><div class="helper">O painel acompanha o que a instituição coleta na participação pública, o que ainda precisa de revisão e como as camadas institucionais se conectam aos termos sociais.</div></div>', unsafe_allow_html=True)
     with tabs[1]:
         render_validation(store)
     with tabs[2]:
         render_ontologies(store)
     with tabs[3]:
-        render_temporal(store)
+        render_search_learning(store)
     with tabs[4]:
-        render_teia_3d(store)
+        render_temporal(store)
     with tabs[5]:
-        render_works_admin(store)
+        render_network(store)
     with tabs[6]:
+        render_works_admin(store)
+    with tabs[7]:
         render_export(store)
-    if st.button("sair da área administrativa", key="logout_admin"):
-        st.session_state.admin_logged_in = False
+    if st.button("sair da administração", key="admin_logout"):
+        st.session_state["admin_logged"] = False
         st.rerun()
 
 
-def main():
-    st.set_page_config(page_title=APP_TITLE, layout="wide", initial_sidebar_state="collapsed")
-    init_state()
-    inject_css()
+def intro_flow(store: Store) -> None:
+    st.markdown('<div class="glass smallPanel"><div class="sectionTitle">acesso inicial</div><div class="helper">Primeiro responda ao questionário. Só depois a interface de marcação das obras será liberada.</div></div>', unsafe_allow_html=True)
+    familiarity = st.selectbox("1. qual é a sua frequência de visita a museus?", ["nunca", "raramente", "ocasionalmente", "frequentemente"], key="intro_familiarity")
+    documentation = st.selectbox("2. você já ouviu falar sobre documentação museológica?", ["nenhum", "já ouvi falar", "tenho noção básica", "conheço bem"], key="intro_documentation")
+    understanding = st.text_area("3. o que você entende por tags aplicadas a acervos? descreva com suas palavras.", placeholder="escreva com suas palavras", key="intro_understanding")
+    if st.button("liberar acesso às obras", key="unlock_button"):
+        if understanding.strip():
+            store.add_questionnaire({"user_id": get_user_id(), "familiarity": familiarity, "documentation": documentation, "understanding": understanding.strip(), "timestamp": now_str()})
+            st.session_state["public_access"] = True
+            st.rerun()
+        else:
+            st.warning("Escreva sua resposta na terceira pergunta para liberar o acesso.")
+
+
+def render_public(store: Store) -> None:
+    tabs = st.tabs(["explorar obras", "área administrativa"])
+    with tabs[0]:
+        if not st.session_state.get("public_access", False):
+            intro_flow(store)
+        else:
+            render_gallery(store)
+    with tabs[1]:
+        render_admin(store)
+
+
+def main() -> None:
     store = Store()
-    render_header()
-    if not st.session_state.intro_done:
-        intro_flow(store)
-        return
-    top_tabs = st.tabs(["explorar obras", "área administrativa"])
-    with top_tabs[0]:
-        render_public(store)
-    with top_tabs[1]:
-        admin_area(store)
+    inject_css()
+    render_brand()
+    render_public(store)
 
 
 if __name__ == "__main__":
