@@ -8,7 +8,12 @@ import base64
 import json
 import random
 import warnings
+import math
+import re
+import unicodedata
+from difflib import get_close_matches
 from collections import defaultdict
+import streamlit.components.v1 as components
 warnings.filterwarnings('ignore')
 
 st.set_page_config(
@@ -23,6 +28,9 @@ OBRAS_FILE = os.path.join(DATA_DIR, "obras.json")
 TAGS_FILE  = os.path.join(DATA_DIR, "tags.json")
 USERS_FILE = os.path.join(DATA_DIR, "users.json")
 ADMIN_FILE = os.path.join(DATA_DIR, "admin.json")
+ONTOLOGIES_FILE = os.path.join(DATA_DIR, "ontologias.json")
+EVENTS_FILE = os.path.join(DATA_DIR, "eventos.json")
+METADATA_FILE = os.path.join(DATA_DIR, "metadados_institucionais.json")
 ADMIN_USERNAME = "nugep"
 ADMIN_PASSWORD = "nugep123"
 
@@ -121,12 +129,359 @@ def tag_clusters(tags_list, threshold=0.35):
     for t in uniq: cl[find(t)].append(t)
     return [sorted(v) for v in cl.values() if len(v)>1]
 
+
+STATUS_OPTIONS = ["bruto","sugerido","validado","revisado","publicado"]
+THEME_GROUPS = {
+    "Religioso": ["religioso","religiao","igreja","santo","santa","cruz","crucifixo","biblia","anjo","oração","oracao","sagrado","sacra","altar","missa"],
+    "Guerra": ["guerra","batalha","arma","espada","soldado","militar","combate","violencia","violência","escudo","conflito","canhao","canhão"],
+    "Cor": ["azul","vermelho","verde","amarelo","preto","branco","rosa","roxo","lilás","lilas","dourado","prata","cinza","laranja","marrom"],
+    "Natureza": ["árvore","arvore","flor","céu","ceu","mar","rio","montanha","sol","lua","estrela","chuva","folha","animal","bosque"],
+    "Corpo": ["rosto","olho","mão","mao","corpo","cabeça","cabeca","pé","pe","mão","braço","braco"],
+    "Afeto": ["amor","dor","alegria","tristeza","medo","esperança","esperanca","saudade","calma","raiva"],
+}
+
+def normalize_text(value):
+    value = str(value or "").strip().lower()
+    value = unicodedata.normalize('NFKD', value).encode('ascii', 'ignore').decode('ascii')
+    value = re.sub(r'[^a-z0-9\s\-_]', ' ', value)
+    value = re.sub(r'\s+', ' ', value).strip()
+    return value
+
+def now_str():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+def hash_record(payload):
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+    return hashlib.sha256(raw.encode('utf-8')).hexdigest()
+
+def default_ontologies():
+    return [
+        {"id": 1, "nome": "Religioso", "categoria": "tema", "descricao": "Vocabulário para referências religiosas e sacras.", "termos": ["religioso","igreja","santo","santa","cruz","anjo","sagrado","altar"], "criado_em": now_str()},
+        {"id": 2, "nome": "Guerra", "categoria": "tema", "descricao": "Vocabulário para conflitos, batalhas e violência.", "termos": ["guerra","batalha","arma","soldado","espada","combate","militar"], "criado_em": now_str()},
+        {"id": 3, "nome": "Cor", "categoria": "atributo", "descricao": "Vocabulário básico cromático.", "termos": ["azul","vermelho","verde","amarelo","preto","branco","rosa","roxo","dourado"], "criado_em": now_str()},
+        {"id": 4, "nome": "Emoção", "categoria": "tema", "descricao": "Vocabulário para afetos e estados emocionais.", "termos": ["triste","alegre","dor","amor","medo","calma","raiva","saudade"], "criado_em": now_str()},
+    ]
+
+def default_institution_metadata():
+    return {
+        "instituicao": "NUGEP / Sistema Folksonomia Digital",
+        "colecao": "Acervo experimental",
+        "licenca_dados": "Uso interno / open data analítico sob revisão",
+        "responsavel": "Administração do sistema",
+        "ultima_atualizacao": now_str(),
+        "descricao": "Registro analítico e institucional conectado ao fluxo de tags, ontologias, auditoria e proveniência."
+    }
+
+def ensure_support_files():
+    ensure_data_dir()
+    if not os.path.exists(ONTOLOGIES_FILE):
+        save_json_file(ONTOLOGIES_FILE, default_ontologies())
+    if not os.path.exists(EVENTS_FILE):
+        save_json_file(EVENTS_FILE, [])
+    if not os.path.exists(METADATA_FILE):
+        save_json_file(METADATA_FILE, default_institution_metadata())
+
+def load_ontologies():
+    ensure_support_files()
+    onts = load_json_file(ONTOLOGIES_FILE, default_ontologies())
+    return onts if isinstance(onts, list) else default_ontologies()
+
+def save_ontologies(ontologies):
+    return save_json_file(ONTOLOGIES_FILE, ontologies)
+
+def load_institution_metadata():
+    ensure_support_files()
+    meta = load_json_file(METADATA_FILE, default_institution_metadata())
+    if not isinstance(meta, dict):
+        meta = default_institution_metadata()
+    return meta
+
+def save_institution_metadata(meta):
+    meta = dict(meta or {})
+    meta["ultima_atualizacao"] = now_str()
+    return save_json_file(METADATA_FILE, meta)
+
+def all_events():
+    ensure_support_files()
+    ev = load_json_file(EVENTS_FILE, [])
+    return pd.DataFrame(ev) if ev else pd.DataFrame()
+
+def get_last_event_hash():
+    events = load_json_file(EVENTS_FILE, [])
+    return events[-1]["event_hash"] if events else "GENESIS"
+
+def register_event(event_type, actor, actor_role, entity_type, entity_id, payload, origin="sistema", automatic=False, status="bruto", previous_state=None, circulation_action=None):
+    ensure_support_files()
+    events = load_json_file(EVENTS_FILE, [])
+    record = {
+        "id": len(events) + 1,
+        "timestamp": now_str(),
+        "event_type": event_type,
+        "actor": actor or "sistema",
+        "actor_role": actor_role or "system",
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+        "origin": origin,
+        "automatic": bool(automatic),
+        "status": status,
+        "payload": payload,
+        "previous_state": previous_state,
+        "previous_hash": get_last_event_hash(),
+        "circulation_action": circulation_action,
+    }
+    record["event_hash"] = hash_record(record)
+    events.append(record)
+    save_json_file(EVENTS_FILE, events)
+    return record
+
+def ontology_terms_map(ontologies=None):
+    ontologies = ontologies or load_ontologies()
+    mapping = {}
+    for ont in ontologies:
+        for term in ont.get("termos", []):
+            mapping[normalize_text(term)] = ont.get("nome", "Ontologia")
+    return mapping
+
+def match_ontologies_for_tag(tag, ontologies=None):
+    ontologies = ontologies or load_ontologies()
+    nt = normalize_text(tag)
+    matches = []
+    for ont in ontologies:
+        for term in ont.get("termos", []):
+            nterm = normalize_text(term)
+            if nt == nterm or (nterm and (nterm in nt or nt in nterm)):
+                matches.append(ont.get("nome", "Ontologia"))
+                break
+    return sorted(set(matches))
+
+def classify_tag_group(tag):
+    nt = normalize_text(tag)
+    for group, terms in THEME_GROUPS.items():
+        for term in terms:
+            nterm = normalize_text(term)
+            if nt == nterm or (nterm and (nterm in nt or nt in nterm)):
+                return group
+    return "Outros"
+
+def levenshtein(a, b):
+    a = normalize_text(a)
+    b = normalize_text(b)
+    if a == b:
+        return 0
+    if not a:
+        return len(b)
+    if not b:
+        return len(a)
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        curr = [i]
+        for j, cb in enumerate(b, 1):
+            cost = 0 if ca == cb else 1
+            curr.append(min(curr[-1] + 1, prev[j] + 1, prev[j-1] + cost))
+        prev = curr
+    return prev[-1]
+
+def build_spell_suggestions(tags_df, ontologies=None):
+    if tags_df.empty:
+        return pd.DataFrame()
+    ontologies = ontologies or load_ontologies()
+    tag_counts = tags_df['tag'].value_counts().to_dict()
+    vocab = list(tag_counts.keys())
+    ontology_terms = []
+    for ont in ontologies:
+        ontology_terms.extend(ont.get('termos', []))
+    reference_terms = sorted(set(vocab + ontology_terms))
+    rows = []
+    for tag, freq in tag_counts.items():
+        normalized_reference = [t for t in reference_terms if normalize_text(t) != normalize_text(tag)]
+        close = get_close_matches(tag, normalized_reference, n=3, cutoff=0.78)
+        candidate = close[0] if close else None
+        if candidate:
+            dist = levenshtein(tag, candidate)
+            if dist <= 2 or normalize_text(candidate) in normalize_text(tag) or normalize_text(tag) in normalize_text(candidate):
+                rows.append({
+                    "tag": tag,
+                    "frequencia": freq,
+                    "sugestao": candidate,
+                    "distancia": dist,
+                    "grupo_tematico": classify_tag_group(tag),
+                    "ontologias": ", ".join(match_ontologies_for_tag(tag, ontologies)) or "—"
+                })
+    if not rows:
+        return pd.DataFrame()
+    df = pd.DataFrame(rows).sort_values(["distancia", "frequencia"], ascending=[True, False]).drop_duplicates(subset=["tag"])
+    return df
+
+def analyze_theme_groups(tags_df):
+    if tags_df.empty:
+        return pd.DataFrame(columns=["Grupo","Qtd Tags","Tags Únicas"])
+    tmp = tags_df.copy()
+    tmp['grupo_tematico'] = tmp['tag'].apply(classify_tag_group)
+    res = tmp.groupby('grupo_tematico').agg(Qtd_Tags=('tag','count'), Tags_Unicas=('tag','nunique')).reset_index()
+    res.columns = ['Grupo','Qtd Tags','Tags Únicas']
+    return res.sort_values('Qtd Tags', ascending=False)
+
+def analyze_ontology_usage(tags_df, ontologies=None):
+    if tags_df.empty:
+        return pd.DataFrame(columns=["Ontologia","Ocorrências","Tags Correspondentes"])
+    ontologies = ontologies or load_ontologies()
+    rows = []
+    for ont in ontologies:
+        terms = [normalize_text(t) for t in ont.get('termos', [])]
+        matched = []
+        for tag in tags_df['tag'].tolist():
+            nt = normalize_text(tag)
+            if any(t == nt or (t and (t in nt or nt in t)) for t in terms):
+                matched.append(tag)
+        rows.append({
+            "Ontologia": ont.get('nome', 'Ontologia'),
+            "Categoria": ont.get('categoria', '—'),
+            "Ocorrências": len(matched),
+            "Tags Correspondentes": ", ".join(pd.Series(matched).value_counts().head(8).index.tolist()) if matched else "—"
+        })
+    return pd.DataFrame(rows).sort_values('Ocorrências', ascending=False)
+
+def update_tag_record(tag_id, new_tag=None, new_status=None, admin_user="admin"):
+    tags = load_json_file(TAGS_FILE, [])
+    for idx, tag in enumerate(tags):
+        if tag.get('id') == tag_id:
+            previous = dict(tag)
+            if new_tag is not None and str(new_tag).strip():
+                tag['tag'] = str(new_tag).strip().lower()
+                tag['grupo_tematico'] = classify_tag_group(tag['tag'])
+                tag['ontologias'] = match_ontologies_for_tag(tag['tag'])
+            if new_status is not None and str(new_status).strip():
+                tag['status'] = new_status
+            tag['ultima_revisao'] = now_str()
+            tags[idx] = tag
+            save_json_file(TAGS_FILE, tags)
+            register_event(
+                event_type="human_tag_revision",
+                actor=admin_user,
+                actor_role="admin",
+                entity_type="tag",
+                entity_id=tag_id,
+                payload=tag,
+                origin="revisao_humana",
+                automatic=False,
+                status=tag.get('status', 'revisado'),
+                previous_state=previous,
+            )
+            st.cache_data.clear()
+            return True
+    return False
+
+def render_speech_button(text, label="Ouvir audiodescrição"):
+    safe = json.dumps(str(text or ""), ensure_ascii=False)
+    components.html(
+        f"""
+        <div style='margin:8px 0 16px 0'>
+          <button onclick='window.speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance({safe}); u.lang="pt-BR"; u.rate=0.95; window.speechSynthesis.speak(u);'
+            style='background:rgba(255,255,255,.22);color:white;border:1px solid rgba(255,255,255,.35);padding:10px 18px;border-radius:999px;cursor:pointer;font-family:"Times New Roman",serif;font-size:16px;'>🔊 {label}</button>
+        </div>
+        """,
+        height=55,
+    )
+
+def get_accessibility_settings():
+    if 'acc_font_size' not in st.session_state:
+        st.session_state['acc_font_size'] = 18
+    if 'acc_theme' not in st.session_state:
+        st.session_state['acc_theme'] = 'Escuro'
+    if 'acc_focus_audio' not in st.session_state:
+        st.session_state['acc_focus_audio'] = True
+    return {
+        'font_size': st.session_state['acc_font_size'],
+        'theme': st.session_state['acc_theme'],
+        'focus_audio': st.session_state['acc_focus_audio']
+    }
+
+def apply_accessibility_settings():
+    settings = get_accessibility_settings()
+    bg = '#000000'
+    fg = '#ffffff'
+    card = 'rgba(255,255,255,.15)'
+    if settings['theme'] == 'Claro':
+        bg = '#f5f0e8'
+        fg = '#1a1a1a'
+        card = 'rgba(255,255,255,.85)'
+    elif settings['theme'] == 'Alto Contraste':
+        bg = '#000000'
+        fg = '#ffe600'
+        card = 'rgba(20,20,20,.95)'
+    st.markdown(f"""
+    <style>
+    *{{font-family:'Times New Roman', Times, serif !important;}}
+    .stApp{{color:{fg} !important;background:{bg} !important;}}
+    .glass-card,.obra-card,.kpi-card,.sc,.insight,.cluster-wrap{{background:{card} !important;}}
+    p,div,label,span,button,input,textarea,select,h1,h2,h3,h4,h5,h6{{font-size:{settings['font_size']}px !important;}}
+    </style>
+    """, unsafe_allow_html=True)
+
+def render_accessibility_panel():
+    st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+    st.markdown("### Acessibilidade", unsafe_allow_html=True)
+    c1, c2, c3 = st.columns([1,1,1])
+    with c1:
+        st.session_state['acc_theme'] = st.selectbox("Modo visual", ["Escuro","Claro","Alto Contraste"], index=["Escuro","Claro","Alto Contraste"].index(st.session_state.get('acc_theme', 'Escuro')), key='acc_theme_sel')
+    with c2:
+        st.session_state['acc_font_size'] = st.slider("Tamanho da tipografia", 14, 28, int(st.session_state.get('acc_font_size', 18)), 1, key='acc_font_size_slider')
+    with c3:
+        st.session_state['acc_focus_audio'] = st.checkbox("Foco em audiodescrição", value=st.session_state.get('acc_focus_audio', True), key='acc_audio_focus')
+    st.caption("A tipografia foi ajustada para Times New Roman e o modo de alto contraste prioriza leitura e audiodescrição.")
+    st.markdown("</div>", unsafe_allow_html=True)
+    apply_accessibility_settings()
+
+def build_graph_svg(nodes, edges, width=920, height=520):
+    if not nodes:
+        return "<div class='insight'>Sem dados suficientes para gerar o grafo.</div>"
+    cx, cy = width/2, height/2
+    radius = min(width, height) * 0.34
+    parts = [f"<svg viewBox='0 0 {width} {height}' width='100%' height='{height}' xmlns='http://www.w3.org/2000/svg'>"]
+    pos = {}
+    for i, node in enumerate(nodes):
+        angle = (2 * math.pi * i / max(len(nodes), 1)) - math.pi/2
+        x = cx + radius * math.cos(angle)
+        y = cy + radius * math.sin(angle)
+        pos[node['id']] = (x, y)
+    for edge in edges:
+        a, b, w = edge
+        if a in pos and b in pos:
+            x1, y1 = pos[a]
+            x2, y2 = pos[b]
+            parts.append(f"<line x1='{x1:.1f}' y1='{y1:.1f}' x2='{x2:.1f}' y2='{y2:.1f}' stroke='rgba(255,255,255,.35)' stroke-width='{1 + (w*4):.1f}' />")
+    for node in nodes:
+        x, y = pos[node['id']]
+        size = node.get('size', 18)
+        color = node.get('color', '#a7e6ff')
+        label = node.get('label', node['id'])
+        parts.append(f"<circle cx='{x:.1f}' cy='{y:.1f}' r='{size:.1f}' fill='{color}' fill-opacity='0.78' stroke='white' stroke-opacity='0.5' stroke-width='1.5'/>")
+        parts.append(f"<text x='{x:.1f}' y='{y + size + 18:.1f}' text-anchor='middle' fill='white' font-size='16' font-family='Times New Roman'>{label}</text>")
+    parts.append('</svg>')
+    return ''.join(parts)
+
+def build_graph_data(tags_df, threshold=0.35):
+    if tags_df.empty:
+        return [], []
+    counts = tags_df['tag'].value_counts().head(10)
+    top_tags = counts.index.tolist()
+    conns = tag_connections(top_tags, threshold=threshold)
+    nodes = []
+    for tag, freq in counts.items():
+        nodes.append({
+            'id': tag,
+            'label': tag[:16],
+            'size': 14 + min(freq, 10) * 1.6,
+            'color': {'Religioso':'#a78bfa','Guerra':'#f87171','Cor':'#60a5fa','Natureza':'#34d399','Afeto':'#f9a8d4','Outros':'#fcd34d'}.get(classify_tag_group(tag), '#a7e6ff')
+        })
+    edges = [(c['tag_a'], c['tag_b'], c['similaridade']) for c in conns if c['tag_a'] in top_tags and c['tag_b'] in top_tags]
+    return nodes, edges
+
 # ── CSS ───────────────────────────────────────────────────────────────
 def load_css():
     st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap');
-*{margin:0;padding:0;box-sizing:border-box;font-family:'Poppins',sans-serif!important}
+*{margin:0;padding:0;box-sizing:border-box;font-family:'Times New Roman', Times, serif!important}
 @keyframes bg{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
 .stApp{background:linear-gradient(-45deg,#000 0%,#001F3F 25%,#000 50%,#001F3F 75%,#000 100%);
   background-size:400% 400%;animation:bg 15s ease infinite;color:#e0e0e0}
@@ -282,6 +637,7 @@ def pbar(pct, color="#60a5fa"):
 
 # ── DADOS ─────────────────────────────────────────────────────────────
 def check_admin():
+    ensure_support_files()
     admins = load_json_file(ADMIN_FILE, [])
     if not admins:
         hashed = hashlib.sha256(ADMIN_PASSWORD.encode()).hexdigest()
@@ -304,21 +660,45 @@ def load_obras():
     if not obras:
         save_json_file(OBRAS_FILE, default)
         return default
+    changed = False
+    for obra in obras:
+        if 'audio_descricao' not in obra:
+            obra['audio_descricao'] = f"Audiodescrição de {obra.get('titulo','obra')} por {obra.get('artista','autor não identificado')}, datada de {obra.get('ano','data não informada')}. A obra apresenta composição visual que pode ser descrita e aprofundada pelo setor de documentação."
+            changed = True
+        if 'metadado_status' not in obra:
+            obra['metadado_status'] = 'bruto'
+            changed = True
+    if changed:
+        save_json_file(OBRAS_FILE, obras)
     return obras
 
 def save_answers(uid, animal, answers):
     users = load_json_file(USERS_FILE, [])
-    users.append({"user_id":uid,"animal_name":animal,
-                  "timestamp":datetime.now().strftime("%Y-%m-%d %H:%M:%S"),**answers})
-    return save_json_file(USERS_FILE, users)
+    record = {"user_id":uid,"animal_name":animal,
+                  "timestamp":datetime.now().strftime("%Y-%m-%d %H:%M:%S"),**answers}
+    users.append(record)
+    ok = save_json_file(USERS_FILE, users)
+    if ok:
+        register_event('questionnaire_submission', uid, 'user', 'user_profile', uid, record, origin='questionario', automatic=False, status='bruto')
+    return ok
 
 def save_tag(uid, obra_id, tag):
     tags = load_json_file(TAGS_FILE, [])
-    tags.append({"id":len(tags)+1,"user_id":uid,"obra_id":obra_id,
-                 "tag":tag.lower().strip(),
-                 "timestamp":datetime.now().strftime("%Y-%m-%d %H:%M:%S")})
+    clean_tag = tag.lower().strip()
+    record = {"id":len(tags)+1,"user_id":uid,"obra_id":obra_id,
+                 "tag":clean_tag,
+                 "timestamp":datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                 "status":"bruto",
+                 "origem":"usuario",
+                 "automatico":False,
+                 "grupo_tematico": classify_tag_group(clean_tag),
+                 "ontologias": match_ontologies_for_tag(clean_tag)}
+    tags.append(record)
+    ok = save_json_file(TAGS_FILE, tags)
     st.cache_data.clear()
-    return save_json_file(TAGS_FILE, tags)
+    if ok:
+        register_event('tag_created', uid, 'user', 'tag', record['id'], record, origin='obra', automatic=False, status='bruto')
+    return ok
 
 def get_user_tags(uid):
     tags = load_json_file(TAGS_FILE, [])
@@ -442,6 +822,7 @@ def show_header():
 
 def main():
     load_css()
+    apply_accessibility_settings()
     try: check_admin()
     except Exception as e: st.error(f"Erro ao inicializar: {e}")
 
@@ -499,6 +880,7 @@ def show_obras():
     st.markdown("<h1 class='main-title'>Galeria de Obras de Arte</h1>", unsafe_allow_html=True)
     st.markdown("<p class='subtitle'>Explore as obras e contribua com suas tags descritivas</p>",
                 unsafe_allow_html=True)
+    render_accessibility_panel()
     obras = load_obras()
     if not obras:
         st.info("Nenhuma obra cadastrada.")
@@ -556,6 +938,12 @@ def show_obras():
             else:
                 st.info("Você ainda não criou tags para esta obra")
 
+            with st.expander("Acessibilidade e audiodescrição", expanded=st.session_state.get('acc_focus_audio', True)):
+                st.markdown(f"**Título:** {obra.get('titulo','—')}")
+                st.markdown(f"**Artista:** {obra.get('artista','—')} · **Ano:** {obra.get('ano','—')}")
+                st.markdown(f"**Audiodescrição:** {obra.get('audio_descricao','Descrição não cadastrada.')}")
+                render_speech_button(obra.get('audio_descricao','Descrição não cadastrada.'), label='Ouvir audiodescrição da obra')
+
 # ── ADMIN ─────────────────────────────────────────────────────────────
 def show_admin():
     if 'admin_logged_in' not in st.session_state:
@@ -593,6 +981,9 @@ def show_admin():
             " Análise de Tags",
             " Conexões de Tags",
             " Usuários & Questionário",
+            " Ontologias",
+            " Validação & Auditoria",
+            " Grafo & Open Data",
             " Obras",
             " Exportar"
         ])
@@ -600,8 +991,11 @@ def show_admin():
         with tabs[1]: tab_tags()
         with tabs[2]: tab_connections()
         with tabs[3]: tab_users_quest()
-        with tabs[4]: tab_obras()
-        with tabs[5]: tab_export()
+        with tabs[4]: tab_ontologies()
+        with tabs[5]: tab_validation_audit()
+        with tabs[6]: tab_graph_open_data()
+        with tabs[7]: tab_obras()
+        with tabs[8]: tab_export()
         _, c2, _ = st.columns([1,1,1])
         with c2:
             if st.button(" Sair do Sistema", use_container_width=True):
@@ -1244,8 +1638,10 @@ def tab_obras():
                     st.markdown(f"*{obra['artista']} — {obra['ano']}*")
                 with c3:
                     if st.button("🗑️ Remover", key=f"del_{obra['id']}"):
+                        previous = dict(obra)
                         obras.remove(obra)
                         save_json_file(OBRAS_FILE, obras)
+                        register_event('obra_deleted', st.session_state.get('admin_username','admin'), 'admin', 'obra', previous.get('id'), {'obra_removida': previous}, origin='gestao_obras', automatic=False, status=previous.get('metadado_status','revisado'))
                         st.success("Obra removida!")
                         st.cache_data.clear()
                         st.rerun()
@@ -1259,11 +1655,15 @@ def tab_obras():
             artista = st.text_input("Artista")
             ano     = st.text_input("Ano")
             imagem  = st.text_input("URL da Imagem")
+            audio_descricao = st.text_area("Audiodescrição detalhada", placeholder="Descreva a composição, cores, enquadramento, figuras e atmosfera da obra...")
+            status_meta = st.selectbox("Status do metadado", STATUS_OPTIONS, index=0)
             if st.form_submit_button(" Adicionar Obra"):
                 if titulo and artista and ano and imagem:
                     nid = max([o['id'] for o in obras])+1 if obras else 1
-                    obras.append({"id":nid,"titulo":titulo,"artista":artista,"ano":ano,"imagem":imagem})
+                    novo = {"id":nid,"titulo":titulo,"artista":artista,"ano":ano,"imagem":imagem,"audio_descricao": audio_descricao.strip() or f'Audiodescrição de {titulo} por {artista}.', "metadado_status": status_meta}
+                    obras.append(novo)
                     save_json_file(OBRAS_FILE, obras)
+                    register_event('obra_created', st.session_state.get('admin_username','admin'), 'admin', 'obra', nid, novo, origin='gestao_obras', automatic=False, status=status_meta)
                     st.success("Obra adicionada!")
                     st.cache_data.clear()
                     st.rerun()
@@ -1286,31 +1686,39 @@ def tab_export():
         with c1:
             st.markdown("#### Tags")
             if not tdf.empty:
-                st.download_button(" Todas as Tags (CSV)",
+                clicked = st.download_button(" Todas as Tags (CSV)",
                     tdf.to_csv(index=False).encode('utf-8'),
                     f"tags_{datetime.now().strftime('%Y%m%d')}.csv","text/csv",
                     use_container_width=True)
+                if clicked:
+                    register_event('data_export', st.session_state.get('admin_username','admin'), 'admin', 'dataset', 'tags_csv', {'linhas': len(tdf)}, origin='exportacao', automatic=False, status='publicado', circulation_action='download_tags_csv')
                 freq = tdf['tag'].value_counts().reset_index()
                 freq.columns=['Tag','Frequência']
                 freq['%']=(freq['Frequência']/freq['Frequência'].sum()*100).round(2)
-                st.download_button(" Frequências (CSV)",
+                clicked = st.download_button(" Frequências (CSV)",
                     freq.to_csv(index=False).encode('utf-8'),
                     f"freq_{datetime.now().strftime('%Y%m%d')}.csv","text/csv",
                     use_container_width=True)
+                if clicked:
+                    register_event('data_export', st.session_state.get('admin_username','admin'), 'admin', 'dataset', 'frequencias_csv', {'linhas': len(freq)}, origin='exportacao', automatic=False, status='publicado', circulation_action='download_freq_csv')
         with c2:
             st.markdown("#### Usuários")
             if not udf.empty:
-                st.download_button(" Usuários (CSV)",
+                clicked = st.download_button(" Usuários (CSV)",
                     udf.to_csv(index=False).encode('utf-8'),
                     f"usuarios_{datetime.now().strftime('%Y%m%d')}.csv","text/csv",
                     use_container_width=True)
+                if clicked:
+                    register_event('data_export', st.session_state.get('admin_username','admin'), 'admin', 'dataset', 'usuarios_csv', {'linhas': len(udf)}, origin='exportacao', automatic=False, status='publicado', circulation_action='download_usuarios_csv')
         with c3:
             st.markdown("#### Obras")
             if obs:
-                st.download_button(" Obras (CSV)",
+                clicked = st.download_button(" Obras (CSV)",
                     pd.DataFrame(obs).to_csv(index=False).encode('utf-8'),
                     f"obras_{datetime.now().strftime('%Y%m%d')}.csv","text/csv",
                     use_container_width=True)
+                if clicked:
+                    register_event('data_export', st.session_state.get('admin_username','admin'), 'admin', 'dataset', 'obras_csv', {'linhas': len(obs)}, origin='exportacao', automatic=False, status='publicado', circulation_action='download_obras_csv')
 
         st.markdown(divider(), unsafe_allow_html=True)
         st.markdown("#### Exportar Conexões de Tags")
@@ -1321,10 +1729,12 @@ def tab_export():
                     conns = tag_connections(tdf['tag'].tolist(), threshold=thr)
                 if conns:
                     cdf = pd.DataFrame(conns)
-                    st.download_button(" Conexões (CSV)",
+                    clicked = st.download_button(" Conexões (CSV)",
                         cdf.to_csv(index=False).encode('utf-8'),
                         f"conexoes_{datetime.now().strftime('%Y%m%d')}.csv","text/csv",
                         use_container_width=True)
+                    if clicked:
+                        register_event('data_export', st.session_state.get('admin_username','admin'), 'admin', 'dataset', 'conexoes_csv', {'linhas': len(cdf)}, origin='exportacao', automatic=False, status='publicado', circulation_action='download_conexoes_csv')
                     st.success(f"{len(conns)} conexões exportadas.")
                 else:
                     st.info("Nenhuma conexão encontrada com este limiar.")
@@ -1345,24 +1755,32 @@ def tab_export():
             st.markdown("##### Questionário")
             hq = html_quest(uid, uanim, udf)
             if hq:
-                st.download_button(" Respostas (HTML/PDF)", hq,
+                clicked = st.download_button(" Respostas (HTML/PDF)", hq,
                     f"quest_{uid[:8]}.html","text/html", use_container_width=True)
+                if clicked:
+                    register_event('data_export', st.session_state.get('admin_username','admin'), 'admin', 'dataset', f'quest_{uid[:8]}', {'usuario': uid}, origin='exportacao', automatic=False, status='publicado', circulation_action='download_questionario_html')
             ud = udf[udf['user_id']==uid]
             if not ud.empty:
-                st.download_button(" Respostas (CSV)",
+                clicked = st.download_button(" Respostas (CSV)",
                     ud.to_csv(index=False).encode('utf-8'),
                     f"quest_{uid[:8]}.csv","text/csv", use_container_width=True)
+                if clicked:
+                    register_event('data_export', st.session_state.get('admin_username','admin'), 'admin', 'dataset', f'quest_csv_{uid[:8]}', {'usuario': uid}, origin='exportacao', automatic=False, status='publicado', circulation_action='download_questionario_csv')
         with c2:
             st.markdown("##### Tags Criadas")
             ht = html_tags(uid, uanim, obs, tdf)
             if ht:
-                st.download_button(" Tags (HTML/PDF)", ht,
+                clicked = st.download_button(" Tags (HTML/PDF)", ht,
                     f"tags_{uid[:8]}.html","text/html", use_container_width=True)
+                if clicked:
+                    register_event('data_export', st.session_state.get('admin_username','admin'), 'admin', 'dataset', f'tags_html_{uid[:8]}', {'usuario': uid}, origin='exportacao', automatic=False, status='publicado', circulation_action='download_tags_html')
             ut = get_user_tags(uid)
             if not ut.empty:
-                st.download_button(" Tags (CSV)",
+                clicked = st.download_button(" Tags (CSV)",
                     ut.to_csv(index=False).encode('utf-8'),
                     f"tags_{uid[:8]}.csv","text/csv", use_container_width=True)
+                if clicked:
+                    register_event('data_export', st.session_state.get('admin_username','admin'), 'admin', 'dataset', f'tags_csv_{uid[:8]}', {'usuario': uid}, origin='exportacao', automatic=False, status='publicado', circulation_action='download_tags_csv_usuario')
 
 if __name__ == "__main__":
     main()
