@@ -401,8 +401,14 @@ def build_redundancy_mesh(record, events):
         record.get('origin'),
         record.get('interoperability_refs', []),
     )
-    linked_records.extend(extract_related_identifiers(record.get('payload', {}), record.get('semantic_snapshot', {}), record.get('interoperability_refs', [])))
-    linked_records = [v for v in dict.fromkeys(linked_records) if v]
+    linked_records.extend(
+        extract_related_identifiers(
+            record.get('payload', {}),
+            record.get('semantic_snapshot', {}),
+            record.get('interoperability_refs', []),
+        )
+    )
+    linked_records = [str(v) for v in dict.fromkeys(linked_records) if v]
     chain_anchor = hash_record({
         'ledger_no': record.get('ledger_no'),
         'previous_hash': record.get('previous_hash'),
@@ -423,19 +429,47 @@ def build_redundancy_mesh(record, events):
         'coord': hash_record({'term': term, 'anchor': chain_anchor})[:16],
         'entity': f"{record.get('entity_type', '—')}::{record.get('entity_id', '—')}"
     } for term in search_index[:24]]
-    replica_map = [{
-        'slot': i + 1,
-        'shard_hash': hashlib.sha256(part.encode('utf-8')).hexdigest()[:20],
-        'anchor': chain_anchor[:20],
-        'checksum': recovery_checksum[:20]
-    } for i, part in enumerate(shards)]
+    replica_map = []
+    mirror_index = []
+    for i, shard in enumerate(shards):
+        fragment = ''
+        shard_hash = ''
+        fragment_len = 0
+        if isinstance(shard, dict):
+            fragment = str(shard.get('fragmento', ''))
+            shard_hash = str(shard.get('hash_fragmento', '')) or hashlib.sha256(fragment.encode('utf-8')).hexdigest()
+            fragment_len = safe_int(shard.get('tamanho'), len(fragment))
+        else:
+            fragment = str(shard or '')
+            shard_hash = hashlib.sha256(fragment.encode('utf-8')).hexdigest()
+            fragment_len = len(fragment)
+            shards[i] = {
+                'ordem': i + 1,
+                'fragmento': fragment,
+                'hash_fragmento': shard_hash,
+                'tamanho': fragment_len,
+            }
+        replica_map.append({
+            'slot': i + 1,
+            'ordem': safe_int(shards[i].get('ordem'), i + 1),
+            'shard_hash': shard_hash[:20],
+            'anchor': chain_anchor[:20],
+            'checksum': recovery_checksum[:20],
+            'fragment_len': fragment_len,
+            'mirror_key': hash_record({'slot': i + 1, 'anchor': chain_anchor, 'fragmento': fragment})[:20],
+        })
+        mirror_index.append({
+            'slot': i + 1,
+            'prefixos': sorted(set([fragment[:1], fragment[:2], fragment[:3]]) - {''}),
+            'hash': shard_hash[:20],
+        })
     redundancy_mesh = {
         'global_chain_anchor': record.get('previous_hash', 'GENESIS'),
         'entity_chain_anchor': record.get('entity_previous_hash', 'GENESIS_ENTITY'),
         'linked_records': linked_records[:16],
         'keyword_index_size': len(search_index),
         'cipher_algorithm': 'xor_sha256_stream',
-        'recovery_strategy': 'fragmentacao_intercalada+hashes+espelho_semantico+indice_prefixado+replicas_cruzadas',
+        'recovery_strategy': 'fragmentacao_intercalada+hashes+espelho_semantico+indice_prefixado+replicas_cruzadas+malha_de_recuperacao',
         'mirror_points': [
             record.get('semantic_archive_ref', '—'),
             f"{record.get('entity_type', '—')}::{record.get('entity_id', '—')}",
@@ -446,10 +480,13 @@ def build_redundancy_mesh(record, events):
         'payload_checksum': hashlib.sha256(payload_txt.encode('utf-8')).hexdigest(),
         'snapshot_checksum': hashlib.sha256(snapshot_txt.encode('utf-8')).hexdigest(),
         'replica_map': replica_map,
+        'mirror_index': mirror_index,
         'semantic_coordinates': semantic_coordinates,
         'cross_entity_echoes': linked_records[:10],
         'puzzle_density': len(shards),
         'search_windows': sorted(set(term[:1] for term in search_index if term))[:64],
+        'search_prefixes': sorted(set(term[:3] for term in search_index if len(term) >= 3))[:128],
+        'redundant_references': sorted(set(linked_records[:16] + [r.get('hash') for r in mirror_index if isinstance(r, dict)])),
     }
     return {
         'payload_cipher': payload_cipher,
