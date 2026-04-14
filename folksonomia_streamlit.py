@@ -51,6 +51,9 @@ except ModuleNotFoundError:
         def number_of_nodes(self):
             return len(self._nodes)
 
+        def number_of_edges(self):
+            return len(self._edges)
+
         def edges(self):
             return [(a, b) for a, b, _ in self._edges]
 
@@ -1156,51 +1159,78 @@ def compute_graph_positions(graph: nx.Graph) -> Dict[str, Tuple[float, float]]:
     return positions
 
 
-def plot_network(graph: nx.Graph) -> Optional[go.Figure]:
+def plot_network(graph: nx.Graph) -> Optional[str]:
     if graph.number_of_nodes() == 0:
         return None
     pos = compute_graph_positions(graph)
-    edge_x, edge_y = [], []
+    width, height = 1100, 640
+    xs = [coord[0] for coord in pos.values()]
+    ys = [coord[1] for coord in pos.values()]
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+    pad = 70
+
+    def sx(x: float) -> float:
+        if max_x == min_x:
+            return width / 2
+        return pad + ((x - min_x) / (max_x - min_x)) * (width - 2 * pad)
+
+    def sy(y: float) -> float:
+        if max_y == min_y:
+            return height / 2
+        return pad + ((y - min_y) / (max_y - min_y)) * (height - 2 * pad)
+
+    edge_svg: List[str] = []
     for source, target in graph.edges():
         x0, y0 = pos[source]
         x1, y1 = pos[target]
-        edge_x.extend([x0, x1, None])
-        edge_y.extend([y0, y1, None])
-    edge_trace = go.Scatter(
-        x=edge_x,
-        y=edge_y,
-        mode="lines",
-        line=dict(width=1),
-        hoverinfo="none",
-    )
+        edge_svg.append(
+            f"<line x1='{sx(x0):.1f}' y1='{sy(y0):.1f}' x2='{sx(x1):.1f}' y2='{sy(y1):.1f}' "
+            "stroke='rgba(255,255,255,0.28)' stroke-width='1.6' />"
+        )
 
-    node_x, node_y, labels, node_types, sizes = [], [], [], [], []
+    node_svg: List[str] = []
+    legend = {
+        "obra": ("#8ec5ff", 24),
+        "ontology": ("#ffd166", 22),
+        "tag": ("#95f9c3", 18),
+    }
     for node, data in graph.nodes(data=True):
         x, y = pos[node]
-        node_x.append(x)
-        node_y.append(y)
-        labels.append(data.get("label", node))
-        node_types.append(data.get("node_type", "nó"))
-        if data.get("node_type") == "obra":
-            sizes.append(28)
-        elif data.get("node_type") == "ontology":
-            sizes.append(24)
-        else:
-            sizes.append(18)
+        cx, cy = sx(x), sy(y)
+        label = str(data.get("label", node))
+        node_type = str(data.get("node_type", "nó"))
+        fill, radius = legend.get(node_type, ("#e8e8e8", 16))
+        safe_label = label.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        safe_type = node_type.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        node_svg.append(
+            f"<g>"
+            f"<title>{safe_label} · {safe_type}</title>"
+            f"<circle cx='{cx:.1f}' cy='{cy:.1f}' r='{radius}' fill='{fill}' fill-opacity='0.92' "
+            "stroke='rgba(255,255,255,0.88)' stroke-width='1.2' />"
+            f"<text x='{cx:.1f}' y='{cy + radius + 18:.1f}' text-anchor='middle' "
+            "font-family='Times New Roman, serif' font-size='13' fill='white'>"
+            f"{safe_label}</text>"
+            f"</g>"
+        )
 
-    node_trace = go.Scatter(
-        x=node_x,
-        y=node_y,
-        mode="markers+text",
-        text=labels,
-        textposition="top center",
-        hovertext=[f"{label} · {node_type}" for label, node_type in zip(labels, node_types)],
-        hoverinfo="text",
-        marker=dict(size=sizes, line=dict(width=1)),
+    legend_html = (
+        "<div style='display:flex;gap:16px;flex-wrap:wrap;margin:.6rem 0 1rem'>"
+        "<span style='display:flex;align-items:center;gap:8px;color:white'><span style='width:14px;height:14px;border-radius:50%;background:#8ec5ff;display:inline-block'></span>Obra</span>"
+        "<span style='display:flex;align-items:center;gap:8px;color:white'><span style='width:14px;height:14px;border-radius:50%;background:#95f9c3;display:inline-block'></span>Tag</span>"
+        "<span style='display:flex;align-items:center;gap:8px;color:white'><span style='width:14px;height:14px;border-radius:50%;background:#ffd166;display:inline-block'></span>Ontologia</span>"
+        "</div>"
     )
-    fig = go.Figure(data=[edge_trace, node_trace])
-    fig.update_layout(height=650, margin=dict(l=20, r=20, t=20, b=20), showlegend=False)
-    return fig
+
+    svg = (
+        f"<div style='width:100%;overflow:auto;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.16);"
+        "border-radius:18px;padding:12px 12px 18px;'>"
+        f"{legend_html}"
+        f"<svg viewBox='0 0 {width} {height}' width='100%' height='{height}' role='img' aria-label='Grafo de relações entre obras, tags e ontologias'>"
+        f"{''.join(edge_svg)}{''.join(node_svg)}"
+        "</svg></div>"
+    )
+    return svg
 
 
 def compute_analytics_summary() -> Dict[str, Any]:
@@ -1594,9 +1624,9 @@ def tab_graph_analysis() -> None:
     with c2: card("Arestas", graph.number_of_edges(), "relações e coocorrências")
     with c3: card("Familiaridade ativa", familiaridade_filter, "filtro do grafo")
 
-    fig = plot_network(graph)
-    if fig is not None:
-        st.plotly_chart(fig, use_container_width=True)
+    graph_html = plot_network(graph)
+    if graph_html is not None:
+        st.markdown(graph_html, unsafe_allow_html=True)
     if not edge_df.empty:
         st.markdown("### Relações do grafo")
         st.dataframe(edge_df, use_container_width=True, hide_index=True)
