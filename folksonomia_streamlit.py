@@ -31,6 +31,8 @@ ADMIN_FILE = os.path.join(DATA_DIR, "admin.json")
 ONTOLOGIES_FILE = os.path.join(DATA_DIR, "ontologias.json")
 EVENTS_FILE = os.path.join(DATA_DIR, "eventos.json")
 METADATA_FILE = os.path.join(DATA_DIR, "metadados_institucionais.json")
+OPEN_DATA_FILE = os.path.join(DATA_DIR, "open_data_fontes.json")
+INTEROP_FILE = os.path.join(DATA_DIR, "interoperabilidade.json")
 ADMIN_USERNAME = "nugep"
 ADMIN_PASSWORD = "nugep123"
 
@@ -201,6 +203,23 @@ def save_institution_metadata(meta):
     meta["ultima_atualizacao"] = now_str()
     return save_json_file(METADATA_FILE, meta)
 
+
+def load_open_data_sources():
+    ensure_support_files()
+    data = load_json_file(OPEN_DATA_FILE, default_open_data_sources())
+    return data if isinstance(data, list) else default_open_data_sources()
+
+def save_open_data_sources(sources):
+    return save_json_file(OPEN_DATA_FILE, sources)
+
+def load_interoperability_registry():
+    ensure_support_files()
+    data = load_json_file(INTEROP_FILE, default_interoperability_registry())
+    return data if isinstance(data, list) else default_interoperability_registry()
+
+def save_interoperability_registry(mappings):
+    return save_json_file(INTEROP_FILE, mappings)
+
 def all_events():
     ensure_support_files()
     ev = load_json_file(EVENTS_FILE, [])
@@ -210,24 +229,51 @@ def get_last_event_hash():
     events = load_json_file(EVENTS_FILE, [])
     return events[-1]["event_hash"] if events else "GENESIS"
 
-def register_event(event_type, actor, actor_role, entity_type, entity_id, payload, origin="sistema", automatic=False, status="bruto", previous_state=None, circulation_action=None):
+def get_previous_entity_event(events, entity_type, entity_id):
+    for event in reversed(events):
+        if event.get('entity_type') == entity_type and str(event.get('entity_id')) == str(entity_id):
+            return event
+    return None
+
+def get_entity_event_count(events, entity_type, entity_id):
+    return sum(1 for event in events if event.get('entity_type') == entity_type and str(event.get('entity_id')) == str(entity_id))
+
+def register_event(event_type, actor, actor_role, entity_type, entity_id, payload, origin="sistema", automatic=False, status="bruto", previous_state=None, circulation_action=None, interoperability_refs=None, semantic_snapshot=None, provenance_source=None):
     ensure_support_files()
     events = load_json_file(EVENTS_FILE, [])
+    previous_entity_event = get_previous_entity_event(events, entity_type, entity_id)
+    entity_version = get_entity_event_count(events, entity_type, entity_id) + 1
+    circulation_trace = None
+    if circulation_action:
+        circulation_trace = {
+            "acao": circulation_action,
+            "registrado_em": now_str(),
+            "responsavel": actor or "sistema",
+            "destino": origin,
+        }
     record = {
         "id": len(events) + 1,
+        "ledger_no": len(events) + 1,
         "timestamp": now_str(),
         "event_type": event_type,
         "actor": actor or "sistema",
         "actor_role": actor_role or "system",
         "entity_type": entity_type,
         "entity_id": entity_id,
+        "entity_version": entity_version,
         "origin": origin,
         "automatic": bool(automatic),
         "status": status,
         "payload": payload,
         "previous_state": previous_state,
         "previous_hash": get_last_event_hash(),
+        "entity_previous_hash": previous_entity_event.get('event_hash') if previous_entity_event else 'GENESIS_ENTITY',
+        "semantic_archive_ref": f"{entity_type}:{entity_id}:v{entity_version}",
+        "provenance_source": provenance_source or origin,
+        "interoperability_refs": interoperability_refs or [],
+        "semantic_snapshot": semantic_snapshot or {},
         "circulation_action": circulation_action,
+        "circulation_trace": circulation_trace,
     }
     record["event_hash"] = hash_record(record)
     events.append(record)
@@ -371,16 +417,77 @@ def update_tag_record(tag_id, new_tag=None, new_status=None, admin_user="admin")
             return True
     return False
 
+def build_artwork_narration(obra):
+    titulo = str(obra.get('titulo', 'obra sem título')).strip()
+    artista = str(obra.get('artista', 'autor não identificado')).strip()
+    ano = str(obra.get('ano', 'data não informada')).strip()
+    descricao = build_audio_description(obra)
+    return f"Você está ouvindo a audiodescrição da obra {titulo}, de {artista}, do ano de {ano}. {descricao}"
+
 def render_speech_button(text, label="Ouvir audiodescrição"):
     safe = json.dumps(str(text or ""), ensure_ascii=False)
+    safe_label = json.dumps(str(label), ensure_ascii=False)
+    uid = hashlib.sha1((str(text) + str(label)).encode('utf-8')).hexdigest()[:10]
     components.html(
         f"""
-        <div style='margin:8px 0 16px 0'>
-          <button onclick='window.speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance({safe}); u.lang="pt-BR"; u.rate=0.95; window.speechSynthesis.speak(u);'
-            style='background:rgba(255,255,255,.22);color:white;border:1px solid rgba(255,255,255,.35);padding:10px 18px;border-radius:999px;cursor:pointer;font-family:"Times New Roman",serif;font-size:16px;'>🔊 {label}</button>
+        <div class='audio-widget' style='margin:8px 0 10px 0'>
+          <style>
+            .audio-widget *{{font-family:'Times New Roman', Times, serif;}}
+            .audio-btn-{uid}{{
+              position:relative; display:inline-flex; align-items:center; gap:12px; cursor:pointer;
+              border:1px solid rgba(255,255,255,.35); border-radius:999px; padding:14px 24px;
+              background:linear-gradient(135deg, rgba(255,255,255,.16), rgba(167,230,255,.18));
+              color:white; font-size:18px; font-weight:700; overflow:hidden; transition:transform .2s ease, box-shadow .2s ease;
+              box-shadow:0 8px 28px rgba(0,0,0,.22);
+            }}
+            .audio-btn-{uid}:hover{{transform:translateY(-2px) scale(1.02); box-shadow:0 12px 34px rgba(0,0,0,.28);}}
+            .audio-btn-{uid}.playing{{background:linear-gradient(135deg, rgba(105,195,255,.34), rgba(133,255,211,.22));}}
+            .audio-pulse-{uid}{{width:14px;height:14px;border-radius:50%;background:#9be7ff;box-shadow:0 0 0 rgba(155,231,255,.65);animation:pulse-{uid} 1.4s infinite;}}
+            .audio-btn-{uid}.playing .audio-pulse-{uid}{{background:#8cffbe;}}
+            @keyframes pulse-{uid}{{0%{{box-shadow:0 0 0 0 rgba(155,231,255,.65)}}70%{{box-shadow:0 0 0 14px rgba(155,231,255,0)}}100%{{box-shadow:0 0 0 0 rgba(155,231,255,0)}}}}
+            .audio-sub-{uid}{{display:block; margin-top:7px; color:rgba(255,255,255,.72); font-size:13px;}}
+          </style>
+          <button id='audio-btn-{uid}' class='audio-btn-{uid}'>
+            <span class='audio-pulse-{uid}'></span>
+            <span id='audio-btn-label-{uid}'>{label}</span>
+          </button>
+          <div class='audio-sub-{uid}'>Clique uma vez para ouvir e novamente para parar.</div>
+          <script>
+            const text = {safe};
+            const baseLabel = {safe_label};
+            const btn = document.getElementById('audio-btn-{uid}');
+            const labelEl = document.getElementById('audio-btn-label-{uid}');
+            let utterance = null;
+            let playing = false;
+            function syncLabel(){{
+              labelEl.textContent = playing ? 'Parar audiodescrição' : baseLabel;
+              if (playing) btn.classList.add('playing');
+              else btn.classList.remove('playing');
+            }}
+            function stopSpeech(){{
+              window.speechSynthesis.cancel();
+              playing = false;
+              syncLabel();
+            }}
+            btn.addEventListener('click', function(){{
+              if (playing){{ stopSpeech(); return; }}
+              window.speechSynthesis.cancel();
+              utterance = new SpeechSynthesisUtterance(text);
+              utterance.lang = 'pt-BR';
+              utterance.rate = 0.92;
+              utterance.pitch = 1.0;
+              utterance.onend = function(){{ playing = false; syncLabel(); }};
+              utterance.onerror = function(){{ playing = false; syncLabel(); }};
+              playing = true;
+              syncLabel();
+              window.speechSynthesis.speak(utterance);
+            }});
+            window.addEventListener('beforeunload', stopSpeech);
+            syncLabel();
+          </script>
         </div>
         """,
-        height=55,
+        height=105,
     )
 
 def get_accessibility_settings():
@@ -449,6 +556,8 @@ def apply_accessibility_settings():
     .audio-block *{{
         font-size:{font_size}px !important;
         line-height:1.6 !important;
+        word-break:normal !important;
+        overflow-wrap:break-word !important;
     }}
     h1{{font-size:{max(28, font_size + 18)}px !important; line-height:1.2 !important;}}
     h2{{font-size:{max(24, font_size + 10)}px !important; line-height:1.25 !important;}}
@@ -460,7 +569,6 @@ def apply_accessibility_settings():
         padding:1.35rem 1.5rem;
         margin-top:1rem;
         box-shadow:0 8px 28px rgba(0,0,0,.18);
-        overflow-wrap:anywhere;
     }}
     .audio-label{{
         display:inline-block;
@@ -473,8 +581,7 @@ def apply_accessibility_settings():
         font-weight:700;
     }}
     .audio-title{{font-weight:700; margin-bottom:.45rem; color:{fg};}}
-    .audio-meta{{opacity:.88; margin-bottom:.85rem; color:{fg};}}
-    .audio-desc{{white-space:normal; word-break:break-word; color:{fg};}}
+    .audio-meta{{opacity:.88; margin-bottom:.65rem; color:{fg};}}
     .streamlit-expanderHeader{{line-height:1.35 !important;}}
     </style>
     """, unsafe_allow_html=True)
@@ -488,31 +595,35 @@ def build_audio_description(obra):
 
     if 'guernica' in titulo_norm:
         return (
-            "Guernica é um grande painel de pintura histórica realizado por Pablo Picasso em 1937, "
-            "ligado ao trauma da Guerra Civil Espanhola e ao bombardeio da cidade basca de Guernica. "
-            "A composição é horizontal, extensa e construída quase inteiramente em preto, branco e cinza, "
-            "o que reforça a atmosfera de luto, ruína e choque. Em vez de figuras naturalistas, Picasso usa "
-            "uma linguagem próxima do cubismo: corpos fragmentados, rostos angulosos, bocas abertas, olhos "
-            "dilatados e planos quebrados que fazem a cena parecer estilhaçada. À esquerda surge um touro escuro; "
-            "abaixo dele, uma mãe levanta a cabeça em desespero enquanto segura o filho morto. No centro, um cavalo "
-            "ferido parece gritar, com o corpo atravessado por linhas agudas. Acima, uma luz intensa lembra ao mesmo "
-            "tempo lâmpada e explosão. Ao redor aparecem mãos, braços, pernas, uma figura caída e arquiteturas rompidas, "
-            "como se tudo estivesse sendo esmagado pela violência da guerra."
+            'Trata-se de uma pintura monumental de caráter histórico, associada à guerra e ao bombardeio da cidade de Guernica. '
+            'A imagem se organiza em um grande campo horizontal em preto, branco e cinza. As figuras são cubistas e fragmentadas, '
+            'compostas por planos angulosos, rostos quebrados, bocas abertas e membros distorcidos. À esquerda aparece um touro escuro. '
+            'Abaixo dele, uma mãe ergue o rosto para o alto enquanto segura o filho morto, num gesto de lamento. No centro, um cavalo ferido ocupa a composição '
+            'com a boca aberta, como se gritasse. Acima, uma luz forte lembra ao mesmo tempo uma lâmpada e uma explosão. Ao redor, partes de corpos, mãos, pernas, armas quebradas '
+            'e estruturas em ruína sugerem violência, desorientação e destruição.'
         )
-
+    if 'noite estrelada' in titulo_norm or 'starry night' in titulo_norm:
+        return (
+            'A cena apresenta uma paisagem noturna com forte sensação de movimento. Na parte inferior, vê-se uma vila pequena e silenciosa. '
+            'As casas aparecem reduzidas, com telhados inclinados e uma igreja de torre aguda subindo ao centro. Acima da vila, o céu domina quase toda a obra. '
+            'Faixas curvas e espirais luminosas cruzam o azul profundo, como se o vento estivesse visível. As estrelas são círculos amarelos intensos com halos vibrantes. '
+            'À esquerda, um cipreste escuro sobe verticalmente, alto e ondulante, funcionando como contraste entre a terra e o céu. A composição transmite noite, ritmo, turbulência e contemplação.'
+        )
+    if 'mona lisa' in titulo_norm:
+        return (
+            'A obra mostra uma mulher sentada de frente, com o corpo levemente voltado e as mãos cruzadas em primeiro plano. '
+            'Ela veste roupas escuras e aparece diante de uma paisagem distante com rios, caminhos e montanhas. O rosto tem expressão serena e ambígua. '
+            'A luz é suave, o contorno é delicado e a transição entre sombra e pele acontece de modo gradual, criando profundidade e quietude.'
+        )
     if manual:
         return manual
-
     return (
-        f"{titulo} é uma obra atribuída a {artista}, datada de {ano}. "
-        "A audiodescrição deve observar o tipo de composição, a organização do espaço, a presença de figuras humanas, "
-        "objetos, gestos, direção do olhar, contraste de luz e sombra, além de cores dominantes, textura visual, clima "
-        "emocional e possíveis relações temáticas."
+        f'Trata-se da obra {titulo}, de {artista}, datada de {ano}. '
+        'A descrição sonora observa composição, cores dominantes, direção das formas, personagens, objetos, luz, profundidade, clima visual e eixo temático da imagem.'
     )
 
 
 def render_audio_description_block(obra):
-    descricao = build_audio_description(obra)
     titulo = obra.get('titulo', '—')
     artista = obra.get('artista', '—')
     ano = obra.get('ano', '—')
@@ -520,7 +631,10 @@ def render_audio_description_block(obra):
     contexto = 'Leitura descritiva da composição visual'
     if 'guernica' in normalize_text(titulo):
         tipo = 'Pintura histórica / mural moderno'
-        contexto = 'Guerra, dor coletiva, fragmentação e linguagem cubista'
+        contexto = 'Guerra, fragmentação, luto coletivo e linguagem cubista'
+    elif 'noite estrelada' in normalize_text(titulo):
+        contexto = 'Paisagem noturna, movimento do céu, ritmo visual e contemplação'
+    narracao = build_artwork_narration(obra)
     st.markdown(
         f"""
         <div class='audio-card audio-block'>
@@ -528,12 +642,11 @@ def render_audio_description_block(obra):
             <div class='audio-title'>Título: {titulo}</div>
             <div class='audio-meta'><strong>Artista:</strong> {artista} &nbsp;•&nbsp; <strong>Ano:</strong> {ano} &nbsp;•&nbsp; <strong>Tipo:</strong> {tipo}</div>
             <div class='audio-meta'><strong>Eixo temático:</strong> {contexto}</div>
-            <div class='audio-desc'><strong>Audiodescrição detalhada:</strong> {descricao}</div>
         </div>
         """,
         unsafe_allow_html=True
     )
-    render_speech_button(descricao, label='Ouvir audiodescrição da obra')
+    render_speech_button(narracao, label='Ouvir audiodescrição da obra')
 
 def render_accessibility_panel():
     st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
@@ -545,7 +658,7 @@ def render_accessibility_panel():
         st.session_state['acc_font_size'] = st.slider("Tamanho da tipografia", 14, 28, int(st.session_state.get('acc_font_size', 18)), 1, key='acc_font_size_slider')
     with c3:
         st.session_state['acc_focus_audio'] = st.checkbox("Foco em audiodescrição", value=st.session_state.get('acc_focus_audio', True), key='acc_audio_focus')
-    st.caption("A tipografia foi ajustada para Times New Roman e o modo de alto contraste prioriza leitura e audiodescrição.")
+    st.caption("Animação de fundo preservada, tipografia em Times New Roman, contraste ajustável e audiodescrição com botão animado e controle de parada.")
     st.markdown("</div>", unsafe_allow_html=True)
     apply_accessibility_settings()
 
@@ -593,6 +706,167 @@ def build_graph_data(tags_df, threshold=0.35):
         })
     edges = [(c['tag_a'], c['tag_b'], c['similaridade']) for c in conns if c['tag_a'] in top_tags and c['tag_b'] in top_tags]
     return nodes, edges
+
+
+def build_interoperability_graph_data(tags_df, open_sources=None, mappings=None, threshold=0.35):
+    nodes, edges = build_graph_data(tags_df, threshold=threshold)
+    node_ids = {n['id'] for n in nodes}
+    open_sources = open_sources or load_open_data_sources()
+    mappings = mappings or load_interoperability_registry()
+
+    for source in open_sources:
+        sid = f"source::{source.get('nome','Fonte')}"
+        if sid not in node_ids:
+            nodes.append({
+                'id': sid,
+                'label': str(source.get('nome','Fonte'))[:18],
+                'size': 16,
+                'color': '#8cf0ff',
+                'node_type': 'external_source',
+            })
+            node_ids.add(sid)
+
+    for mapping in mappings:
+        did = f"domain::{mapping.get('dominio_local','dominio')}"
+        sid = f"source::{mapping.get('fonte_externa','fonte')}"
+        if did not in node_ids:
+            nodes.append({
+                'id': did,
+                'label': str(mapping.get('dominio_local','dominio')).title()[:18],
+                'size': 15,
+                'color': '#ffd166',
+                'node_type': 'local_domain',
+            })
+            node_ids.add(did)
+        if sid not in node_ids:
+            nodes.append({
+                'id': sid,
+                'label': str(mapping.get('fonte_externa','fonte'))[:18],
+                'size': 16,
+                'color': '#8cf0ff',
+                'node_type': 'external_source',
+            })
+            node_ids.add(sid)
+        edges.append((did, sid, 0.95))
+
+    return nodes, edges
+
+def build_graph_3d_component(nodes, edges, height=620):
+    if not nodes:
+        st.info('Sem dados suficientes para o grafo 3D.')
+        return
+    node_payload = []
+    total = max(len(nodes), 1)
+    for i, node in enumerate(nodes):
+        angle = 2 * math.pi * i / total
+        radius = 180 + (i % 3) * 34
+        x = math.cos(angle) * radius
+        y = math.sin(angle * 1.7) * 95
+        z = math.sin(angle) * radius
+        node_payload.append({
+            'id': node['id'],
+            'label': node.get('label', node['id']),
+            'size': float(node.get('size', 18)),
+            'color': node.get('color', '#a7e6ff'),
+            'x': x,
+            'y': y,
+            'z': z,
+        })
+    edge_payload = [{'source': a, 'target': b, 'weight': float(w)} for a, b, w in edges]
+    html = f"""
+    <div style='background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.16); border-radius:22px; overflow:hidden;'>
+      <canvas id='g3d' width='1080' height='{height}' style='width:100%; height:{height}px; display:block;'></canvas>
+      <div style='padding:10px 16px; color:white; font-family:Times New Roman, serif; font-size:15px;'>Arraste para rotacionar o grafo 3D. Nós azuis representam fontes externas; dourados, domínios locais; demais, tags e relações semânticas.</div>
+    </div>
+    <script>
+      const nodes = {json.dumps(node_payload, ensure_ascii=False)};
+      const edges = {json.dumps(edge_payload, ensure_ascii=False)};
+      const canvas = document.getElementById('g3d');
+      const ctx = canvas.getContext('2d');
+      let rotY = 0.004, rotX = -0.002;
+      let drag = false, lx = 0, ly = 0;
+      const perspective = 680;
+      function project(node) {{
+        let x = node.x, y = node.y, z = node.z;
+        const cosY = Math.cos(rotY), sinY = Math.sin(rotY);
+        let x1 = x * cosY - z * sinY;
+        let z1 = x * sinY + z * cosY;
+        const cosX = Math.cos(rotX), sinX = Math.sin(rotX);
+        let y1 = y * cosX - z1 * sinX;
+        let z2 = y * sinX + z1 * cosX;
+        const scale = perspective / (perspective + z2 + 320);
+        return {{
+          x: canvas.width / 2 + x1 * scale,
+          y: canvas.height / 2 + y1 * scale,
+          scale,
+          depth: z2,
+          size: node.size * scale,
+          color: node.color,
+          label: node.label,
+          id: node.id,
+        }};
+      }}
+      function frame() {{
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        if (!drag) {{ rotY += 0.003; rotX += 0.0012; }}
+        const projected = Object.fromEntries(nodes.map(n => [n.id, project(n)]));
+        edges.forEach(edge => {{
+          const a = projected[edge.source], b = projected[edge.target];
+          if (!a || !b) return;
+          const alpha = Math.max(.15, Math.min(.7, (a.scale + b.scale) / 2));
+          ctx.beginPath();
+          ctx.strokeStyle = `rgba(180,220,255,${{alpha}})`;
+          ctx.lineWidth = 1 + edge.weight * 2.4;
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.stroke();
+        }});
+        Object.values(projected)
+          .sort((a,b) => a.depth - b.depth)
+          .forEach(node => {{
+            ctx.beginPath();
+            ctx.fillStyle = node.color;
+            ctx.globalAlpha = .88;
+            ctx.arc(node.x, node.y, Math.max(4, node.size), 0, Math.PI * 2);
+            ctx.fill();
+            ctx.globalAlpha = 1;
+            ctx.strokeStyle = 'rgba(255,255,255,.55)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            ctx.fillStyle = 'rgba(255,255,255,.95)';
+            ctx.font = `${{Math.max(12, 12 * node.scale + 8)}}px Times New Roman`;
+            ctx.fillText(node.label, node.x + Math.max(8, node.size + 4), node.y + 4);
+          }});
+        requestAnimationFrame(frame);
+      }}
+      canvas.addEventListener('mousedown', e => {{ drag = true; lx = e.offsetX; ly = e.offsetY; }});
+      canvas.addEventListener('mouseup', () => drag = false);
+      canvas.addEventListener('mouseleave', () => drag = false);
+      canvas.addEventListener('mousemove', e => {{
+        if (!drag) return;
+        const dx = e.offsetX - lx, dy = e.offsetY - ly;
+        rotY += dx * 0.005;
+        rotX += dy * 0.005;
+        lx = e.offsetX; ly = e.offsetY;
+      }});
+      frame();
+    </script>
+    """
+    components.html(html, height=height + 58)
+
+def summarize_interoperability(open_sources=None, mappings=None):
+    open_sources = open_sources or load_open_data_sources()
+    mappings = mappings or load_interoperability_registry()
+    rows = []
+    for mapping in mappings:
+        rows.append({
+            'Domínio local': mapping.get('dominio_local', '—'),
+            'Fonte externa': mapping.get('fonte_externa', '—'),
+            'Padrão': mapping.get('padrao', '—'),
+            'Status': mapping.get('status', '—'),
+            'Campos mapeados': ' | '.join(mapping.get('campos_mapeados', [])) if isinstance(mapping.get('campos_mapeados'), list) else str(mapping.get('campos_mapeados', '—')),
+        })
+    return pd.DataFrame(rows)
 
 # ── CSS ───────────────────────────────────────────────────────────────
 def load_css():
@@ -802,19 +1076,38 @@ def save_answers(uid, animal, answers):
 def save_tag(uid, obra_id, tag):
     tags = load_json_file(TAGS_FILE, [])
     clean_tag = tag.lower().strip()
-    record = {"id":len(tags)+1,"user_id":uid,"obra_id":obra_id,
-                 "tag":clean_tag,
-                 "timestamp":datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                 "status":"bruto",
-                 "origem":"usuario",
-                 "automatico":False,
-                 "grupo_tematico": classify_tag_group(clean_tag),
-                 "ontologias": match_ontologies_for_tag(clean_tag)}
+    ontologies = match_ontologies_for_tag(clean_tag)
+    record = {
+        "id": len(tags) + 1,
+        "user_id": uid,
+        "obra_id": obra_id,
+        "tag": clean_tag,
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "status": "bruto",
+        "origem": "usuario",
+        "automatico": False,
+        "grupo_tematico": classify_tag_group(clean_tag),
+        "ontologias": ontologies,
+        "versao_semantica": 1,
+        "proveniencia": {
+            "captura": "interface_publica",
+            "autor_registro": uid,
+            "obra_referenciada": obra_id,
+        },
+    }
     tags.append(record)
     ok = save_json_file(TAGS_FILE, tags)
     st.cache_data.clear()
     if ok:
-        register_event('tag_created', uid, 'user', 'tag', record['id'], record, origin='obra', automatic=False, status='bruto')
+        register_event(
+            'tag_created', uid, 'user', 'tag', record['id'], record,
+            origin='obra', automatic=False, status='bruto',
+            semantic_snapshot={
+                'grupo_tematico': record['grupo_tematico'],
+                'ontologias': ontologies,
+            },
+            provenance_source='interface_publica',
+        )
     return ok
 
 def get_user_tags(uid):
@@ -1831,8 +2124,9 @@ def tab_ontologies():
 # ABA 6 — VALIDAÇÃO E AUDITORIA
 # ═════════════════════════════════════════════════════════════════════
 def tab_validation_audit():
-    st.markdown("### Validação de tags, erro ortográfico e cadeia de auditoria")
+    st.markdown("### Auditoria semântica, ortográfica e encadeamento de eventos")
     tdf = all_tags()
+    udf = all_users()
     events_df = all_events()
     ontologies = load_ontologies()
 
@@ -1842,45 +2136,78 @@ def tab_validation_audit():
     c1, c2, c3, c4 = st.columns(4)
     bruto = int((tdf['status'] == 'bruto').sum()) if not tdf.empty else 0
     sugerido = int((tdf['status'] == 'sugerido').sum()) if not tdf.empty else 0
-    validado = int((tdf['status'].isin(['validado', 'revisado', 'publicado'])).sum()) if not tdf.empty else 0
+    audit_events = int(events_df['event_type'].isin(['tag_group_audit', 'orthography_suggestion_logged']).sum()) if not events_df.empty else 0
     eventos = len(events_df) if not events_df.empty else 0
     with c1:
-        st.markdown(kpi('Status bruto', bruto, 'aguardando revisão', '#f87171'), unsafe_allow_html=True)
+        st.markdown(kpi('Tags brutas', bruto, 'sem apagar o original', '#f87171'), unsafe_allow_html=True)
     with c2:
-        st.markdown(kpi('Status sugerido', sugerido, 'triagem automática', '#fcd34d'), unsafe_allow_html=True)
+        st.markdown(kpi('Sugestões registradas', sugerido, 'camada sugestiva', '#fcd34d'), unsafe_allow_html=True)
     with c3:
-        st.markdown(kpi('Validadas / revisadas', validado, 'com revisão humana', '#6ee7b7'), unsafe_allow_html=True)
+        st.markdown(kpi('Auditorias semânticas', audit_events, 'comentários e separações', '#6ee7b7'), unsafe_allow_html=True)
     with c4:
-        st.markdown(kpi('Eventos auditáveis', eventos, 'cadeia hash registrada', '#a78bfa'), unsafe_allow_html=True)
+        st.markdown(kpi('Eventos no ledger', eventos, 'rastreabilidade encadeada', '#a78bfa'), unsafe_allow_html=True)
 
-    t1, t2, t3 = st.tabs([" Revisão de tags", " Erros ortográficos", " Blockchain / auditoria"])
+    t1, t2, t3 = st.tabs([" Auditoria da separação", " Ortografia sem sobrescrever", " Registro encadeado"])
 
     with t1:
         if tdf.empty:
-            st.info('Nenhuma tag disponível para validação.')
+            st.info('Nenhuma tag disponível para auditoria.')
         else:
             rev = tdf.copy().sort_values('timestamp', ascending=False)
             rev['grupo_tematico'] = rev['tag'].apply(classify_tag_group)
             if 'ontologias' not in rev.columns:
                 rev['ontologias'] = rev['tag'].apply(lambda x: match_ontologies_for_tag(x, ontologies))
+            user_map = {}
+            if not udf.empty and 'user_id' in udf.columns and 'q1' in udf.columns:
+                user_map = udf.set_index('user_id')['q1'].to_dict()
+            rev['familiaridade'] = rev['user_id'].map(user_map).fillna('Não informado') if user_map else 'Não informado'
             rev['ontologias_txt'] = rev['ontologias'].apply(lambda x: ', '.join(x) if isinstance(x, list) and x else '—')
-            cols = [c for c in ['id','tag','status','grupo_tematico','ontologias_txt','obra_id','timestamp'] if c in rev.columns]
+            cols = [c for c in ['id','tag','grupo_tematico','ontologias_txt','familiaridade','obra_id','timestamp'] if c in rev.columns]
             st.dataframe(rev[cols].rename(columns={'ontologias_txt':'Ontologias'}), use_container_width=True, hide_index=True)
 
+            cross = rev.groupby(['familiaridade','grupo_tematico']).size().reset_index(name='Qtd')
+            if not cross.empty:
+                st.markdown('#### Separação temática por familiaridade')
+                pivot = cross.pivot(index='familiaridade', columns='grupo_tematico', values='Qtd').fillna(0)
+                st.dataframe(pivot, use_container_width=True)
+
             ids = rev['id'].tolist()
-            chosen = st.selectbox('Selecione o ID da tag para revisar', ids, key='rev_tag_id')
+            chosen = st.selectbox('Selecione o ID da tag para auditar', ids, key='audit_tag_id')
             current = rev[rev['id'] == chosen].iloc[0]
-            with st.form('form_revisao_tag'):
-                novo_texto = st.text_input('Texto corrigido da tag', value=str(current.get('tag', '')))
-                novo_status = st.selectbox('Novo status', STATUS_OPTIONS, index=STATUS_OPTIONS.index(str(current.get('status', 'bruto')) if str(current.get('status', 'bruto')) in STATUS_OPTIONS else 'bruto'))
-                enviar = st.form_submit_button('Salvar revisão humana')
+            grupos = list(THEME_GROUPS.keys()) + ['Outros']
+            with st.form('form_auditoria_tag'):
+                sugestao_grupo = st.selectbox('Grupo sugerido para auditoria', grupos, index=grupos.index(current.get('grupo_tematico', 'Outros')) if current.get('grupo_tematico', 'Outros') in grupos else len(grupos)-1)
+                observacao = st.text_area('Comentário de auditoria', placeholder='Explique a separação, o vínculo semântico, a familiaridade do usuário e a justificativa documental.')
+                ont_ref = st.multiselect('Ontologias relacionadas', [o.get('nome','Ontologia') for o in ontologies], default=current.get('ontologias', []) if isinstance(current.get('ontologias', []), list) else [])
+                enviar = st.form_submit_button('Registrar auditoria sem alterar a tag original')
                 if enviar:
-                    ok = update_tag_record(int(chosen), new_tag=novo_texto, new_status=novo_status, admin_user=st.session_state.get('admin_username', 'admin'))
-                    if ok:
-                        st.success('Tag revisada e histórico preservado na trilha de auditoria.')
-                        st.rerun()
-                    else:
-                        st.error('Não foi possível revisar esta tag.')
+                    payload = {
+                        'tag_original_snapshot': current.to_dict(),
+                        'grupo_atual': current.get('grupo_tematico', 'Outros'),
+                        'grupo_sugerido': sugestao_grupo,
+                        'comentario': observacao.strip(),
+                        'familiaridade_usuario': current.get('familiaridade', 'Não informado'),
+                        'ontologias_relacionadas': ont_ref,
+                    }
+                    register_event(
+                        'tag_group_audit',
+                        st.session_state.get('admin_username', 'admin'),
+                        'admin',
+                        'tag',
+                        int(chosen),
+                        payload,
+                        origin='auditoria_semantica',
+                        automatic=False,
+                        status='revisado',
+                        previous_state=current.to_dict(),
+                        semantic_snapshot={
+                            'grupo_sugerido': sugestao_grupo,
+                            'ontologias_relacionadas': ont_ref,
+                        },
+                        provenance_source='auditoria_semantica_manual',
+                    )
+                    st.success('Auditoria registrada. A tag original permanece intacta.')
+                    st.rerun()
 
     with t2:
         if tdf.empty:
@@ -1892,102 +2219,254 @@ def tab_validation_audit():
             else:
                 st.dataframe(suggestions, use_container_width=True, hide_index=True)
                 tag_map = {r['tag']: r for _, r in suggestions.iterrows()}
-                escolha = st.selectbox('Aplicar sugestão a qual tag?', list(tag_map.keys()), key='spell_tag_choice')
+                escolha = st.selectbox('Selecione uma tag para registrar sugestão', list(tag_map.keys()), key='spell_tag_choice')
                 sug = tag_map[escolha]
-                c1, c2 = st.columns(2)
-                with c1:
-                    st.markdown(f"**Sugestão automática:** {sug['sugestao']}")
-                with c2:
-                    if st.button('Aplicar sugestão e marcar como sugerido', key='btn_apply_spell'):
+                with st.form('form_spell_audit'):
+                    comentario = st.text_area('Comentário sobre a sugestão ortográfica', value=f"Sugestão registrada: '{sug['tag']}' -> '{sug['sugestao']}'.")
+                    registrar = st.form_submit_button('Registrar sugestão sem sobrescrever a tag')
+                    if registrar:
                         target = tdf[tdf['tag'] == escolha].sort_values('id')
                         if not target.empty:
-                            tid = int(target.iloc[0]['id'])
-                            ok = update_tag_record(tid, new_tag=str(sug['sugestao']), new_status='sugerido', admin_user=st.session_state.get('admin_username', 'admin'))
-                            if ok:
-                                st.success('Sugestão aplicada com histórico preservado.')
-                                st.rerun()
+                            row = target.iloc[0].to_dict()
+                            register_event(
+                                'orthography_suggestion_logged',
+                                st.session_state.get('admin_username', 'admin'),
+                                'admin',
+                                'tag',
+                                int(row['id']),
+                                {
+                                    'tag_original_snapshot': row,
+                                    'sugestao_ortografica': str(sug['sugestao']),
+                                    'distancia': int(sug['distancia']),
+                                    'comentario': comentario.strip(),
+                                },
+                                origin='auditoria_ortografica',
+                                automatic=False,
+                                status='sugerido',
+                                previous_state=row,
+                                semantic_snapshot={'grupo_tematico': row.get('grupo_tematico', classify_tag_group(row.get('tag', '')))},
+                                provenance_source='auditoria_ortografica_manual',
+                            )
+                            st.success('Sugestão registrada na trilha de auditoria sem alterar o dado original.')
+                            st.rerun()
 
     with t3:
-        st.markdown('#### Cadeia de revisão e prova de alteração')
+        st.markdown('#### Registro encadeado de eventos, proveniência e interoperabilidade')
         if events_df.empty:
             st.info('Nenhum evento foi registrado ainda.')
         else:
-            preview = events_df.copy().sort_values('id', ascending=False)
-            cols = [c for c in ['id','timestamp','event_type','actor','entity_type','entity_id','status','previous_hash','event_hash','circulation_action'] if c in preview.columns]
+            preview = events_df.copy().sort_values('ledger_no', ascending=False)
+            preview['Registro'] = preview['ledger_no'].apply(lambda x: f"REG-{int(x):06d}")
+            preview['Hash Atual'] = preview['event_hash'].astype(str).str[:16] + '…'
+            preview['Hash Anterior'] = preview['previous_hash'].astype(str).str[:16] + '…'
+            preview['Entidade'] = preview['entity_type'].astype(str) + ' #' + preview['entity_id'].astype(str)
+            cols = [c for c in ['Registro','timestamp','event_type','actor','Entidade','entity_version','status','Hash Atual','Hash Anterior','origin'] if c in preview.columns]
             st.dataframe(preview[cols], use_container_width=True, hide_index=True)
-            latest = preview.iloc[0]
+
+            st.markdown(divider(), unsafe_allow_html=True)
+            st.markdown('#### Leitura técnica da camada de registro')
             st.markdown(insight(
-                f"<strong>Último hash:</strong> {latest.get('event_hash','—')}<br>"
-                f"<strong>Hash anterior:</strong> {latest.get('previous_hash','—')}<br>"
-                f"<strong>Evento:</strong> {latest.get('event_type','—')} · <strong>Status:</strong> {latest.get('status','—')}"
+                '<strong>1.</strong> cada alteração gera um evento numerado no ledger; '
+                '<strong>2.</strong> cada evento recebe hash próprio e também referencia o hash global anterior; '
+                '<strong>3.</strong> cada entidade mantém versionamento próprio; '
+                '<strong>4.</strong> revisões humanas preservam o estado anterior no campo previous_state; '
+                '<strong>5.</strong> exportações, auditorias e conexões externas alimentam a trilha de circulação e interoperabilidade.'
             ), unsafe_allow_html=True)
-            st.markdown('#### Leitura da camada blockchain')
-            st.markdown("""
-- cada alteração gera um evento;
-- cada evento recebe hash;
-- cada revisão mantém referência ao estado anterior;
-- cada correção humana sobrescreve sem apagar o histórico;
-- cada exportação registra trilha de circulação.
-""")
+
+            top_events = preview.head(8)
+            for _, row in top_events.iterrows():
+                refs = row.get('interoperability_refs', [])
+                refs_txt = ', '.join(refs) if isinstance(refs, list) and refs else '—'
+                trace = row.get('circulation_trace') or {}
+                trace_txt = trace.get('acao', '—') if isinstance(trace, dict) else '—'
+                st.markdown(
+                    f"<div class='sc sc-p'>"
+                    f"<strong>{row.get('Registro','—')}</strong> · {row.get('timestamp','—')}<br>"
+                    f"Evento: <strong>{row.get('event_type','—')}</strong> · Entidade: <strong>{row.get('entity_type','—')} #{row.get('entity_id','—')}</strong> · Versão: <strong>{row.get('entity_version','—')}</strong><br>"
+                    f"Hash atual: <code>{row.get('event_hash','—')}</code><br>"
+                    f"Hash anterior: <code>{row.get('previous_hash','—')}</code><br>"
+                    f"Hash anterior da entidade: <code>{row.get('entity_previous_hash','—')}</code><br>"
+                    f"Origem/proveniência: <strong>{row.get('origin','—')}</strong> / {row.get('provenance_source','—')}<br>"
+                    f"Trilha de circulação: <strong>{trace_txt}</strong> · Interoperabilidade: <strong>{refs_txt}</strong>"
+                    f"</div>", unsafe_allow_html=True
+                )
 
 
 # ═════════════════════════════════════════════════════════════════════
 # ABA 7 — GRAFO E OPEN DATA
 # ═════════════════════════════════════════════════════════════════════
 def tab_graph_open_data():
-    st.markdown("### Grafo analítico, open data e metadados institucionais")
+    st.markdown("### Grafo 3D, open data e interoperabilidade analítica")
     tdf = all_tags()
     meta = load_institution_metadata()
     events_df = all_events()
+    open_sources = load_open_data_sources()
+    mappings = load_interoperability_registry()
 
-    t1, t2, t3 = st.tabs([" Grafo de análise", " Open data institucional", " Registro de circulação"])
+    t1, t2, t3 = st.tabs([" Grafo 3D conectado", " Open data e interoperabilidade", " Circulação e metadados"])
 
     with t1:
         if tdf.empty:
             st.info('Ainda não há tags suficientes para o grafo.')
         else:
-            thr = st.slider('Limiar do grafo', 0.20, 0.90, 0.35, 0.05, key='graph_thr')
-            nodes, edges = build_graph_data(tdf, threshold=thr)
-            st.markdown(build_graph_svg(nodes, edges), unsafe_allow_html=True)
+            thr = st.slider('Limiar semântico do grafo', 0.20, 0.90, 0.35, 0.05, key='graph_thr')
+            nodes, edges = build_interoperability_graph_data(tdf, open_sources=open_sources, mappings=mappings, threshold=thr)
+            build_graph_3d_component(nodes, edges, height=620)
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                st.markdown(kpi('Nós no grafo', len(nodes), 'tags + domínios + open data', '#a7e6ff'), unsafe_allow_html=True)
+            with c2:
+                st.markdown(kpi('Arestas', len(edges), 'conexões semânticas e externas', '#6ee7b7'), unsafe_allow_html=True)
+            with c3:
+                st.markdown(kpi('Fontes externas', len(open_sources), 'registradas', '#fcd34d'), unsafe_allow_html=True)
             theme_df = analyze_theme_groups(tdf)
             if not theme_df.empty:
                 st.dataframe(theme_df, use_container_width=True, hide_index=True)
 
     with t2:
-        with st.form('form_meta_institucional'):
-            instituicao = st.text_input('Instituição', value=str(meta.get('instituicao', '')))
-            colecao = st.text_input('Coleção', value=str(meta.get('colecao', '')))
-            licenca = st.text_input('Licença de dados', value=str(meta.get('licenca_dados', '')))
-            responsavel = st.text_input('Responsável', value=str(meta.get('responsavel', '')))
-            descricao = st.text_area('Descrição institucional', value=str(meta.get('descricao', '')))
-            salvar_meta = st.form_submit_button('Salvar metadados institucionais')
-            if salvar_meta:
-                previous = dict(meta)
-                meta = {
-                    'instituicao': instituicao,
-                    'colecao': colecao,
-                    'licenca_dados': licenca,
-                    'responsavel': responsavel,
-                    'descricao': descricao,
-                    'ultima_atualizacao': now_str(),
-                }
-                save_institution_metadata(meta)
-                register_event(
-                    'institution_metadata_update',
-                    st.session_state.get('admin_username', 'admin'),
-                    'admin',
-                    'metadado_institucional',
-                    'instituicao',
-                    meta,
-                    origin='open_data',
-                    automatic=False,
-                    status='revisado',
-                    previous_state=previous,
-                )
-                st.success('Metadados institucionais atualizados.')
-                st.rerun()
+        st.markdown('#### Metadados institucionais e fontes externas')
+        c1, c2 = st.columns(2)
+        with c1:
+            with st.form('form_meta_institucional'):
+                instituicao = st.text_input('Instituição', value=str(meta.get('instituicao', '')))
+                colecao = st.text_input('Coleção', value=str(meta.get('colecao', '')))
+                licenca = st.text_input('Licença de dados', value=str(meta.get('licenca_dados', '')))
+                responsavel = st.text_input('Responsável', value=str(meta.get('responsavel', '')))
+                descricao = st.text_area('Descrição institucional', value=str(meta.get('descricao', '')))
+                padroes = st.text_input('Padrões de interoperabilidade', value=', '.join(meta.get('padroes_interoperabilidade', [])))
+                salvar_meta = st.form_submit_button('Salvar metadados institucionais')
+                if salvar_meta:
+                    previous = dict(meta)
+                    meta = {
+                        'instituicao': instituicao,
+                        'colecao': colecao,
+                        'licenca_dados': licenca,
+                        'responsavel': responsavel,
+                        'descricao': descricao,
+                        'padroes_interoperabilidade': [p.strip() for p in padroes.split(',') if p.strip()],
+                        'politica_proveniencia': meta.get('politica_proveniencia', default_institution_metadata().get('politica_proveniencia')),
+                        'escopo_semantico': meta.get('escopo_semantico', default_institution_metadata().get('escopo_semantico')),
+                        'ultima_atualizacao': now_str(),
+                    }
+                    save_institution_metadata(meta)
+                    register_event(
+                        'institution_metadata_update',
+                        st.session_state.get('admin_username', 'admin'),
+                        'admin',
+                        'metadado_institucional',
+                        'instituicao',
+                        meta,
+                        origin='open_data',
+                        automatic=False,
+                        status='revisado',
+                        previous_state=previous,
+                        interoperability_refs=meta.get('padroes_interoperabilidade', []),
+                        semantic_snapshot={'colecao': meta.get('colecao', ''), 'instituicao': meta.get('instituicao', '')},
+                        provenance_source='gestao_metadados_institucionais',
+                    )
+                    st.success('Metadados institucionais atualizados.')
+                    st.rerun()
 
-        st.markdown('#### JSON aberto dos metadados institucionais')
+        with c2:
+            with st.form('form_open_data_source'):
+                nome = st.text_input('Nome da fonte externa')
+                tipo = st.selectbox('Tipo', ['knowledge_graph', 'api_cultural', 'imagem_interoperavel', 'catalogo_aberto', 'vocabulário_controlado'])
+                url = st.text_input('URL / endpoint')
+                protocolo = st.text_input('Protocolo', value='REST / JSON')
+                padrao = st.text_input('Padrão / schema', value='Dublin Core')
+                status = st.selectbox('Status da conexão', ['ativo', 'em teste', 'planejado'])
+                descricao = st.text_area('Descrição da fonte')
+                salvar_fonte = st.form_submit_button('Registrar fonte open data')
+                if salvar_fonte:
+                    if not nome.strip():
+                        st.error('Informe o nome da fonte.')
+                    else:
+                        new_id = max([s.get('id', 0) for s in open_sources], default=0) + 1
+                        record = {
+                            'id': new_id,
+                            'nome': nome.strip(),
+                            'tipo': tipo,
+                            'url': url.strip(),
+                            'protocolo': protocolo.strip(),
+                            'padrao': padrao.strip(),
+                            'status': status,
+                            'descricao': descricao.strip(),
+                            'criado_em': now_str(),
+                        }
+                        open_sources.append(record)
+                        save_open_data_sources(open_sources)
+                        register_event(
+                            'open_data_source_registered',
+                            st.session_state.get('admin_username', 'admin'),
+                            'admin',
+                            'fonte_open_data',
+                            new_id,
+                            record,
+                            origin='open_data_externo',
+                            automatic=False,
+                            status='validado',
+                            interoperability_refs=[record.get('padrao', '—'), record.get('protocolo', '—')],
+                            semantic_snapshot={'fonte': record.get('nome', ''), 'tipo': record.get('tipo', '')},
+                            provenance_source='cadastro_fonte_externa',
+                        )
+                        st.success('Fonte externa registrada.')
+                        st.rerun()
+
+        st.markdown(divider(), unsafe_allow_html=True)
+        st.markdown('#### Registro das fontes externas')
+        if open_sources:
+            st.dataframe(pd.DataFrame(open_sources), use_container_width=True, hide_index=True)
+
+        st.markdown('#### Mapeamentos de interoperabilidade')
+        with st.form('form_interoperabilidade'):
+            dominio_local = st.selectbox('Domínio local', ['tags', 'obras', 'ontologias', 'eventos', 'metadados'])
+            fonte_externa = st.selectbox('Fonte externa', [s.get('nome', 'Fonte') for s in open_sources]) if open_sources else st.text_input('Fonte externa')
+            padrao = st.text_input('Padrão / modelo', value='CIDOC CRM / Dublin Core')
+            campos = st.text_area('Campos mapeados', placeholder='Ex: tag -> rótulo, grupo_tematico -> classe, obra_id -> identifier')
+            objetivo = st.text_area('Objetivo da interoperabilidade', placeholder='Descreva a função analítica e documental dessa conexão.')
+            status_map = st.selectbox('Status do mapeamento', ['ativo', 'em teste', 'planejado'])
+            salvar_map = st.form_submit_button('Salvar mapeamento')
+            if salvar_map:
+                if not campos.strip():
+                    st.error('Informe ao menos um campo mapeado.')
+                else:
+                    new_id = max([m.get('id', 0) for m in mappings], default=0) + 1
+                    record = {
+                        'id': new_id,
+                        'dominio_local': dominio_local,
+                        'fonte_externa': fonte_externa,
+                        'padrao': padrao.strip(),
+                        'campos_mapeados': [c.strip() for c in campos.split(',') if c.strip()],
+                        'status': status_map,
+                        'objetivo': objetivo.strip(),
+                        'criado_em': now_str(),
+                    }
+                    mappings.append(record)
+                    save_interoperability_registry(mappings)
+                    register_event(
+                        'interoperability_mapping_created',
+                        st.session_state.get('admin_username', 'admin'),
+                        'admin',
+                        'mapeamento_interoperabilidade',
+                        new_id,
+                        record,
+                        origin='interoperabilidade',
+                        automatic=False,
+                        status='revisado',
+                        interoperability_refs=[record.get('fonte_externa', ''), record.get('padrao', '')],
+                        semantic_snapshot={'dominio_local': record.get('dominio_local', ''), 'fonte_externa': record.get('fonte_externa', '')},
+                        provenance_source='mapeamento_manual',
+                    )
+                    st.success('Mapeamento salvo.')
+                    st.rerun()
+
+        interop_df = summarize_interoperability(open_sources, mappings)
+        if not interop_df.empty:
+            st.dataframe(interop_df, use_container_width=True, hide_index=True)
+            st.bar_chart(interop_df.set_index('Fonte externa').groupby(level=0).size())
+
+    with t3:
+        st.markdown('#### Registro consolidado de circulação, proveniência e interoperabilidade')
         st.json(meta)
         st.download_button(
             'Baixar metadados institucionais (JSON)',
@@ -1996,20 +2475,20 @@ def tab_graph_open_data():
             'application/json',
             use_container_width=True
         )
-
-    with t3:
         if events_df.empty:
             st.info('Sem eventos registrados ainda.')
         else:
-            circ = events_df.copy().sort_values('id', ascending=False)
-            if 'circulation_action' in circ.columns:
-                circ = circ[circ['circulation_action'].notna() | circ['event_type'].isin(['obra_created','obra_deleted','tag_created','human_tag_revision','ontology_created','institution_metadata_update'])]
-            cols = [c for c in ['id','timestamp','event_type','actor','entity_type','entity_id','status','circulation_action','event_hash'] if c in circ.columns]
+            circ = events_df.copy().sort_values('ledger_no', ascending=False)
+            circ = circ[circ['event_type'].isin([
+                'obra_created','obra_deleted','tag_created','tag_group_audit','orthography_suggestion_logged',
+                'ontology_created','institution_metadata_update','open_data_source_registered',
+                'interoperability_mapping_created','data_export'
+            ])]
+            cols = [c for c in ['ledger_no','timestamp','event_type','actor','entity_type','entity_id','entity_version','status','circulation_action','origin','event_hash'] if c in circ.columns]
             st.dataframe(circ[cols], use_container_width=True, hide_index=True)
-            if not circ.empty:
-                st.markdown(insight(
-                    "<strong>Trilha de circulação:</strong> esta área registra exportações, revisões e atualização de metadados com encadeamento hash, permitindo rastrear o fluxo analítico e documental do sistema."
-                ), unsafe_allow_html=True)
+            st.markdown(insight(
+                '<strong>Trilha de circulação:</strong> exportações, auditorias, registros institucionais e conexões com open data permanecem encadeados no mesmo ledger, permitindo rastrear versões, proveniência, circulação e interoperabilidade do arquivo semântico.'
+            ), unsafe_allow_html=True)
 
 # ═════════════════════════════════════════════════════════════════════
 # ABA 5 — GESTÃO DE OBRAS
