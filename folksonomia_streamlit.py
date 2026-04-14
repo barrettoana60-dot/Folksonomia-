@@ -232,6 +232,72 @@ def default_institution_metadata():
         "descricao": "Registro analítico e institucional conectado ao fluxo de tags, ontologias, auditoria e proveniência."
     }
 
+
+def default_open_data_sources():
+    return [
+        {
+            "id": 1,
+            "nome": "Wikidata",
+            "url": "https://www.wikidata.org",
+            "tipo": "grafo de conhecimento",
+            "licenca": "CC0",
+            "descricao": "Base externa para reconciliação de entidades, artistas, lugares, períodos e conceitos.",
+            "campos": ["entidade", "label", "descricao", "classe", "identificador"],
+            "status": "ativo",
+            "criado_em": now_str()
+        },
+        {
+            "id": 2,
+            "nome": "Europeana",
+            "url": "https://www.europeana.eu",
+            "tipo": "agregador de patrimônio",
+            "licenca": "Mista / conforme item",
+            "descricao": "Fonte para interoperabilidade documental, contexto curatorial e mapeamento de acervos.",
+            "campos": ["titulo", "creator", "type", "subject", "rights"],
+            "status": "ativo",
+            "criado_em": now_str()
+        },
+        {
+            "id": 3,
+            "nome": "IBRAM dados abertos",
+            "url": "https://dados.gov.br",
+            "tipo": "dados governamentais",
+            "licenca": "Aberta",
+            "descricao": "Referência institucional para conexões com metadados museológicos e registros públicos.",
+            "campos": ["instituicao", "colecao", "local", "tema", "identificador"],
+            "status": "ativo",
+            "criado_em": now_str()
+        }
+    ]
+
+def default_interoperability_registry():
+    return [
+        {
+            "id": 1,
+            "dominio_local": "tag",
+            "campo_local": "tag",
+            "fonte_externa": "Wikidata",
+            "campo_externo": "label",
+            "tipo_relacao": "equivalencia_semantica",
+            "objetivo": "Cruzar termos criados pelos usuários com identificadores externos e ampliar a rede semântica.",
+            "padrao": "SKOS closeMatch",
+            "status": "ativo",
+            "criado_em": now_str()
+        },
+        {
+            "id": 2,
+            "dominio_local": "obra",
+            "campo_local": "artista",
+            "fonte_externa": "Europeana",
+            "campo_externo": "creator",
+            "tipo_relacao": "contextualizacao_autoral",
+            "objetivo": "Conectar autoria local a registros externos de patrimônio e documentação.",
+            "padrao": "Dublin Core creator",
+            "status": "ativo",
+            "criado_em": now_str()
+        }
+    ]
+
 def ensure_support_files():
     ensure_data_dir()
     if not os.path.exists(ONTOLOGIES_FILE):
@@ -240,6 +306,10 @@ def ensure_support_files():
         save_json_file(EVENTS_FILE, [])
     if not os.path.exists(METADATA_FILE):
         save_json_file(METADATA_FILE, default_institution_metadata())
+    if not os.path.exists(OPEN_DATA_FILE):
+        save_json_file(OPEN_DATA_FILE, default_open_data_sources())
+    if not os.path.exists(INTEROP_FILE):
+        save_json_file(INTEROP_FILE, default_interoperability_registry())
 
 def load_ontologies():
     ensure_support_files()
