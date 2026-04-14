@@ -156,6 +156,64 @@ def hash_record(payload):
     raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
     return hashlib.sha256(raw.encode('utf-8')).hexdigest()
 
+def safe_int(value, default=0):
+    try:
+        if value is None:
+            return default
+        if isinstance(value, str) and not value.strip():
+            return default
+        return int(float(value))
+    except Exception:
+        return default
+
+def ledger_label(value, fallback=0):
+    number = safe_int(value, fallback)
+    return f"REG-{number:06d}"
+
+def normalize_events_dataframe(df):
+    if df is None or df.empty:
+        return pd.DataFrame()
+    norm = df.copy()
+    expected_defaults = {
+        'ledger_no': None,
+        'id': None,
+        'timestamp': '—',
+        'event_type': '—',
+        'actor': 'sistema',
+        'actor_role': 'system',
+        'entity_type': '—',
+        'entity_id': '—',
+        'entity_version': 1,
+        'origin': 'sistema',
+        'automatic': False,
+        'status': 'bruto',
+        'payload': {},
+        'previous_state': None,
+        'previous_hash': 'GENESIS',
+        'entity_previous_hash': 'GENESIS_ENTITY',
+        'semantic_archive_ref': '—',
+        'provenance_source': 'sistema',
+        'interoperability_refs': [],
+        'semantic_snapshot': {},
+        'circulation_action': None,
+        'circulation_trace': None,
+        'event_hash': '',
+    }
+    for col, default in expected_defaults.items():
+        if col not in norm.columns:
+            norm[col] = default
+    for idx in norm.index:
+        if pd.isna(norm.at[idx, 'ledger_no']) or str(norm.at[idx, 'ledger_no']).strip() == '':
+            fallback = norm.at[idx, 'id'] if 'id' in norm.columns else idx + 1
+            norm.at[idx, 'ledger_no'] = safe_int(fallback, idx + 1)
+    norm['ledger_no'] = [safe_int(v, i + 1) for i, v in enumerate(norm['ledger_no'].tolist())]
+    norm['entity_version'] = [max(1, safe_int(v, 1)) for v in norm['entity_version'].tolist()]
+    norm['entity_id'] = norm['entity_id'].astype(str).replace({'nan': '—', 'None': '—'})
+    norm['event_hash'] = norm['event_hash'].astype(str)
+    norm['previous_hash'] = norm['previous_hash'].astype(str)
+    norm['entity_previous_hash'] = norm['entity_previous_hash'].astype(str)
+    return norm
+
 def default_ontologies():
     return [
         {"id": 1, "nome": "Religioso", "categoria": "tema", "descricao": "Vocabulário para referências religiosas e sacras.", "termos": ["religioso","igreja","santo","santa","cruz","anjo","sagrado","altar"], "criado_em": now_str()},
@@ -223,7 +281,7 @@ def save_interoperability_registry(mappings):
 def all_events():
     ensure_support_files()
     ev = load_json_file(EVENTS_FILE, [])
-    return pd.DataFrame(ev) if ev else pd.DataFrame()
+    return normalize_events_dataframe(pd.DataFrame(ev)) if ev else pd.DataFrame()
 
 def get_last_event_hash():
     events = load_json_file(EVENTS_FILE, [])
@@ -2147,7 +2205,7 @@ def tab_validation_audit():
     with c4:
         st.markdown(kpi('Eventos no ledger', eventos, 'rastreabilidade encadeada', '#a78bfa'), unsafe_allow_html=True)
 
-    t1, t2, t3 = st.tabs([" Auditoria da separação", " Ortografia sem sobrescrever", " Registro encadeado"])
+    t1, t2, t3 = st.tabs([" Auditoria da separação", " Ortografia sem sobrescrever", " Blockchain documental"])
 
     with t1:
         if tdf.empty:
@@ -2251,43 +2309,47 @@ def tab_validation_audit():
                             st.rerun()
 
     with t3:
-        st.markdown('#### Registro encadeado de eventos, proveniência e interoperabilidade')
+        st.markdown('#### Blockchain documental: registro encadeado, proveniência e interoperabilidade')
         if events_df.empty:
             st.info('Nenhum evento foi registrado ainda.')
         else:
-            preview = events_df.copy().sort_values('ledger_no', ascending=False)
-            preview['Registro'] = preview['ledger_no'].apply(lambda x: f"REG-{int(x):06d}")
+            preview = normalize_events_dataframe(events_df).copy().sort_values('ledger_no', ascending=False)
+            preview['Registro'] = [ledger_label(v, i + 1) for i, v in enumerate(preview['ledger_no'].tolist())]
             preview['Hash Atual'] = preview['event_hash'].astype(str).str[:16] + '…'
             preview['Hash Anterior'] = preview['previous_hash'].astype(str).str[:16] + '…'
+            preview['Hash Entidade'] = preview['entity_previous_hash'].astype(str).str[:16] + '…'
             preview['Entidade'] = preview['entity_type'].astype(str) + ' #' + preview['entity_id'].astype(str)
-            cols = [c for c in ['Registro','timestamp','event_type','actor','Entidade','entity_version','status','Hash Atual','Hash Anterior','origin'] if c in preview.columns]
+            cols = [c for c in ['Registro','timestamp','event_type','actor','Entidade','entity_version','status','Hash Atual','Hash Anterior','Hash Entidade','origin'] if c in preview.columns]
             st.dataframe(preview[cols], use_container_width=True, hide_index=True)
 
             st.markdown(divider(), unsafe_allow_html=True)
-            st.markdown('#### Leitura técnica da camada de registro')
+            st.markdown('#### Estrutura técnica do ledger')
             st.markdown(insight(
-                '<strong>1.</strong> cada alteração gera um evento numerado no ledger; '
-                '<strong>2.</strong> cada evento recebe hash próprio e também referencia o hash global anterior; '
-                '<strong>3.</strong> cada entidade mantém versionamento próprio; '
-                '<strong>4.</strong> revisões humanas preservam o estado anterior no campo previous_state; '
-                '<strong>5.</strong> exportações, auditorias e conexões externas alimentam a trilha de circulação e interoperabilidade.'
+                '<strong>1.</strong> cada alteração gera um evento numerado; '
+                '<strong>2.</strong> cada evento recebe hash próprio; '
+                '<strong>3.</strong> cada revisão mantém referência ao hash global anterior e ao hash anterior da própria entidade; '
+                '<strong>4.</strong> a correção humana registra previous_state sem apagar o histórico; '
+                '<strong>5.</strong> cada exportação ou conexão externa registra trilha de circulação e interoperabilidade.'
             ), unsafe_allow_html=True)
 
-            top_events = preview.head(8)
+            top_events = preview.head(12)
             for _, row in top_events.iterrows():
                 refs = row.get('interoperability_refs', [])
                 refs_txt = ', '.join(refs) if isinstance(refs, list) and refs else '—'
                 trace = row.get('circulation_trace') or {}
                 trace_txt = trace.get('acao', '—') if isinstance(trace, dict) else '—'
+                payload = row.get('payload') or {}
+                payload_txt = json.dumps(payload, ensure_ascii=False, default=str)[:600]
                 st.markdown(
                     f"<div class='sc sc-p'>"
                     f"<strong>{row.get('Registro','—')}</strong> · {row.get('timestamp','—')}<br>"
                     f"Evento: <strong>{row.get('event_type','—')}</strong> · Entidade: <strong>{row.get('entity_type','—')} #{row.get('entity_id','—')}</strong> · Versão: <strong>{row.get('entity_version','—')}</strong><br>"
                     f"Hash atual: <code>{row.get('event_hash','—')}</code><br>"
-                    f"Hash anterior: <code>{row.get('previous_hash','—')}</code><br>"
+                    f"Hash global anterior: <code>{row.get('previous_hash','—')}</code><br>"
                     f"Hash anterior da entidade: <code>{row.get('entity_previous_hash','—')}</code><br>"
-                    f"Origem/proveniência: <strong>{row.get('origin','—')}</strong> / {row.get('provenance_source','—')}<br>"
-                    f"Trilha de circulação: <strong>{trace_txt}</strong> · Interoperabilidade: <strong>{refs_txt}</strong>"
+                    f"Origem: <strong>{row.get('origin','—')}</strong> · Proveniência: <strong>{row.get('provenance_source','—')}</strong><br>"
+                    f"Circulação: <strong>{trace_txt}</strong> · Interoperabilidade: <strong>{refs_txt}</strong><br>"
+                    f"Snapshot semântico/payload: <code>{payload_txt}</code>"
                     f"</div>", unsafe_allow_html=True
                 )
 
