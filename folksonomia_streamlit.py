@@ -398,25 +398,142 @@ def get_accessibility_settings():
 
 def apply_accessibility_settings():
     settings = get_accessibility_settings()
-    bg = '#000000'
-    fg = '#ffffff'
-    card = 'rgba(255,255,255,.15)'
-    if settings['theme'] == 'Claro':
-        bg = '#f5f0e8'
+    theme = settings['theme']
+    font_size = int(settings['font_size'])
+    if theme == 'Claro':
+        gradient = 'linear-gradient(-45deg,#f7f1e8 0%,#dfe9f3 25%,#f5ede3 50%,#dde7f1 75%,#f7f1e8 100%)'
         fg = '#1a1a1a'
-        card = 'rgba(255,255,255,.85)'
-    elif settings['theme'] == 'Alto Contraste':
-        bg = '#000000'
+        card = 'rgba(255,255,255,.82)'
+        border = 'rgba(0,0,0,.14)'
+        accent = '#173b66'
+    elif theme == 'Alto Contraste':
+        gradient = 'linear-gradient(-45deg,#000000 0%,#111111 25%,#000000 50%,#171717 75%,#000000 100%)'
         fg = '#ffe600'
-        card = 'rgba(20,20,20,.95)'
+        card = 'rgba(10,10,10,.92)'
+        border = 'rgba(255,230,0,.32)'
+        accent = '#ffe600'
+    else:
+        gradient = 'linear-gradient(-45deg,#000 0%,#001F3F 25%,#000 50%,#001F3F 75%,#000 100%)'
+        fg = '#ffffff'
+        card = 'rgba(255,255,255,.15)'
+        border = 'rgba(255,255,255,.26)'
+        accent = '#a7e6ff'
     st.markdown(f"""
     <style>
     *{{font-family:'Times New Roman', Times, serif !important;}}
-    .stApp{{color:{fg} !important;background:{bg} !important;}}
-    .glass-card,.obra-card,.kpi-card,.sc,.insight,.cluster-wrap{{background:{card} !important;}}
-    p,div,label,span,button,input,textarea,select,h1,h2,h3,h4,h5,h6{{font-size:{settings['font_size']}px !important;}}
+    .stApp{{
+        color:{fg} !important;
+        background:{gradient} !important;
+        background-size:400% 400% !important;
+        animation:bg 15s ease infinite !important;
+    }}
+    .glass-card,.obra-card,.kpi-card,.sc,.insight,.cluster-wrap{{
+        background:{card} !important;
+        border-color:{border} !important;
+    }}
+    .stMarkdown p,
+    .stMarkdown li,
+    .stCaption,
+    .stText,
+    .stAlert,
+    label,
+    .stButton button,
+    .stDownloadButton button,
+    .stTextInput input,
+    .stTextArea textarea,
+    .stSelectbox div,
+    .stMultiSelect div,
+    .stDataFrame,
+    .stExpander details summary,
+    .audio-block,
+    .audio-block *{{
+        font-size:{font_size}px !important;
+        line-height:1.6 !important;
+    }}
+    h1{{font-size:{max(28, font_size + 18)}px !important; line-height:1.2 !important;}}
+    h2{{font-size:{max(24, font_size + 10)}px !important; line-height:1.25 !important;}}
+    h3{{font-size:{max(20, font_size + 6)}px !important; line-height:1.3 !important;}}
+    .audio-card{{
+        background:{card};
+        border:1px solid {border};
+        border-radius:22px;
+        padding:1.35rem 1.5rem;
+        margin-top:1rem;
+        box-shadow:0 8px 28px rgba(0,0,0,.18);
+        overflow-wrap:anywhere;
+    }}
+    .audio-label{{
+        display:inline-block;
+        margin-bottom:.75rem;
+        padding:.35rem .8rem;
+        border-radius:999px;
+        border:1px solid {border};
+        background:rgba(255,255,255,.08);
+        color:{accent};
+        font-weight:700;
+    }}
+    .audio-title{{font-weight:700; margin-bottom:.45rem; color:{fg};}}
+    .audio-meta{{opacity:.88; margin-bottom:.85rem; color:{fg};}}
+    .audio-desc{{white-space:normal; word-break:break-word; color:{fg};}}
+    .streamlit-expanderHeader{{line-height:1.35 !important;}}
     </style>
     """, unsafe_allow_html=True)
+
+def build_audio_description(obra):
+    titulo = str(obra.get('titulo', 'obra')).strip()
+    artista = str(obra.get('artista', 'autor não identificado')).strip()
+    ano = str(obra.get('ano', 'data não informada')).strip()
+    titulo_norm = normalize_text(titulo)
+    manual = str(obra.get('audio_descricao', '') or '').strip()
+
+    if 'guernica' in titulo_norm:
+        return (
+            "Guernica é um grande painel de pintura histórica realizado por Pablo Picasso em 1937, "
+            "ligado ao trauma da Guerra Civil Espanhola e ao bombardeio da cidade basca de Guernica. "
+            "A composição é horizontal, extensa e construída quase inteiramente em preto, branco e cinza, "
+            "o que reforça a atmosfera de luto, ruína e choque. Em vez de figuras naturalistas, Picasso usa "
+            "uma linguagem próxima do cubismo: corpos fragmentados, rostos angulosos, bocas abertas, olhos "
+            "dilatados e planos quebrados que fazem a cena parecer estilhaçada. À esquerda surge um touro escuro; "
+            "abaixo dele, uma mãe levanta a cabeça em desespero enquanto segura o filho morto. No centro, um cavalo "
+            "ferido parece gritar, com o corpo atravessado por linhas agudas. Acima, uma luz intensa lembra ao mesmo "
+            "tempo lâmpada e explosão. Ao redor aparecem mãos, braços, pernas, uma figura caída e arquiteturas rompidas, "
+            "como se tudo estivesse sendo esmagado pela violência da guerra."
+        )
+
+    if manual:
+        return manual
+
+    return (
+        f"{titulo} é uma obra atribuída a {artista}, datada de {ano}. "
+        "A audiodescrição deve observar o tipo de composição, a organização do espaço, a presença de figuras humanas, "
+        "objetos, gestos, direção do olhar, contraste de luz e sombra, além de cores dominantes, textura visual, clima "
+        "emocional e possíveis relações temáticas."
+    )
+
+
+def render_audio_description_block(obra):
+    descricao = build_audio_description(obra)
+    titulo = obra.get('titulo', '—')
+    artista = obra.get('artista', '—')
+    ano = obra.get('ano', '—')
+    tipo = 'Pintura'
+    contexto = 'Leitura descritiva da composição visual'
+    if 'guernica' in normalize_text(titulo):
+        tipo = 'Pintura histórica / mural moderno'
+        contexto = 'Guerra, dor coletiva, fragmentação e linguagem cubista'
+    st.markdown(
+        f"""
+        <div class='audio-card audio-block'>
+            <div class='audio-label'>Acessibilidade e audiodescrição</div>
+            <div class='audio-title'>Título: {titulo}</div>
+            <div class='audio-meta'><strong>Artista:</strong> {artista} &nbsp;•&nbsp; <strong>Ano:</strong> {ano} &nbsp;•&nbsp; <strong>Tipo:</strong> {tipo}</div>
+            <div class='audio-meta'><strong>Eixo temático:</strong> {contexto}</div>
+            <div class='audio-desc'><strong>Audiodescrição detalhada:</strong> {descricao}</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    render_speech_button(descricao, label='Ouvir audiodescrição da obra')
 
 def render_accessibility_panel():
     st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
@@ -938,11 +1055,7 @@ def show_obras():
             else:
                 st.info("Você ainda não criou tags para esta obra")
 
-            with st.expander("Acessibilidade e audiodescrição", expanded=st.session_state.get('acc_focus_audio', True)):
-                st.markdown(f"**Título:** {obra.get('titulo','—')}")
-                st.markdown(f"**Artista:** {obra.get('artista','—')} · **Ano:** {obra.get('ano','—')}")
-                st.markdown(f"**Audiodescrição:** {obra.get('audio_descricao','Descrição não cadastrada.')}")
-                render_speech_button(obra.get('audio_descricao','Descrição não cadastrada.'), label='Ouvir audiodescrição da obra')
+            render_audio_description_block(obra)
 
 # ── ADMIN ─────────────────────────────────────────────────────────────
 def show_admin():
@@ -1619,6 +1732,284 @@ def tab_users_quest():
             "A riqueza vocabular (TTR) mede a proporção de termos únicos sobre o total criado — "
             "valores próximos de 1.0 indicam alta originalidade e variedade nas tags."
         ), unsafe_allow_html=True)
+
+# ═════════════════════════════════════════════════════════════════════
+# ABA 5 — ONTOLOGIAS
+# ═════════════════════════════════════════════════════════════════════
+def tab_ontologies():
+    st.markdown("### Ontologias pré-marcadas e análise semântica")
+    tdf = all_tags()
+    ontologies = load_ontologies()
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.markdown(kpi("Ontologias", len(ontologies), "vocabulários ativos", "#a7e6ff"), unsafe_allow_html=True)
+    with c2:
+        st.markdown(kpi("Termos Controlados", sum(len(o.get('termos', [])) for o in ontologies), "termos cadastrados", "#6ee7b7"), unsafe_allow_html=True)
+    with c3:
+        usados = analyze_ontology_usage(tdf, ontologies)
+        ocorrencias = int(usados['Ocorrências'].sum()) if not usados.empty else 0
+        st.markdown(kpi("Correspondências", ocorrencias, "tags ligadas a ontologias", "#fcd34d"), unsafe_allow_html=True)
+
+    t1, t2, t3 = st.tabs([" Ontologias cadastradas", " Criar ontologia", " Analisar ontologias"])
+
+    with t1:
+        if not ontologies:
+            st.info("Nenhuma ontologia cadastrada.")
+        else:
+            for ont in ontologies:
+                termos = ont.get('termos', [])
+                st.markdown(
+                    f"""
+                    <div class='glass-card'>
+                        <h3 style='margin-bottom:.4rem'>{ont.get('nome','Ontologia')}</h3>
+                        <p><strong>Categoria:</strong> {ont.get('categoria','—')}</p>
+                        <p><strong>Descrição:</strong> {ont.get('descricao','—')}</p>
+                        <p><strong>Termos:</strong> {', '.join(termos) if termos else '—'}</p>
+                        <p><strong>Criado em:</strong> {ont.get('criado_em','—')}</p>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+
+    with t2:
+        with st.form('nova_ontologia'):
+            nome = st.text_input('Nome da ontologia', placeholder='Ex: Iconografia religiosa')
+            categoria = st.selectbox('Categoria', ['tema', 'atributo', 'material', 'cor', 'periodo', 'personagem', 'evento'])
+            descricao = st.text_area('Descrição', placeholder='Explique para que serve esta ontologia...')
+            termos = st.text_area('Termos pré-marcados', placeholder='Separe por vírgula. Ex: santo, altar, cruz, anjo')
+            submit = st.form_submit_button('Salvar ontologia')
+            if submit:
+                if not nome.strip() or not termos.strip():
+                    st.error('Preencha ao menos o nome e os termos da ontologia.')
+                else:
+                    new_id = max([o.get('id', 0) for o in ontologies], default=0) + 1
+                    record = {
+                        'id': new_id,
+                        'nome': nome.strip(),
+                        'categoria': categoria,
+                        'descricao': descricao.strip(),
+                        'termos': [t.strip() for t in termos.split(',') if t.strip()],
+                        'criado_em': now_str(),
+                    }
+                    ontologies.append(record)
+                    save_ontologies(ontologies)
+                    register_event(
+                        'ontology_created',
+                        st.session_state.get('admin_username', 'admin'),
+                        'admin',
+                        'ontologia',
+                        new_id,
+                        record,
+                        origin='gestao_ontologias',
+                        automatic=False,
+                        status='validado'
+                    )
+                    st.success('Ontologia criada com sucesso.')
+                    st.rerun()
+
+    with t3:
+        st.markdown('#### Uso das ontologias sobre as tags existentes')
+        usage = analyze_ontology_usage(tdf, ontologies)
+        if usage.empty:
+            st.info('Ainda não há tags para cruzar com as ontologias.')
+        else:
+            st.dataframe(usage, use_container_width=True, hide_index=True)
+            st.bar_chart(usage.set_index('Ontologia')['Ocorrências'])
+
+        st.markdown(divider(), unsafe_allow_html=True)
+        st.markdown('#### Visualização por grupo temático')
+        theme_df = analyze_theme_groups(tdf)
+        if theme_df.empty:
+            st.info('Sem grupos temáticos calculados ainda.')
+        else:
+            st.dataframe(theme_df, use_container_width=True, hide_index=True)
+            st.bar_chart(theme_df.set_index('Grupo')['Qtd Tags'])
+
+
+# ═════════════════════════════════════════════════════════════════════
+# ABA 6 — VALIDAÇÃO E AUDITORIA
+# ═════════════════════════════════════════════════════════════════════
+def tab_validation_audit():
+    st.markdown("### Validação de tags, erro ortográfico e cadeia de auditoria")
+    tdf = all_tags()
+    events_df = all_events()
+    ontologies = load_ontologies()
+
+    if not tdf.empty and 'status' not in tdf.columns:
+        tdf['status'] = 'bruto'
+
+    c1, c2, c3, c4 = st.columns(4)
+    bruto = int((tdf['status'] == 'bruto').sum()) if not tdf.empty else 0
+    sugerido = int((tdf['status'] == 'sugerido').sum()) if not tdf.empty else 0
+    validado = int((tdf['status'].isin(['validado', 'revisado', 'publicado'])).sum()) if not tdf.empty else 0
+    eventos = len(events_df) if not events_df.empty else 0
+    with c1:
+        st.markdown(kpi('Status bruto', bruto, 'aguardando revisão', '#f87171'), unsafe_allow_html=True)
+    with c2:
+        st.markdown(kpi('Status sugerido', sugerido, 'triagem automática', '#fcd34d'), unsafe_allow_html=True)
+    with c3:
+        st.markdown(kpi('Validadas / revisadas', validado, 'com revisão humana', '#6ee7b7'), unsafe_allow_html=True)
+    with c4:
+        st.markdown(kpi('Eventos auditáveis', eventos, 'cadeia hash registrada', '#a78bfa'), unsafe_allow_html=True)
+
+    t1, t2, t3 = st.tabs([" Revisão de tags", " Erros ortográficos", " Blockchain / auditoria"])
+
+    with t1:
+        if tdf.empty:
+            st.info('Nenhuma tag disponível para validação.')
+        else:
+            rev = tdf.copy().sort_values('timestamp', ascending=False)
+            rev['grupo_tematico'] = rev['tag'].apply(classify_tag_group)
+            if 'ontologias' not in rev.columns:
+                rev['ontologias'] = rev['tag'].apply(lambda x: match_ontologies_for_tag(x, ontologies))
+            rev['ontologias_txt'] = rev['ontologias'].apply(lambda x: ', '.join(x) if isinstance(x, list) and x else '—')
+            cols = [c for c in ['id','tag','status','grupo_tematico','ontologias_txt','obra_id','timestamp'] if c in rev.columns]
+            st.dataframe(rev[cols].rename(columns={'ontologias_txt':'Ontologias'}), use_container_width=True, hide_index=True)
+
+            ids = rev['id'].tolist()
+            chosen = st.selectbox('Selecione o ID da tag para revisar', ids, key='rev_tag_id')
+            current = rev[rev['id'] == chosen].iloc[0]
+            with st.form('form_revisao_tag'):
+                novo_texto = st.text_input('Texto corrigido da tag', value=str(current.get('tag', '')))
+                novo_status = st.selectbox('Novo status', STATUS_OPTIONS, index=STATUS_OPTIONS.index(str(current.get('status', 'bruto')) if str(current.get('status', 'bruto')) in STATUS_OPTIONS else 'bruto'))
+                enviar = st.form_submit_button('Salvar revisão humana')
+                if enviar:
+                    ok = update_tag_record(int(chosen), new_tag=novo_texto, new_status=novo_status, admin_user=st.session_state.get('admin_username', 'admin'))
+                    if ok:
+                        st.success('Tag revisada e histórico preservado na trilha de auditoria.')
+                        st.rerun()
+                    else:
+                        st.error('Não foi possível revisar esta tag.')
+
+    with t2:
+        if tdf.empty:
+            st.info('Sem tags para analisar.')
+        else:
+            suggestions = build_spell_suggestions(tdf, ontologies)
+            if suggestions.empty:
+                st.success('Nenhum possível erro ortográfico encontrado com as regras atuais.')
+            else:
+                st.dataframe(suggestions, use_container_width=True, hide_index=True)
+                tag_map = {r['tag']: r for _, r in suggestions.iterrows()}
+                escolha = st.selectbox('Aplicar sugestão a qual tag?', list(tag_map.keys()), key='spell_tag_choice')
+                sug = tag_map[escolha]
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.markdown(f"**Sugestão automática:** {sug['sugestao']}")
+                with c2:
+                    if st.button('Aplicar sugestão e marcar como sugerido', key='btn_apply_spell'):
+                        target = tdf[tdf['tag'] == escolha].sort_values('id')
+                        if not target.empty:
+                            tid = int(target.iloc[0]['id'])
+                            ok = update_tag_record(tid, new_tag=str(sug['sugestao']), new_status='sugerido', admin_user=st.session_state.get('admin_username', 'admin'))
+                            if ok:
+                                st.success('Sugestão aplicada com histórico preservado.')
+                                st.rerun()
+
+    with t3:
+        st.markdown('#### Cadeia de revisão e prova de alteração')
+        if events_df.empty:
+            st.info('Nenhum evento foi registrado ainda.')
+        else:
+            preview = events_df.copy().sort_values('id', ascending=False)
+            cols = [c for c in ['id','timestamp','event_type','actor','entity_type','entity_id','status','previous_hash','event_hash','circulation_action'] if c in preview.columns]
+            st.dataframe(preview[cols], use_container_width=True, hide_index=True)
+            latest = preview.iloc[0]
+            st.markdown(insight(
+                f"<strong>Último hash:</strong> {latest.get('event_hash','—')}<br>"
+                f"<strong>Hash anterior:</strong> {latest.get('previous_hash','—')}<br>"
+                f"<strong>Evento:</strong> {latest.get('event_type','—')} · <strong>Status:</strong> {latest.get('status','—')}"
+            ), unsafe_allow_html=True)
+            st.markdown('#### Leitura da camada blockchain')
+            st.markdown("""
+- cada alteração gera um evento;
+- cada evento recebe hash;
+- cada revisão mantém referência ao estado anterior;
+- cada correção humana sobrescreve sem apagar o histórico;
+- cada exportação registra trilha de circulação.
+""")
+
+
+# ═════════════════════════════════════════════════════════════════════
+# ABA 7 — GRAFO E OPEN DATA
+# ═════════════════════════════════════════════════════════════════════
+def tab_graph_open_data():
+    st.markdown("### Grafo analítico, open data e metadados institucionais")
+    tdf = all_tags()
+    meta = load_institution_metadata()
+    events_df = all_events()
+
+    t1, t2, t3 = st.tabs([" Grafo de análise", " Open data institucional", " Registro de circulação"])
+
+    with t1:
+        if tdf.empty:
+            st.info('Ainda não há tags suficientes para o grafo.')
+        else:
+            thr = st.slider('Limiar do grafo', 0.20, 0.90, 0.35, 0.05, key='graph_thr')
+            nodes, edges = build_graph_data(tdf, threshold=thr)
+            st.markdown(build_graph_svg(nodes, edges), unsafe_allow_html=True)
+            theme_df = analyze_theme_groups(tdf)
+            if not theme_df.empty:
+                st.dataframe(theme_df, use_container_width=True, hide_index=True)
+
+    with t2:
+        with st.form('form_meta_institucional'):
+            instituicao = st.text_input('Instituição', value=str(meta.get('instituicao', '')))
+            colecao = st.text_input('Coleção', value=str(meta.get('colecao', '')))
+            licenca = st.text_input('Licença de dados', value=str(meta.get('licenca_dados', '')))
+            responsavel = st.text_input('Responsável', value=str(meta.get('responsavel', '')))
+            descricao = st.text_area('Descrição institucional', value=str(meta.get('descricao', '')))
+            salvar_meta = st.form_submit_button('Salvar metadados institucionais')
+            if salvar_meta:
+                previous = dict(meta)
+                meta = {
+                    'instituicao': instituicao,
+                    'colecao': colecao,
+                    'licenca_dados': licenca,
+                    'responsavel': responsavel,
+                    'descricao': descricao,
+                    'ultima_atualizacao': now_str(),
+                }
+                save_institution_metadata(meta)
+                register_event(
+                    'institution_metadata_update',
+                    st.session_state.get('admin_username', 'admin'),
+                    'admin',
+                    'metadado_institucional',
+                    'instituicao',
+                    meta,
+                    origin='open_data',
+                    automatic=False,
+                    status='revisado',
+                    previous_state=previous,
+                )
+                st.success('Metadados institucionais atualizados.')
+                st.rerun()
+
+        st.markdown('#### JSON aberto dos metadados institucionais')
+        st.json(meta)
+        st.download_button(
+            'Baixar metadados institucionais (JSON)',
+            json.dumps(meta, ensure_ascii=False, indent=2).encode('utf-8'),
+            'metadados_institucionais.json',
+            'application/json',
+            use_container_width=True
+        )
+
+    with t3:
+        if events_df.empty:
+            st.info('Sem eventos registrados ainda.')
+        else:
+            circ = events_df.copy().sort_values('id', ascending=False)
+            if 'circulation_action' in circ.columns:
+                circ = circ[circ['circulation_action'].notna() | circ['event_type'].isin(['obra_created','obra_deleted','tag_created','human_tag_revision','ontology_created','institution_metadata_update'])]
+            cols = [c for c in ['id','timestamp','event_type','actor','entity_type','entity_id','status','circulation_action','event_hash'] if c in circ.columns]
+            st.dataframe(circ[cols], use_container_width=True, hide_index=True)
+            if not circ.empty:
+                st.markdown(insight(
+                    "<strong>Trilha de circulação:</strong> esta área registra exportações, revisões e atualização de metadados com encadeamento hash, permitindo rastrear o fluxo analítico e documental do sistema."
+                ), unsafe_allow_html=True)
 
 # ═════════════════════════════════════════════════════════════════════
 # ABA 5 — GESTÃO DE OBRAS
