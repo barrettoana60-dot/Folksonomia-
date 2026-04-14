@@ -55,7 +55,7 @@ CONCEPTS_FILE = APP_DIR / "concepts.json"
 ADMIN_FILE = APP_DIR / "admin.json"
 
 ADMIN_LOGIN = "nugep239@"
-ADMIN_PASSWORD = "Artemis289@"
+ADMIN_PASSWORD = "nugep123"
 
 CATEGORY_OPTIONS = [
     "tema",
@@ -946,15 +946,22 @@ def explanation_terms(text: str) -> List[Tuple[str, str]]:
 
 
 def make_audio_description(work: Dict[str, Any], user_tags: List[str]) -> str:
-    tags_part = ", ".join(user_tags[:8]) if user_tags else "ainda sem tags registradas por esta pessoa"
+    title = work.get('title', 'obra sem título')
+    artist = work.get('artist', 'artista não identificado')
+    museum = work.get('museum', 'museu não informado')
+    period = work.get('period', 'período não informado')
+    technique = work.get('technique', 'técnica não informada')
+    material = work.get('material', 'material não informado')
+    place = work.get('place', 'local não informado')
+    description = work.get('description', '')
+    tags_part = ', '.join(user_tags[:8]) if user_tags else 'sem tags registradas por você nesta imagem até o momento'
     return (
-        f"Descrição acessível da obra {work.get('title','')}, de {work.get('artist','')}. "
-        f"Museu: {work.get('museum','')}. "
-        f"Período: {work.get('period','')}. "
-        f"Técnica: {work.get('technique','')}. "
-        f"Material: {work.get('material','')}. "
-        f"Leitura resumida: {work.get('description','')}. "
-        f"Tags marcadas nesta obra: {tags_part}."
+        f'Áudio descrição da obra {title}, de {artist}. '
+        f'É uma imagem vinculada ao museu {museum}. '
+        f'O contexto informado é {period}, em {place}. '
+        f'A técnica registrada é {technique}, com material {material}. '
+        f'Descrição visual resumida: {description}. '
+        f'As marcações feitas por você nesta imagem são: {tags_part}.'
     )
 
 
@@ -976,6 +983,7 @@ def init_session() -> None:
         "admin_logged": False,
         "font_scale": 1.0,
         "high_contrast": False,
+        "accessibility_work_id": "",
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -1151,10 +1159,24 @@ def inject_css() -> None:
             background: rgba(15,23,42,.08);
             margin: .8rem 0 1rem 0;
         }}
-        .smallLabel {{
+        .smallLabel {
             color: var(--textSub);
             font-size: .94rem;
-        }}
+        }
+        label, .stTextInput label, .stTextArea label, .stSelectbox label, .stSlider label, .stToggle label {
+            color: var(--textMain) !important;
+            font-family: "Times New Roman", Georgia, serif !important;
+        }
+        div[data-testid="stMarkdownContainer"] p,
+        div[data-testid="stMarkdownContainer"] li,
+        div[data-testid="stMarkdownContainer"] span,
+        div[data-testid="stMarkdownContainer"] strong,
+        div[data-testid="stMarkdownContainer"] em {
+            color: var(--textMain) !important;
+        }
+        .accessSideButton button {
+            margin-top: .6rem;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -1162,18 +1184,7 @@ def inject_css() -> None:
 
 
 def render_brand() -> None:
-    st.markdown(
-        f"""
-        <div class="glass brand">
-            <div>
-                <h1>{APP_TITLE}</h1>
-                <div class="mini">marcação social, validação curatorial, conectividade 3d e análise temporal</div>
-            </div>
-            <div class="mini">interface estável</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    return
 
 
 def render_questionnaire(store: Store) -> None:
@@ -1228,11 +1239,23 @@ def ensure_user(store: Store) -> str:
     return st.session_state["current_user_id"]
 
 
+
 def render_accessibility_controls(work: Dict[str, Any], user_tags: List[str]) -> None:
     st.markdown('<div class="glass smallPanel">', unsafe_allow_html=True)
     st.markdown("### acessibilidade")
-    font_scale = st.slider("tamanho da fonte", 0.85, 1.6, float(st.session_state.get("font_scale", 1.0)), 0.05, key=f"font_scale_{work['id']}")
-    contrast = st.toggle("contraste reforçado", value=bool(st.session_state.get("high_contrast", False)), key=f"contrast_{work['id']}")
+    font_scale = st.slider(
+        "tamanho da fonte",
+        0.85,
+        1.6,
+        float(st.session_state.get("font_scale", 1.0)),
+        0.05,
+        key=f"font_scale_{work['id']}",
+    )
+    contrast = st.toggle(
+        "contraste reforçado",
+        value=bool(st.session_state.get("high_contrast", False)),
+        key=f"contrast_{work['id']}",
+    )
     if font_scale != st.session_state.get("font_scale"):
         st.session_state["font_scale"] = font_scale
         st.rerun()
@@ -1251,20 +1274,25 @@ def render_accessibility_controls(work: Dict[str, Any], user_tags: List[str]) ->
     components.html(
         f"""
         <div class="inlineAudio">
-            <button onclick='window.speechSynthesis.cancel(); let u = new SpeechSynthesisUtterance({escaped}); u.lang="pt-BR"; u.rate=1; speechSynthesis.speak(u);'>ouvir descrição</button>
+            <button onclick='window.speechSynthesis.cancel(); let u = new SpeechSynthesisUtterance({escaped}); u.lang="pt-BR"; u.rate=1; u.pitch=1; speechSynthesis.speak(u);'>ouvir descrição</button>
             <button onclick='window.speechSynthesis.cancel();'>parar leitura</button>
         </div>
         """,
-        height=50,
+        height=54,
     )
 
     st.markdown('<div class="smallLabel">explicação de palavras</div>', unsafe_allow_html=True)
     if glossary_hits:
         for term, meaning in glossary_hits:
-            st.markdown(f'<div class="glass noteBox"><strong>{html.escape(term)}</strong><br>{html.escape(meaning)}</div>', unsafe_allow_html=True)
+            st.markdown(
+                f'<div class="glass noteBox"><strong>{html.escape(term)}</strong><br>{html.escape(meaning)}</div>',
+                unsafe_allow_html=True,
+            )
     else:
-        st.markdown('<div class="glass noteBox">Nesta obra, os termos principais já estão em linguagem direta e resumida.</div>', unsafe_allow_html=True)
-
+        st.markdown(
+            '<div class="glass noteBox">Os principais termos desta obra já estão em linguagem direta e simples.</div>',
+            unsafe_allow_html=True,
+        )
     st.markdown('</div>', unsafe_allow_html=True)
 
 
@@ -1272,50 +1300,57 @@ def render_gallery(store: Store) -> None:
     works = store.works()
     current_user = ensure_user(store)
 
-    st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
     cols = st.columns(2)
     for idx, work in enumerate(works):
         user_tags = [t["tag"] for t in store.tags() if t.get("user_id") == current_user and t.get("work_id") == work["id"]]
         with cols[idx % 2]:
             st.markdown('<div class="glass workCard">', unsafe_allow_html=True)
             st.image(work["image"], use_container_width=True)
-            if st.button("Marcar", key=f"mark_{work['id']}"):
-                st.session_state["selected_work_id"] = work["id"]
-                st.rerun()
+
+            action_left, action_right = st.columns([1, 1])
+            with action_left:
+                if st.button("Marcar", key=f"mark_{work['id']}"):
+                    st.session_state["selected_work_id"] = work["id"]
+                    st.rerun()
+            with action_right:
+                if st.button("Acessibilidade", key=f"access_btn_{work['id']}"):
+                    current = st.session_state.get("accessibility_work_id", "")
+                    st.session_state["accessibility_work_id"] = "" if current == work["id"] else work["id"]
+                    st.rerun()
 
             if st.session_state.get("selected_work_id") == work["id"]:
-                left, right = st.columns([1.3, 1])
-                with left:
-                    st.markdown('<div class="glass smallPanel">', unsafe_allow_html=True)
-                    tag_value = st.text_input("sua tag", key=f"tag_input_{work['id']}", placeholder="escreva a tag")
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        if st.button("registrar tag", key=f"submit_tag_{work['id']}"):
-                            if tag_value.strip():
-                                store.add_tag(
-                                    {
-                                        "user_id": current_user,
-                                        "work_id": work["id"],
-                                        "tag": tag_value.strip(),
-                                    }
-                                )
-                                st.session_state[f"tag_input_{work['id']}"] = ""
-                                st.rerun()
-                            else:
-                                st.warning("Digite uma tag antes de registrar.")
-                    with c2:
-                        if st.button("fechar", key=f"close_tag_{work['id']}"):
-                            st.session_state["selected_work_id"] = ""
+                st.markdown('<div class="glass smallPanel">', unsafe_allow_html=True)
+                tag_value = st.text_input("sua tag", key=f"tag_input_{work['id']}", placeholder="escreva a tag")
+                c1, c2 = st.columns(2)
+                with c1:
+                    if st.button("registrar tag", key=f"submit_tag_{work['id']}"):
+                        if tag_value.strip():
+                            store.add_tag(
+                                {
+                                    "user_id": current_user,
+                                    "work_id": work["id"],
+                                    "tag": tag_value.strip(),
+                                }
+                            )
+                            st.session_state[f"tag_input_{work['id']}"] = ""
                             st.rerun()
-                    st.markdown('<div class="smallLabel">suas tags nesta imagem</div>', unsafe_allow_html=True)
-                    user_tags = [t["tag"] for t in store.tags() if t.get("user_id") == current_user and t.get("work_id") == work["id"]]
-                    if user_tags:
-                        st.markdown("".join([f'<span class="tagPill">{html.escape(t)}</span>' for t in user_tags]), unsafe_allow_html=True)
-                    else:
-                        st.markdown('<div class="glass noteBox">Nenhuma tag registrada por você nesta imagem ainda.</div>', unsafe_allow_html=True)
-                    st.markdown('</div>', unsafe_allow_html=True)
-                with right:
-                    render_accessibility_controls(work, user_tags)
+                        else:
+                            st.warning("Digite uma tag antes de registrar.")
+                with c2:
+                    if st.button("fechar", key=f"close_tag_{work['id']}"):
+                        st.session_state["selected_work_id"] = ""
+                        st.rerun()
+                st.markdown('<div class="smallLabel">suas tags nesta imagem</div>', unsafe_allow_html=True)
+                user_tags = [t["tag"] for t in store.tags() if t.get("user_id") == current_user and t.get("work_id") == work["id"]]
+                if user_tags:
+                    st.markdown("".join([f'<span class="tagPill">{html.escape(t)}</span>' for t in user_tags]), unsafe_allow_html=True)
+                else:
+                    st.markdown('<div class="glass noteBox">Nenhuma tag registrada por você nesta imagem ainda.</div>', unsafe_allow_html=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+
+            if st.session_state.get("accessibility_work_id") == work["id"]:
+                render_accessibility_controls(work, user_tags)
+
             st.markdown('</div>', unsafe_allow_html=True)
 
 
