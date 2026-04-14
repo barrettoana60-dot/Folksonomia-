@@ -359,10 +359,117 @@ def save_institution_metadata(meta):
     return save_json_file(METADATA_FILE, meta)
 
 
+def _normalize_status_value(value):
+    if isinstance(value, bool):
+        return 'ativo' if value else 'inativo'
+    txt = str(value or '').strip()
+    return txt if txt else 'ativo'
+
+
+def normalize_open_data_source_entry(item, idx=1):
+    if isinstance(item, str):
+        return {
+            'id': idx,
+            'nome': item,
+            'url': '',
+            'endpoint': '',
+            'tipo': 'fonte externa',
+            'licenca': 'não informada',
+            'autenticacao': 'não informada',
+            'padroes': [],
+            'descricao': '',
+            'campos': [],
+            'status': 'ativo',
+            'criado_em': now_str(),
+        }
+    if not isinstance(item, dict):
+        return {
+            'id': idx,
+            'nome': f'Fonte {idx}',
+            'url': '',
+            'endpoint': '',
+            'tipo': 'fonte externa',
+            'licenca': 'não informada',
+            'autenticacao': 'não informada',
+            'padroes': [],
+            'descricao': '',
+            'campos': [],
+            'status': 'ativo',
+            'criado_em': now_str(),
+        }
+
+    def pick(*keys, default=''):
+        for key in keys:
+            if key in item and item.get(key) not in [None, '']:
+                return item.get(key)
+        return default
+
+    padroes = pick('padroes', 'standards', 'schemas', default=[])
+    if isinstance(padroes, str):
+        padroes = [p.strip() for p in padroes.split(',') if p.strip()]
+    elif not isinstance(padroes, list):
+        padroes = [str(padroes)] if padroes else []
+
+    campos = pick('campos', 'fields', 'field_names', default=[])
+    if isinstance(campos, str):
+        campos = [c.strip() for c in campos.split(',') if c.strip()]
+    elif not isinstance(campos, list):
+        campos = [str(campos)] if campos else []
+
+    nome = pick('nome', 'name', 'title', 'source', 'fonte', 'fonte_externa', default=f'Fonte {idx}')
+    url = pick('url', 'site', 'homepage', 'portal_url', default='')
+    endpoint = pick('endpoint', 'api', 'api_url', 'endpoint_url', 'base_url', default=url)
+    tipo = pick('tipo', 'type', 'categoria', 'category', default='fonte externa')
+    licenca = pick('licenca', 'license', default='não informada')
+    autenticacao = pick('autenticacao', 'authentication', 'auth', 'auth_type', default='não informada')
+    descricao = pick('descricao', 'description', 'summary', default='')
+    status = _normalize_status_value(pick('status', 'state', 'situacao', 'ativo', default='ativo'))
+
+    return {
+        'id': int(pick('id', default=idx)) if str(pick('id', default=idx)).isdigit() else idx,
+        'nome': str(nome),
+        'url': str(url or ''),
+        'endpoint': str(endpoint or ''),
+        'tipo': str(tipo or 'fonte externa'),
+        'licenca': str(licenca or 'não informada'),
+        'autenticacao': str(autenticacao or 'não informada'),
+        'padroes': padroes,
+        'descricao': str(descricao or ''),
+        'campos': campos,
+        'status': status,
+        'criado_em': str(pick('criado_em', 'created_at', default=now_str())),
+    }
+
+
+def normalize_open_data_sources(data):
+    if isinstance(data, dict):
+        for key in ('sources', 'fontes', 'items', 'results', 'data'):
+            if isinstance(data.get(key), list):
+                data = data.get(key)
+                break
+        else:
+            data = [data]
+    if not isinstance(data, list):
+        data = default_open_data_sources()
+    normalized = [normalize_open_data_source_entry(item, idx=i + 1) for i, item in enumerate(data)]
+    return normalized or default_open_data_sources()
+
+
+def safe_dataframe_view(df, columns):
+    if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+        return pd.DataFrame(columns=columns)
+    out = df.copy()
+    for col in columns:
+        if col not in out.columns:
+            out[col] = '—'
+    return out[columns]
+
+
 def load_open_data_sources():
     ensure_support_files()
     data = load_json_file(OPEN_DATA_FILE, default_open_data_sources())
-    return data if isinstance(data, list) else default_open_data_sources()
+    normalized = normalize_open_data_sources(data)
+    return normalized
 
 def save_open_data_sources(sources):
     return save_json_file(OPEN_DATA_FILE, sources)
@@ -1011,16 +1118,18 @@ def build_graph_3d_component(nodes, edges, height=620):
     components.html(html, height=height + 58)
 
 def summarize_interoperability(open_sources=None, mappings=None):
-    open_sources = open_sources or load_open_data_sources()
+    open_sources = normalize_open_data_sources(open_sources or load_open_data_sources())
     mappings = mappings or load_interoperability_registry()
     rows = []
     for mapping in mappings:
+        if not isinstance(mapping, dict):
+            continue
         rows.append({
-            'Domínio local': mapping.get('dominio_local', '—'),
-            'Fonte externa': mapping.get('fonte_externa', '—'),
-            'Padrão': mapping.get('padrao', '—'),
+            'Domínio local': mapping.get('dominio_local', mapping.get('domain', '—')),
+            'Fonte externa': mapping.get('fonte_externa', mapping.get('source_name', '—')),
+            'Padrão': mapping.get('padrao', mapping.get('mapping_standard', '—')),
             'Status': mapping.get('status', '—'),
-            'Campos mapeados': ' | '.join(mapping.get('campos_mapeados', [])) if isinstance(mapping.get('campos_mapeados'), list) else str(mapping.get('campos_mapeados', '—')),
+            'Campos mapeados': ' | '.join(mapping.get('campos_mapeados', [])) if isinstance(mapping.get('campos_mapeados'), list) else str(mapping.get('campos_mapeados', mapping.get('campo_local', '—'))),
         })
     return pd.DataFrame(rows)
 
@@ -2757,9 +2866,12 @@ def tab_graph_open_data():
         c1, c2 = st.columns([1, 2])
         with c1:
             st.markdown('##### Fontes ativas')
-            src_df = pd.DataFrame(open_sources)
-            if not src_df.empty:
-                st.dataframe(src_df[['nome', 'tipo', 'autenticacao', 'endpoint', 'status']], use_container_width=True, hide_index=True)
+            src_df = pd.DataFrame(normalize_open_data_sources(open_sources))
+            st.dataframe(
+                safe_dataframe_view(src_df, ['nome', 'tipo', 'autenticacao', 'endpoint', 'status']),
+                use_container_width=True,
+                hide_index=True,
+            )
             if st.button('Atualizar mapeamentos automáticos', use_container_width=True):
                 actor = st.session_state.get('admin_username', 'admin')
                 matches_df, status_df = persist_auto_interoperability(tdf, obras, meta, actor=actor)
