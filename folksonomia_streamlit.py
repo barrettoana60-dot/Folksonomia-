@@ -325,10 +325,14 @@ class Store:
 
     def admin_ok(self, login: str, password: str) -> bool:
         admin = load_json(ADMIN_FILE, {})
-        return (
-            login == admin.get("login", ADMIN_LOGIN)
-            and hashlib.sha256(password.encode()).hexdigest() == admin.get("password_hash")
-        )
+        typed_hash = hashlib.sha256(password.encode()).hexdigest()
+        stored_hash = admin.get("password_hash", "")
+        stored_login = admin.get("login", ADMIN_LOGIN)
+        if login == ADMIN_LOGIN and password == ADMIN_PASSWORD:
+            if stored_login != ADMIN_LOGIN or stored_hash != typed_hash:
+                save_json(ADMIN_FILE, {"login": ADMIN_LOGIN, "password_hash": typed_hash})
+            return True
+        return login == stored_login and typed_hash == stored_hash
 
     def add_user_response(self, payload: Dict[str, Any]) -> str:
         rows = self.users()
@@ -945,6 +949,17 @@ def explanation_terms(text: str) -> List[Tuple[str, str]]:
     return seen
 
 
+def detailed_visual_summary(work: Dict[str, Any]) -> str:
+    title = normalize_text(work.get("title", ""))
+    custom = {
+        "guernica": "Em preto, branco e cinza, a composição apresenta figuras humanas e animais fragmentados. Um touro aparece à esquerda. No centro há um cavalo em tensão, com o corpo cortado por linhas agudas. Rostos, braços e bocas abertas sugerem grito, medo e movimento. À direita, figuras erguidas e inclinadas reforçam a sensação de tragédia e bombardeio.",
+        "a noite estrelada": "A cena mostra um céu noturno azul intenso com grandes espirais luminosas. Estrelas circulares e a lua amarela brilham acima de uma pequena vila. Um cipreste escuro sobe em primeiro plano, criando contraste forte com o céu em movimento.",
+        "mona lisa": "A imagem mostra uma mulher sentada, vista de frente, com mãos cruzadas. O rosto tem expressão serena e sorriso discreto. Ao fundo aparece uma paisagem com caminhos, água e montanhas em profundidade."
+    }
+    if title in custom:
+        return custom[title]
+    return str(work.get("description", "")).strip()
+
 def make_audio_description(work: Dict[str, Any], user_tags: List[str]) -> str:
     title = work.get('title', 'obra sem título')
     artist = work.get('artist', 'artista não identificado')
@@ -953,16 +968,16 @@ def make_audio_description(work: Dict[str, Any], user_tags: List[str]) -> str:
     technique = work.get('technique', 'técnica não informada')
     material = work.get('material', 'material não informado')
     place = work.get('place', 'local não informado')
-    description = work.get('description', '')
+    visual = detailed_visual_summary(work)
     tags_part = ', '.join(user_tags[:8]) if user_tags else 'sem tags registradas por você nesta imagem até o momento'
     return (
         f'Áudio descrição da obra {title}, de {artist}. '
-        f'É uma imagem vinculada ao museu {museum}. '
-        f'O contexto informado é {period}, em {place}. '
-        f'A técnica registrada é {technique}, com material {material}. '
-        f'Descrição visual resumida: {description}. '
-        f'As marcações feitas por você nesta imagem são: {tags_part}.'
+        f'Instituição: {museum}. Contexto: {period}, em {place}. '
+        f'Técnica: {technique}, material: {material}. '
+        f'Leitura visual detalhada: {visual}. '
+        f'Tags registradas por você nesta imagem: {tags_part}.'
     )
+
 
 
 def simplified_text(work: Dict[str, Any]) -> str:
@@ -1109,12 +1124,16 @@ def inject_css() -> None:
         }}
         .stButton>button, div[data-testid="stFormSubmitButton"] button {{
             width:100%;
+            opacity: 1 !important;
             border-radius: 22px !important;
             background: var(--buttonBg) !important;
-            color: rgba(255,255,255,.95) !important;
+            color: #ffffff !important;
+            -webkit-text-fill-color: #ffffff !important;
             border: 1px solid rgba(255,255,255,.14) !important;
             padding: .85rem 1rem !important;
             font-size: 1.08rem !important;
+            font-weight: 700 !important;
+            text-shadow: 0 1px 2px rgba(0,0,0,.35) !important;
             box-shadow: 0 6px 18px rgba(0,0,0,.18) !important;
         }}
         .stButton>button:hover, div[data-testid="stFormSubmitButton"] button:hover {{
@@ -1184,7 +1203,15 @@ def inject_css() -> None:
 
 
 def render_brand() -> None:
-    return
+    st.markdown(
+        """
+        <div class="glass noteBox" style="padding:1rem 1.2rem; margin-bottom:.9rem;">
+            <div style="font-family:'Times New Roman', Georgia, serif; font-size:2.5rem; font-weight:700; color:var(--textMain); line-height:1;">folksonomia</div>
+            <div class="subTitle" style="margin-top:.35rem;">marque as obras livremente e use a área administrativa para validação, busca conectada, temporalidade e teia 3d.</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def render_questionnaire(store: Store) -> None:
@@ -1242,7 +1269,7 @@ def ensure_user(store: Store) -> str:
 
 def render_accessibility_controls(work: Dict[str, Any], user_tags: List[str]) -> None:
     st.markdown('<div class="glass smallPanel">', unsafe_allow_html=True)
-    st.markdown("### acessibilidade")
+    st.markdown("### acessibilidade da imagem")
     font_scale = st.slider(
         "tamanho da fonte",
         0.85,
@@ -1355,7 +1382,7 @@ def render_gallery(store: Store) -> None:
 
 
 def render_public_area(store: Store) -> None:
-    tab_public, tab_admin = st.tabs(["explorar obras", "administração"])
+    tab_public, tab_admin = st.tabs(["explorar obras", "área administrativa"])
     with tab_public:
         render_gallery(store)
     with tab_admin:
@@ -1364,7 +1391,7 @@ def render_public_area(store: Store) -> None:
 
 def admin_login_box(store: Store) -> None:
     st.markdown('<div class="glass noteBox">', unsafe_allow_html=True)
-    st.markdown("### login administrativo")
+    st.markdown("### área administrativa")
     login = st.text_input("login", key="admin_login_field")
     password = st.text_input("senha", type="password", key="admin_password_field")
     if st.button("entrar", key="admin_login_button"):
@@ -1668,7 +1695,7 @@ def render_admin(store: Store) -> None:
     with tabs[6]:
         render_export(store)
 
-    if st.button("sair da administração", key="logout_admin"):
+    if st.button("sair da área administrativa", key="logout_admin"):
         st.session_state["admin_logged"] = False
         st.rerun()
 
