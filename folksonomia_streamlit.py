@@ -417,32 +417,50 @@ def build_redundancy_mesh(record, events):
         'keyword_cipher': keyword_cipher,
         'search_index': search_index,
     })
+    shards = build_interleaved_shards(payload_cipher + snapshot_cipher + keyword_cipher, parts=6)
+    semantic_coordinates = [{
+        'term': term,
+        'coord': hash_record({'term': term, 'anchor': chain_anchor})[:16],
+        'entity': f"{record.get('entity_type', '—')}::{record.get('entity_id', '—')}"
+    } for term in search_index[:24]]
+    replica_map = [{
+        'slot': i + 1,
+        'shard_hash': hashlib.sha256(part.encode('utf-8')).hexdigest()[:20],
+        'anchor': chain_anchor[:20],
+        'checksum': recovery_checksum[:20]
+    } for i, part in enumerate(shards)]
     redundancy_mesh = {
         'global_chain_anchor': record.get('previous_hash', 'GENESIS'),
         'entity_chain_anchor': record.get('entity_previous_hash', 'GENESIS_ENTITY'),
-        'linked_records': linked_records[:12],
+        'linked_records': linked_records[:16],
         'keyword_index_size': len(search_index),
         'cipher_algorithm': 'xor_sha256_stream',
-        'recovery_strategy': 'fragmentacao_intercalada+hashes+espelho_semantico+indice_prefixado',
+        'recovery_strategy': 'fragmentacao_intercalada+hashes+espelho_semantico+indice_prefixado+replicas_cruzadas',
         'mirror_points': [
             record.get('semantic_archive_ref', '—'),
             f"{record.get('entity_type', '—')}::{record.get('entity_id', '—')}",
             f"origin::{record.get('origin', 'sistema')}",
+            f"actor::{record.get('actor', 'sistema')}",
         ],
         'open_data_bridges': record.get('interoperability_refs', []) or [],
         'payload_checksum': hashlib.sha256(payload_txt.encode('utf-8')).hexdigest(),
         'snapshot_checksum': hashlib.sha256(snapshot_txt.encode('utf-8')).hexdigest(),
+        'replica_map': replica_map,
+        'semantic_coordinates': semantic_coordinates,
+        'cross_entity_echoes': linked_records[:10],
+        'puzzle_density': len(shards),
+        'search_windows': sorted(set(term[:1] for term in search_index if term))[:64],
     }
     return {
         'payload_cipher': payload_cipher,
         'snapshot_cipher': snapshot_cipher,
         'keyword_cipher': keyword_cipher,
-        'puzzle_shards': build_interleaved_shards(payload_cipher + snapshot_cipher + keyword_cipher, parts=4),
+        'puzzle_shards': shards,
         'search_index': search_index,
         'chain_anchor': chain_anchor,
         'recovery_checksum': recovery_checksum,
         'redundancy_mesh': redundancy_mesh,
-        'linked_records': linked_records[:12],
+        'linked_records': linked_records[:16],
         'integrity_status': 'ok',
     }
 
@@ -2683,214 +2701,300 @@ def tab_users_quest():
     udf = all_users()
     obs = load_obras()
     events_df = all_events()
-    od  = {o['id']:o['titulo'] for o in obs}
+    od = {o['id']: o['titulo'] for o in obs}
 
     if udf.empty:
         st.info("Nenhum dado de usuário disponível.")
         return
 
     st.markdown("### Usuários & Questionário")
+    uct = tdf.groupby('user_id').size().reset_index(name='Total_Tags') if not tdf.empty else pd.DataFrame(columns=['user_id', 'Total_Tags'])
+    uuq = tdf.groupby('user_id')['tag'].nunique().reset_index(name='Tags_Unicas') if not tdf.empty else pd.DataFrame(columns=['user_id', 'Tags_Unicas'])
+    uob = tdf.groupby('user_id')['obra_id'].nunique().reset_index(name='Obras') if not tdf.empty else pd.DataFrame(columns=['user_id', 'Obras'])
 
-    # ── KPIs combinados ──
-    uct = tdf.groupby('user_id').size().reset_index(name='Total_Tags') if not tdf.empty else pd.DataFrame(columns=['user_id','Total_Tags'])
-    uuq = tdf.groupby('user_id')['tag'].nunique().reset_index(name='Tags_Unicas') if not tdf.empty else pd.DataFrame(columns=['user_id','Tags_Unicas'])
-    uob = tdf.groupby('user_id')['obra_id'].nunique().reset_index(name='Obras') if not tdf.empty else pd.DataFrame(columns=['user_id','Obras'])
+    merged = udf.merge(uct, on='user_id', how='left').merge(uuq, on='user_id', how='left').merge(uob, on='user_id', how='left').fillna(0)
+    merged['TTR'] = (merged['Tags_Unicas'] / merged['Total_Tags'].replace(0, np.nan)).fillna(0).round(3)
+    merged['Usuário'] = merged.apply(lambda r: r.get('animal_name', str(r.get('user_id', 'anon'))[:8]), axis=1)
 
-    merged = udf.merge(uct,on='user_id',how='left') \
-                .merge(uuq,on='user_id',how='left') \
-                .merge(uob,on='user_id',how='left').fillna(0)
-    merged['TTR']     = (merged['Tags_Unicas']/merged['Total_Tags'].replace(0,np.nan)).fillna(0).round(3)
-    merged['Usuário'] = merged.apply(lambda r: r.get('animal_name', r['user_id'][:8]), axis=1)
-
-    c1,c2,c3,c4 = st.columns(4)
-    top_u = merged.loc[merged['Total_Tags'].idxmax(),'Usuário'] if not merged.empty else "—"
-    with c1: st.markdown(kpi("Participantes",       len(merged),"usuários","#a7e6ff"), unsafe_allow_html=True)
-    with c2: st.markdown(kpi("Média Tags/Usuário",  f"{merged['Total_Tags'].mean():.1f}","","#6ee7b7"), unsafe_allow_html=True)
-    with c3: st.markdown(kpi("Maior Contribuição",  int(merged['Total_Tags'].max()),top_u[:16],"#fcd34d"), unsafe_allow_html=True)
-    with c4: st.markdown(kpi("Riqueza Média (TTR)", f"{merged['TTR'].mean():.2%}","vocabular","#d1baff"), unsafe_allow_html=True)
+    c1, c2, c3, c4 = st.columns(4)
+    top_u = merged.loc[merged['Total_Tags'].idxmax(), 'Usuário'] if not merged.empty else '—'
+    with c1:
+        st.markdown(kpi('Participantes', len(merged), 'usuários', '#a7e6ff'), unsafe_allow_html=True)
+    with c2:
+        st.markdown(kpi('Média Tags/Usuário', f"{merged['Total_Tags'].mean():.1f}", '', '#6ee7b7'), unsafe_allow_html=True)
+    with c3:
+        st.markdown(kpi('Maior Contribuição', int(merged['Total_Tags'].max()) if not merged.empty else 0, top_u[:16], '#fcd34d'), unsafe_allow_html=True)
+    with c4:
+        st.markdown(kpi('Eventos no ledger', len(events_df) if not events_df.empty else 0, 'histórico conectado', '#d1baff'), unsafe_allow_html=True)
 
     st.markdown(divider(), unsafe_allow_html=True)
-
     t1, t2, t3, t4 = st.tabs([
-        " Tabela de Participantes",
-        " Perfil Individual",
-        "Respostas do Questionário",
-        " Cruzamentos"
+        ' Tabela de Participantes',
+        ' Perfil Individual',
+        ' Respostas do Questionário',
+        ' Cruzamentos e recuperação'
     ])
 
-    # ── TABELA ────────────────────────────────────────────────────────
     with t1:
-        st.markdown("#### Comparativo Geral de Participantes")
-        dcols = ['Usuário','Total_Tags','Tags_Unicas','TTR','Obras','q1','q2']
+        st.markdown('#### Comparativo Geral de Participantes')
+        dcols = ['Usuário', 'Total_Tags', 'Tags_Unicas', 'TTR', 'Obras', 'q1', 'q2']
         avail = [c for c in dcols if c in merged.columns]
-        disp  = merged[avail].rename(columns={
-            'Total_Tags':'Tags Criadas','Tags_Unicas':'Tags Únicas',
-            'Obras':'Obras Etiquetadas','q1':'Familiaridade c/ Museus',
-            'q2':'Conhec. Museológico'
-        }).sort_values('Tags Criadas',ascending=False)
+        disp = merged[avail].rename(columns={
+            'Total_Tags': 'Tags Criadas',
+            'Tags_Unicas': 'Tags Únicas',
+            'Obras': 'Obras Etiquetadas',
+            'q1': 'Familiaridade c/ Museus',
+            'q2': 'Conhec. Museológico'
+        }).sort_values('Tags Criadas', ascending=False)
         st.dataframe(disp, use_container_width=True, hide_index=True)
+        if not merged.empty:
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown('**Contribuição por participante**')
+                st.bar_chart(merged.set_index('Usuário')['Total_Tags'].sort_values(ascending=False))
+            with c2:
+                st.markdown('**Riqueza vocabular (TTR)**')
+                st.bar_chart(merged.set_index('Usuário')['TTR'].sort_values(ascending=False))
 
-        st.markdown(divider(), unsafe_allow_html=True)
-        st.markdown("#### Contribuição por Participante")
-        st.bar_chart(merged.set_index('Usuário')['Total_Tags'].sort_values(ascending=False))
-
-        c1, c2 = st.columns(2)
-        with c1:
-            st.markdown("**Riqueza Vocabular (TTR) por Usuário**")
-            st.bar_chart(merged.set_index('Usuário')['TTR'].sort_values(ascending=False))
-        with c2:
-            st.markdown("**Obras Etiquetadas por Usuário**")
-            st.bar_chart(merged.set_index('Usuário')['Obras'].sort_values(ascending=False))
-
-    # ── PERFIL INDIVIDUAL ────────────────────────────────────────────
     with t2:
-        st.markdown("#### Perfil Detalhado por Participante")
-        uopts = [f"🐾 {r.get('animal_name',r['user_id'][:8])}" for _,r in udf.iterrows()]
-        usel  = st.selectbox("Selecione um participante:", uopts, key="ui_sel")
-        uidx  = uopts.index(usel)
-        uid   = udf.iloc[uidx]['user_id']
-        uanim = udf.iloc[uidx].get('animal_name', uid[:8])
-
-        utags = tdf[tdf['user_id']==uid] if not tdf.empty else pd.DataFrame()
+        st.markdown('#### Perfil detalhado por participante')
+        uopts = [f"🐾 {r.get('animal_name', str(r.get('user_id', 'anon'))[:8])}" for _, r in udf.iterrows()]
+        usel = st.selectbox('Selecione um participante:', uopts, key='ui_sel_profile')
+        uidx = uopts.index(usel)
+        uid = udf.iloc[uidx]['user_id']
+        uanim = udf.iloc[uidx].get('animal_name', str(uid)[:8])
+        utags = tdf[tdf['user_id'] == uid] if not tdf.empty else pd.DataFrame()
         if utags.empty:
-            st.info("Este participante ainda não criou tags.")
+            st.info('Este participante ainda não criou tags.')
         else:
-            ttl = len(utags); unq = utags['tag'].nunique()
-            ttr_u = unq/ttl if ttl else 0
-
-            c1,c2,c3 = st.columns(3)
-            with c1: st.markdown(kpi("Tags Criadas", ttl,"","#a7e6ff"), unsafe_allow_html=True)
-            with c2: st.markdown(kpi("Tags Únicas",  unq,f"TTR: {ttr_u:.2%}","#6ee7b7"), unsafe_allow_html=True)
-            with c3: st.markdown(kpi("Obras Tagueadas",utags['obra_id'].nunique(),"","#fcd34d"), unsafe_allow_html=True)
-
+            ttl = len(utags)
+            unq = utags['tag'].nunique()
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                st.markdown(kpi('Tags Criadas', ttl, '', '#a7e6ff'), unsafe_allow_html=True)
+            with c2:
+                st.markdown(kpi('Tags Únicas', unq, f"TTR: {(unq/ttl):.2%}" if ttl else 'TTR: 0%', '#6ee7b7'), unsafe_allow_html=True)
+            with c3:
+                st.markdown(kpi('Obras Tagueadas', utags['obra_id'].nunique(), uanim[:18], '#fcd34d'), unsafe_allow_html=True)
             c1, c2 = st.columns(2)
             with c1:
                 st.markdown(f"**Top tags de {uanim}:**")
                 st.bar_chart(utags['tag'].value_counts().head(15))
             with c2:
-                st.markdown("**Distribuição por obra:**")
-                st.bar_chart(utags.groupby('obra_id').size().rename(index=od))
-
-            st.markdown("**Conexões nas tags deste participante (limiar 0.30):**")
-            uconns = tag_connections(utags['tag'].tolist(), threshold=0.30)
-            if uconns:
-                for c in uconns[:10]:
-                    freq_map = utags['tag'].value_counts().to_dict()
-                    fa = freq_map.get(c['tag_a'],0)
-                    fb = freq_map.get(c['tag_b'],0)
-                    st.markdown(
-                        f"<div class='conn-row'>"
-                        f"<div style='display:flex;align-items:center;gap:9px;flex-wrap:wrap'>"
-                        f"<span class='tag-badge'>{c['tag_a']}</span>"
-                        f"<span style='color:rgba(255,255,255,.3);font-size:.7rem'>({fa}×)</span>"
-                        f"<span style='color:rgba(255,255,255,.35)'>↔</span>"
-                        f"<span class='tag-badge'>{c['tag_b']}</span>"
-                        f"<span style='color:rgba(255,255,255,.3);font-size:.7rem'>({fb}×)</span>"
-                        f"</div>"
-                        f"<span style='color:rgba(255,255,255,.35);font-size:.75rem'>"
-                        f"{c['similaridade']:.3f} · {c['tipo']}</span>"
-                        f"</div>", unsafe_allow_html=True)
-            else:
-                st.info("Nenhuma conexão encontrada nas tags deste participante.")
-
-            st.markdown(divider(), unsafe_allow_html=True)
-            st.markdown("**Todas as tags criadas:**")
+                obra_counts = utags.groupby('obra_id').size().rename(index=od)
+                st.markdown('**Distribuição por obra:**')
+                st.bar_chart(obra_counts)
             ft = utags.copy()
-            ft['Obra'] = ft['obra_id'].map(od)
-            st.dataframe(
-                ft[['tag','Obra','timestamp']].rename(columns={'tag':'Tag','timestamp':'Data/Hora'}),
-                use_container_width=True, hide_index=True)
+            ft['Obra'] = ft['obra_id'].map(od).fillna(ft['obra_id'].astype(str))
+            st.dataframe(ft[['tag', 'Obra', 'timestamp']].rename(columns={'tag': 'Tag', 'timestamp': 'Data/Hora'}), use_container_width=True, hide_index=True)
 
-    # ── QUESTIONÁRIO ─────────────────────────────────────────────────
     with t3:
+        st.markdown('#### Respostas do questionário')
+        question_cols = [c for c in ['animal_name', 'timestamp', 'q1', 'q2', 'q3'] if c in udf.columns]
+        qdf = udf[question_cols].copy()
+        rename_map = {
+            'animal_name': 'Participante',
+            'timestamp': 'Acesso',
+            'q1': 'Q1 — Familiaridade com museus',
+            'q2': 'Q2 — Conhecimento sobre documentação',
+            'q3': 'Q3 — Entendimento sobre tags'
+        }
+        qdf = qdf.rename(columns=rename_map)
+        if 'Q1 — Familiaridade com museus' in qdf.columns:
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown('**Distribuição de Q1**')
+                st.bar_chart(udf['q1'].fillna('Sem resposta').value_counts())
+            with c2:
+                st.markdown('**Distribuição de Q2**')
+                st.bar_chart(udf['q2'].fillna('Sem resposta').value_counts())
+        st.dataframe(qdf, use_container_width=True, hide_index=True)
+
+    with t4:
+        st.markdown('#### Cruzamentos entre familiaridade, tags e recuperação documental')
+        if not tdf.empty and 'q1' in merged.columns:
+            fam = merged[['Usuário', 'q1', 'Total_Tags', 'Tags_Unicas', 'TTR']].copy()
+            fam = fam.rename(columns={'q1': 'Familiaridade'})
+            fam['Familiaridade'] = fam['Familiaridade'].replace('', 'Sem resposta').fillna('Sem resposta')
+            summary = fam.groupby('Familiaridade').agg({
+                'Total_Tags': 'mean',
+                'Tags_Unicas': 'mean',
+                'TTR': 'mean'
+            }).round(2)
+            st.dataframe(summary.reset_index(), use_container_width=True, hide_index=True)
+        if not events_df.empty:
+            preview = normalize_events_dataframe(events_df).copy()
+            health = verify_blockchain_mesh(preview)
+            st.markdown(insight(
+                f"<strong>Malha documental:</strong> {health['total']} eventos, integridade global de <strong>{health['integrity_pct']:.1f}%</strong>, "
+                f"{health['search_terms']} termos indexados e {health['shards']} fragmentos cifrados. A busca por letra, prefixo ou palavra foi centralizada na aba <strong>Validação & Auditoria</strong>."
+            ), unsafe_allow_html=True)
+        else:
+            st.info('O ledger ainda não tem eventos suficientes para cruzamento documental.')
+
+# ═════════════════════════════════════════════════════════════════════
+# ABA 5 — ONTOLOGIAS
+# ═════════════════════════════════════════════════════════════════════
+def tab_ontologies():
+    st.markdown("### Ontologias e vocabulários controlados")
+    onts = load_ontologies()
+    tags_df = all_tags()
+    t1, t2, t3 = st.tabs([' Visão geral', ' Criar ontologia', ' Uso analítico'])
+
+    with t1:
+        if not onts:
+            st.info('Nenhuma ontologia cadastrada.')
+        else:
+            rows = []
+            for ont in onts:
+                rows.append({
+                    'ID': ont.get('id'),
+                    'Nome': ont.get('nome', 'Ontologia'),
+                    'Categoria': ont.get('categoria', '—'),
+                    'Descrição': ont.get('descricao', '—'),
+                    'Qtd termos': len(ont.get('termos', []) or []),
+                    'Termos': ', '.join((ont.get('termos', []) or [])[:10])
+                })
+            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+    with t2:
+        with st.form('nova_ontologia'):
+            nome = st.text_input('Nome da ontologia')
+            categoria = st.selectbox('Categoria', ['tema', 'atributo', 'tecnica', 'material', 'periodo'])
+            descricao = st.text_area('Descrição')
+            termos = st.text_area('Termos separados por vírgula', placeholder='religioso, altar, santo, igreja')
+            submitted = st.form_submit_button('Salvar ontologia', use_container_width=True)
+            if submitted:
+                termos_list = [t.strip() for t in termos.split(',') if t.strip()]
+                if not nome.strip() or not termos_list:
+                    st.error('Preencha o nome e ao menos um termo.')
+                else:
+                    new_id = max([safe_int(o.get('id'), 0) for o in onts], default=0) + 1
+                    ont = {
+                        'id': new_id,
+                        'nome': nome.strip(),
+                        'categoria': categoria,
+                        'descricao': descricao.strip(),
+                        'termos': termos_list,
+                        'criado_em': now_str(),
+                    }
+                    onts.append(ont)
+                    save_ontologies(onts)
+                    register_event('ontology_created', st.session_state.get('admin_username', 'admin'), 'admin', 'ontologia', new_id, ont, origin='ontologias', automatic=False, status='publicado', semantic_snapshot={'termos': termos_list})
+                    st.success('Ontologia criada e conectada ao ledger.')
+                    st.rerun()
+
+    with t3:
+        usage_df = analyze_ontology_usage(tags_df, onts)
+        if usage_df.empty:
+            st.info('Ainda não há uso suficiente de ontologias nas tags.')
+        else:
+            st.dataframe(usage_df, use_container_width=True, hide_index=True)
+            if 'Qtd Tags Relacionadas' in usage_df.columns:
+                chart = usage_df.set_index('Ontologia')['Qtd Tags Relacionadas']
+                st.bar_chart(chart)
+
+
+# ═════════════════════════════════════════════════════════════════════
+# ABA 6 — VALIDAÇÃO E AUDITORIA
+# ═════════════════════════════════════════════════════════════════════
+def tab_validation_audit():
+    st.markdown("### Validação, auditoria e blockchain documental")
+    tdf = all_tags()
+    onts = load_ontologies()
+    events_df = all_events()
+    mappings = load_interoperability_registry()
+
+    t1, t2, t3 = st.tabs([' Validação de tags', ' Blockchain documental', ' Interoperabilidade auditável'])
+
+    with t1:
+        if tdf.empty:
+            st.info('Nenhuma tag disponível para validação.')
+        else:
+            sug = build_spell_suggestions(tdf, onts)
+            groups = analyze_theme_groups(tdf)
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown('#### Sugestões ortográficas')
+                if sug.empty:
+                    st.info('Sem sugestões ortográficas no momento.')
+                else:
+                    st.dataframe(sug, use_container_width=True, hide_index=True)
+                    if st.button('Registrar auditoria ortográfica', use_container_width=True):
+                        actor = st.session_state.get('admin_username', 'admin')
+                        register_event(
+                            'orthography_suggestion_logged', actor, 'admin', 'tag_audit', 'spellcheck',
+                            {'sugestoes': sug.to_dict(orient='records')[:50]}, origin='auditoria_tags', automatic=True,
+                            status='revisado', semantic_snapshot={'tipo': 'ortografia', 'total': len(sug)}
+                        )
+                        st.success('Auditoria ortográfica registrada sem alterar as tags originais.')
+            with c2:
+                st.markdown('#### Agrupamentos temáticos')
+                if groups.empty:
+                    st.info('Sem agrupamentos suficientes.')
+                else:
+                    st.dataframe(groups, use_container_width=True, hide_index=True)
+                    if st.button('Registrar auditoria temática', use_container_width=True):
+                        actor = st.session_state.get('admin_username', 'admin')
+                        register_event(
+                            'tag_group_audit', actor, 'admin', 'tag_audit', 'theme-groups',
+                            {'grupos': groups.to_dict(orient='records')}, origin='auditoria_tags', automatic=True,
+                            status='revisado', semantic_snapshot={'tipo': 'grupos', 'total': len(groups)}
+                        )
+                        st.success('Agrupamentos temáticos auditados e encadeados.')
+
+    with t2:
         st.markdown('#### Blockchain documental conectado aos metadados, open data e recuperação semântica')
-        if events_df.empty:
+        preview = normalize_events_dataframe(events_df)
+        if preview.empty:
             st.info('Nenhum evento foi registrado ainda.')
         else:
-            preview = normalize_events_dataframe(events_df).copy().sort_values('ledger_no', ascending=False)
+            preview = preview.copy().sort_values('ledger_no', ascending=False)
             health = verify_blockchain_mesh(preview)
-
             c1, c2, c3, c4 = st.columns(4)
             with c1:
                 st.markdown(kpi('Integridade global', f"{health['integrity_pct']:.1f}%", 'malha encadeada', '#a78bfa'), unsafe_allow_html=True)
             with c2:
-                st.markdown(kpi('Índice pesquisável', health['search_terms'], 'prefixos, letras e palavras', '#60a5fa'), unsafe_allow_html=True)
+                st.markdown(kpi('Índice pesquisável', health['search_terms'], 'letras, prefixos e palavras', '#60a5fa'), unsafe_allow_html=True)
             with c3:
                 st.markdown(kpi('Fragmentos cifrados', health['shards'], 'quebra-cabeça protegido', '#34d399'), unsafe_allow_html=True)
             with c4:
                 st.markdown(kpi('Quebras detectadas', health['global_breaks'] + health['entity_breaks'], 'global + entidade', '#fcd34d'), unsafe_allow_html=True)
-
             st.markdown(insight(
-                '<strong>Modelo:</strong> cada evento cria uma cápsula documental conectada ao hash global anterior, ao hash anterior da própria entidade, às referências de interoperabilidade e a uma malha redundante de fragmentos cifrados. O dado original não é destruído; ele é espelhado em índice semântico, shards intercalados, checksum de recuperação e vínculos com outros registros e fontes externas.'
+                '<strong>Modelo:</strong> cada evento vira uma cápsula cifrada, ligada ao hash global anterior, ao hash anterior da entidade, a espelhos semânticos, índices pesquisáveis e pontes de interoperabilidade. Mesmo que um pedaço falhe, a malha conserva checksum, fragmentos, âncoras e vínculos redundantes.'
             ), unsafe_allow_html=True)
-
-            q = st.text_input('Buscar no blockchain documental por letra, prefixo ou palavra', placeholder='Ex.: g, guer, guernica, picasso, wikidata, azul…', key='blockchain_search')
-            if q.strip():
-                hits = search_blockchain_events(q, preview)
+            query = st.text_input('Buscar no blockchain por letra, prefixo ou palavra', placeholder='Ex.: g, guer, guernica, picasso, wikidata, azul...', key='ledger_query_main')
+            if query.strip():
+                hits = search_blockchain_events(query, preview)
                 if hits.empty:
-                    st.warning('Nenhum registro encontrou esse termo na malha indexada.')
+                    st.warning('Nenhum registro encontrado para esse termo.')
                 else:
                     hits = hits.copy().sort_values(['score_busca', 'ledger_no'], ascending=[False, False])
                     hits['Registro'] = [ledger_label(v, i + 1) for i, v in enumerate(hits['ledger_no'].tolist())]
                     hits['Entidade'] = hits['entity_type'].astype(str) + ' #' + hits['entity_id'].astype(str)
                     hits['Refs externas'] = hits['interoperability_refs'].apply(lambda x: ', '.join(x) if isinstance(x, list) and x else '—')
-                    cols = [c for c in ['Registro','score_busca','timestamp','event_type','actor','Entidade','entity_version','status','origin','Refs externas'] if c in hits.columns]
-                    st.dataframe(hits[cols].head(30), use_container_width=True, hide_index=True)
-
+                    cols = [c for c in ['Registro', 'score_busca', 'timestamp', 'event_type', 'actor', 'Entidade', 'entity_version', 'status', 'origin', 'Refs externas'] if c in hits.columns]
+                    st.dataframe(hits[cols].head(50), use_container_width=True, hide_index=True)
             preview['Registro'] = [ledger_label(v, i + 1) for i, v in enumerate(preview['ledger_no'].tolist())]
+            preview['Entidade'] = preview['entity_type'].astype(str) + ' #' + preview['entity_id'].astype(str)
             preview['Hash Atual'] = preview['event_hash'].astype(str).str[:16] + '…'
             preview['Hash Anterior'] = preview['previous_hash'].astype(str).str[:16] + '…'
             preview['Hash Entidade'] = preview['entity_previous_hash'].astype(str).str[:16] + '…'
             preview['Âncora'] = preview['chain_anchor'].astype(str).str[:16] + '…'
-            preview['Entidade'] = preview['entity_type'].astype(str) + ' #' + preview['entity_id'].astype(str)
             preview['Refs externas'] = preview['interoperability_refs'].apply(lambda x: ', '.join(x) if isinstance(x, list) and x else '—')
             preview['Conexões'] = preview['linked_records'].apply(lambda x: ', '.join(map(str, x[:4])) if isinstance(x, list) and x else '—')
-            cols = [c for c in ['Registro','timestamp','event_type','actor','Entidade','entity_version','status','Hash Atual','Hash Anterior','Hash Entidade','Âncora','origin','Refs externas','Conexões'] if c in preview.columns]
+            cols = [c for c in ['Registro', 'timestamp', 'event_type', 'actor', 'Entidade', 'entity_version', 'status', 'Hash Atual', 'Hash Anterior', 'Hash Entidade', 'Âncora', 'origin', 'Refs externas', 'Conexões'] if c in preview.columns]
             st.dataframe(preview[cols], use_container_width=True, hide_index=True)
 
-            st.markdown(divider(), unsafe_allow_html=True)
-            st.markdown('#### Estrutura do blockchain documental e da malha de recuperação')
-            st.markdown(insight(
-                '<strong>1.</strong> cada alteração gera um evento; '
-                '<strong>2.</strong> cada evento recebe hash próprio, checksum de recuperação e âncora de cadeia; '
-                '<strong>3.</strong> cada evento herda o hash global anterior e o hash anterior da entidade; '
-                '<strong>4.</strong> payload, snapshot e índice de busca são cifrados e repartidos em fragmentos intercalados; '
-                '<strong>5.</strong> os mesmos significados reaparecem como índice prefixado, referências abertas e links entre registros; '
-                '<strong>6.</strong> exportações, sincronizações e auditorias atravessam a mesma malha, conectando metadados internos, tags, ontologias e open data.'
-            ), unsafe_allow_html=True)
-
-            top_events = preview.head(10)
-            for _, row in top_events.iterrows():
-                refs = row.get('interoperability_refs', [])
-                refs_txt = ', '.join(refs) if isinstance(refs, list) and refs else '—'
-                trace = row.get('circulation_trace') or {}
-                trace_txt = trace.get('acao', '—') if isinstance(trace, dict) else '—'
-                mesh = row.get('redundancy_mesh') or {}
-                shard_count = len(row.get('puzzle_shards', []) or [])
-                payload = row.get('payload') or {}
-                payload_txt = json.dumps(payload, ensure_ascii=False, default=str)[:420]
-                linked = row.get('linked_records', []) or []
-                linked_txt = ', '.join(map(str, linked[:8])) if linked else '—'
-                mirror_points = mesh.get('mirror_points', []) if isinstance(mesh, dict) else []
-                mirror_txt = ', '.join(map(str, mirror_points[:4])) if isinstance(mirror_points, list) and mirror_points else '—'
-                st.markdown(
-                    f"<div class='sc sc-p'>"
-                    f"<strong>{row.get('Registro','—')}</strong> · {row.get('timestamp','—')}<br>"
-                    f"Evento: <strong>{row.get('event_type','—')}</strong> · Entidade: <strong>{row.get('entity_type','—')} #{row.get('entity_id','—')}</strong> · Versão: <strong>{row.get('entity_version','—')}</strong><br>"
-                    f"Hash atual: <code>{row.get('event_hash','—')}</code><br>"
-                    f"Hash global anterior: <code>{row.get('previous_hash','—')}</code><br>"
-                    f"Hash anterior da entidade: <code>{row.get('entity_previous_hash','—')}</code><br>"
-                    f"Âncora da malha: <code>{row.get('chain_anchor','—')}</code><br>"
-                    f"Checksum de recuperação: <code>{row.get('recovery_checksum','—')}</code><br>"
-                    f"Origem: <strong>{row.get('origin','—')}</strong> · Proveniência: <strong>{row.get('provenance_source','—')}</strong> · Circulação: <strong>{trace_txt}</strong><br>"
-                    f"Interoperabilidade: <strong>{refs_txt}</strong><br>"
-                    f"Conexões redundantes: <strong>{linked_txt}</strong><br>"
-                    f"Fragmentos cifrados: <strong>{shard_count}</strong> · Estratégia: <strong>{mesh.get('recovery_strategy','—') if isinstance(mesh, dict) else '—'}</strong><br>"
-                    f"Espelhos semânticos: <strong>{mirror_txt}</strong><br>"
-                    f"Snapshot/payload resumido: <code>{payload_txt}</code>"
-                    f"</div>", unsafe_allow_html=True
-                )
-
+    with t3:
+        st.markdown('#### Interoperabilidade auditável e fontes externas')
+        interop_df = summarize_interoperability(load_open_data_sources(), mappings)
+        if interop_df.empty:
+            st.info('Ainda não há mapeamentos interoperáveis persistidos.')
+        else:
+            st.dataframe(interop_df, use_container_width=True, hide_index=True)
+            if 'Fonte externa' in interop_df.columns:
+                st.bar_chart(interop_df.groupby('Fonte externa').size())
 
 # ═════════════════════════════════════════════════════════════════════
 # ABA 7 — GRAFO E OPEN DATA
