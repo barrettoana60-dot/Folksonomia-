@@ -1159,24 +1159,24 @@ def inject_css() -> None:
             background: rgba(15,23,42,.08);
             margin: .8rem 0 1rem 0;
         }}
-        .smallLabel {
+        .smallLabel {{
             color: var(--textSub);
             font-size: .94rem;
-        }
-        label, .stTextInput label, .stTextArea label, .stSelectbox label, .stSlider label, .stToggle label {
+        }}
+        label, .stTextInput label, .stTextArea label, .stSelectbox label, .stSlider label, .stToggle label {{
             color: var(--textMain) !important;
             font-family: "Times New Roman", Georgia, serif !important;
-        }
+        }}
         div[data-testid="stMarkdownContainer"] p,
         div[data-testid="stMarkdownContainer"] li,
         div[data-testid="stMarkdownContainer"] span,
         div[data-testid="stMarkdownContainer"] strong,
-        div[data-testid="stMarkdownContainer"] em {
+        div[data-testid="stMarkdownContainer"] em {{
             color: var(--textMain) !important;
-        }
-        .accessSideButton button {
+        }}
+        .accessSideButton button {{
             margin-top: .6rem;
-        }
+        }}
         </style>
         """,
         unsafe_allow_html=True,
