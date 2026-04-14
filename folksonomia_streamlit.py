@@ -6405,29 +6405,34 @@ def _legacy_main_5() -> None:
 # ===== OVERRIDE FINAL 2: foco real em validação, temporalidade, acessibilidade e teia 3D =====
 
 def intro_flow(store: JsonStore) -> None:
-    render_token = str(uuid.uuid4())[:8]
     st.markdown("<div style='height:.35rem'></div>", unsafe_allow_html=True)
     st.markdown("<div class='panel' style='padding:1.3rem 1.3rem 1rem 1.3rem'><div class='panel-title'>questionário inicial</div><div class='panel-subtitle'>responda às três perguntas para liberar a marcação das imagens.</div>", unsafe_allow_html=True)
+
+    st.session_state.setdefault("intro_familiarity", "nunca")
+    st.session_state.setdefault("intro_documentation", "nenhum")
+    st.session_state.setdefault("intro_understanding", "")
+
     c1, c2 = st.columns(2)
     with c1:
         familiarity = st.selectbox(
             "1. qual é a sua frequência de visita a museus?",
             ["nunca", "raramente", "ocasionalmente", "frequentemente"],
-            key=f"intro_familiarity_{render_token}",
+            key="intro_familiarity",
         )
         documentation = st.selectbox(
             "2. você já ouviu falar sobre documentação museológica?",
             ["nenhum", "básico", "intermediário", "avançado"],
-            key=f"intro_documentation_{render_token}",
+            key="intro_documentation",
         )
     with c2:
         understanding = st.text_area(
             "3. o que você entende por tags aplicadas a acervos?",
             height=180,
             placeholder="descreva com suas palavras",
-            key=f"intro_understanding_{render_token}",
+            key="intro_understanding",
         )
-    if st.button("liberar acesso às obras", key=f"intro_submit_{render_token}", use_container_width=True):
+
+    if st.button("liberar acesso às obras", key="intro_submit", use_container_width=True):
         if not str(understanding).strip():
             st.warning("preencha a terceira resposta para continuar.")
         else:
