@@ -308,6 +308,7 @@ class Store:
         for row in rows:
             row = dict(row)
             row.setdefault("aliases", [])
+            row.setdefault("description", "")
             clean.append(row)
         return clean
 
@@ -322,6 +323,9 @@ class Store:
 
     def save_works(self, rows: List[Dict[str, Any]]) -> None:
         save_json(WORKS_FILE, rows)
+
+    def save_concepts(self, rows: List[Dict[str, Any]]) -> None:
+        save_json(CONCEPTS_FILE, rows)
 
     def admin_ok(self, login: str, password: str) -> bool:
         admin = load_json(ADMIN_FILE, {})
