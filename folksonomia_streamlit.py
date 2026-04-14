@@ -1,1854 +1,1368 @@
-from __future__ import annotations
-
-import base64
-import copy
-import hashlib
-import io
-import json
-import os
-import random
-import re
-import unicodedata
-import uuid
-import zipfile
-from collections import Counter, defaultdict
-from datetime import datetime
-from difflib import get_close_matches
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
-
-try:
-    import networkx as nx
-    HAS_NETWORKX = True
-except ModuleNotFoundError:
-    HAS_NETWORKX = False
-
-    class SimpleGraph:
-        def __init__(self):
-            self._nodes = {}
-            self._edges = []
-
-        def add_node(self, node, **attrs):
-            self._nodes[node] = {**self._nodes.get(node, {}), **attrs}
-
-        def add_edge(self, source, target, **attrs):
-            if not self.has_node(source):
-                self.add_node(source)
-            if not self.has_node(target):
-                self.add_node(target)
-            if not self.has_edge(source, target):
-                self._edges.append((source, target, attrs))
-
-        def has_edge(self, source, target):
-            return any(
-                (a == source and b == target) or (a == target and b == source)
-                for a, b, _ in self._edges
-            )
-
-        def has_node(self, node):
-            return node in self._nodes
-
-        def number_of_nodes(self):
-            return len(self._nodes)
-
-        def number_of_edges(self):
-            return len(self._edges)
-
-        def edges(self):
-            return [(a, b) for a, b, _ in self._edges]
-
-        def nodes(self, data=False):
-            if data:
-                return list(self._nodes.items())
-            return list(self._nodes.keys())
-
-    class _NXFallback:
-        Graph = SimpleGraph
-
-    nx = _NXFallback()
-
-import numpy as np
-import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
+import pandas as pd
+import numpy as np
+import os
+from datetime import datetime
+import hashlib
+import base64
+import json
+import random
+import warnings
+from collections import defaultdict
+warnings.filterwarnings('ignore')
 
 st.set_page_config(
-    page_title="Folksonomia Digital com Auditoria Semântica",
+    page_title="Sistema Folksonomia Digital",
     layout="wide",
     initial_sidebar_state="collapsed",
-    page_icon="📚",
+    page_icon="📚"
 )
 
-# ──────────────────────────────────────────────────────────────────────
-# PATHS E CONSTANTES
-# ──────────────────────────────────────────────────────────────────────
-BASE_DIR = Path("data")
-OBRAS_FILE = BASE_DIR / "obras.json"
-TAGS_FILE = BASE_DIR / "tags.json"
-USERS_FILE = BASE_DIR / "users.json"
-ADMINS_FILE = BASE_DIR / "admins.json"
-ONTOLOGIES_FILE = BASE_DIR / "ontologies.json"
-RELATIONS_FILE = BASE_DIR / "relations.json"
-EVENTS_FILE = BASE_DIR / "events.json"
-VERSIONS_FILE = BASE_DIR / "versions.json"
-EXPORTS_FILE = BASE_DIR / "exports.json"
-INSTITUTION_FILE = BASE_DIR / "institution_metadata.json"
-CONFIG_FILE = BASE_DIR / "config.json"
+DATA_DIR   = "data"
+OBRAS_FILE = os.path.join(DATA_DIR, "obras.json")
+TAGS_FILE  = os.path.join(DATA_DIR, "tags.json")
+USERS_FILE = os.path.join(DATA_DIR, "users.json")
+ADMIN_FILE = os.path.join(DATA_DIR, "admin.json")
+ADMIN_USERNAME = "nugep"
+ADMIN_PASSWORD = "nugep123"
 
-ADMIN_DEFAULT = {
-    "id": 1,
-    "username": "nugep",
-    "password_hash": hashlib.sha256("nugep123".encode("utf-8")).hexdigest(),
-    "role": "admin",
-}
-
-TAG_STATUSES = ["bruto", "sugerido", "validado", "revisado", "publicado"]
-ACCESS_THEMES = {
-    "escuro": {"bg": "#08111f", "surface": "rgba(12,25,42,0.82)", "text": "#f5f7fb", "muted": "#d5dbe7"},
-    "claro": {"bg": "#f7f3ec", "surface": "rgba(255,255,255,0.92)", "text": "#1f1f1f", "muted": "#444444"},
-}
-CONTRAST_MODES = {
-    "normal": {"border": "rgba(255,255,255,0.20)", "accent": "#95b8ff"},
-    "alto": {"border": "#ffffff", "accent": "#ffd54f"},
-}
 ANIMAIS = [
-    "Águia", "Boto", "Capivara", "Doninha", "Ema", "Falcão", "Gavião", "Harpia", "Irara", "Jaguar",
-    "Lontra", "Mico", "Onça", "Paca", "Quati", "Raposa", "Tamanduá", "Urubu", "Veado", "Zorrilho",
-    "Arara", "Bugio", "Caititu", "Jaguatirica", "Lobo", "Mutum", "Pirarucu", "Tucano", "Sucuri", "Tatu",
+    "Águia","Boto","Capivara","Doninha","Ema","Falcão","Gavião","Harpia","Irara","Jaguar",
+    "Lontra","Mico","Onça","Paca","Quati","Raposa","Tamanduá","Urubu","Veado","Zorrilho",
+    "Arara","Bugio","Caititu","Jaguatirica","Lobo","Mutum","Pirarucu","Tucano","Sucuri","Tatu"
 ]
 ADJETIVOS = [
-    "Azul", "Bravo", "Calmo", "Dourado", "Esperto", "Feroz", "Gracioso", "Intenso", "Jovial", "Lento",
-    "Mágico", "Nobre", "Ousado", "Preciso", "Rápido", "Sábio", "Tímido", "Único", "Valente", "Zeloso",
-    "Curioso", "Furtivo", "Altivo", "Sereno", "Vibrante", "Audaz", "Brilhante", "Corajoso", "Distinto", "Elegante",
+    "Azul","Bravo","Calmo","Dourado","Esperto","Feroz","Gracioso","Intenso","Jovial","Lento",
+    "Mágico","Nobre","Ousado","Preciso","Rápido","Sábio","Tímido","Único","Valente","Zeloso",
+    "Curioso","Furtivo","Altivo","Sereno","Vibrante","Audaz","Brilhante","Corajoso","Distinto","Elegante"
 ]
 
-BASE_ONTOLOGIES = [
-    {
-        "name": "Cor",
-        "description": "Ontologia para cores percebidas na obra.",
-        "terms": ["azul", "vermelho", "amarelo", "verde", "preto", "branco", "cinza", "dourado", "prata", "rosa", "laranja", "violeta", "marrom"],
-    },
-    {
-        "name": "Religioso",
-        "description": "Termos de religiosidade, espiritualidade e iconografia sacra.",
-        "terms": ["igreja", "santo", "sagrada", "cruz", "crucifixo", "oração", "religioso", "religiosa", "anjo", "milagre", "deus", "sacrifício", "fé"],
-    },
-    {
-        "name": "Guerra",
-        "description": "Termos associados a conflito, violência e guerra.",
-        "terms": ["guerra", "batalha", "soldado", "arma", "violência", "conflito", "morte", "ruína", "destruição", "bombardeio", "ferido"],
-    },
-    {
-        "name": "Natureza",
-        "description": "Elementos naturais e paisagem.",
-        "terms": ["árvore", "céu", "mar", "terra", "sol", "lua", "estrela", "flor", "natureza", "rio", "montanha", "folha"],
-    },
-    {
-        "name": "Figura Humana",
-        "description": "Representações humanas, corpo, rosto e papéis sociais.",
-        "terms": ["rosto", "mulher", "homem", "criança", "família", "corpo", "mão", "olhar", "retrato", "mãe", "pai", "pessoa"],
-    },
-    {
-        "name": "Emoção",
-        "description": "Vocabulário de afeto e emoção.",
-        "terms": ["tristeza", "alegria", "medo", "dor", "esperança", "calma", "caos", "solidão", "amor", "raiva", "angústia"],
-    },
-    {
-        "name": "Material e Técnica",
-        "description": "Vocabulário de materialidade e técnica artística.",
-        "terms": ["óleo", "tinta", "madeira", "metal", "pedra", "tecido", "gravura", "escultura", "desenho", "pintura", "cerâmica", "papel"],
-    },
-]
-
-# ──────────────────────────────────────────────────────────────────────
-# UTILIDADES GERAIS
-# ──────────────────────────────────────────────────────────────────────
-def now_iso() -> str:
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-
-def generate_animal_name() -> str:
+def generate_animal_name():
     random.seed()
     return f"{random.choice(ANIMAIS)} {random.choice(ADJETIVOS)}"
 
+# ── CORE ──────────────────────────────────────────────────────────────
+def ensure_data_dir():
+    if not os.path.exists(DATA_DIR):
+        os.makedirs(DATA_DIR)
 
-def ensure_data_dir() -> None:
-    BASE_DIR.mkdir(parents=True, exist_ok=True)
-
-
-def normalize_text(text: str) -> str:
-    if text is None:
-        return ""
-    text = str(text).strip().lower()
-    text = unicodedata.normalize("NFKD", text)
-    text = "".join(ch for ch in text if not unicodedata.combining(ch))
-    text = re.sub(r"\s+", " ", text)
-    return text
-
-
-def slugify(text: str) -> str:
-    text = normalize_text(text)
-    text = re.sub(r"[^a-z0-9]+", "-", text)
-    return text.strip("-") or str(uuid.uuid4())[:8]
-
-
-def generate_uid() -> str:
-    return base64.b64encode(os.urandom(12)).decode("ascii")
-
-
-def json_hash(data: Any) -> str:
-    normalized = json.dumps(data, ensure_ascii=False, sort_keys=True, default=str)
-    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
-
-
-def load_json(path: Path, default: Any) -> Any:
+def load_json_file(filepath, default):
     ensure_data_dir()
-    if not path.exists():
-        return copy.deepcopy(default)
+    if os.path.exists(filepath):
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            return default
+    return default
+
+def save_json_file(filepath, data):
+    ensure_data_dir()
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return copy.deepcopy(default)
-
-
-def save_json(path: Path, data: Any) -> None:
-    ensure_data_dir()
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-def next_id(records: List[Dict[str, Any]]) -> int:
-    return (max((int(r.get("id", 0)) for r in records), default=0) + 1) if records else 1
-
-
-def require_columns(df: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
-    for col in columns:
-        if col not in df.columns:
-            df[col] = np.nan
-    return df
-
-
-def latest_versions_index() -> Dict[Tuple[str, str], Dict[str, Any]]:
-    versions = load_json(VERSIONS_FILE, [])
-    idx: Dict[Tuple[str, str], Dict[str, Any]] = {}
-    for version in versions:
-        idx[(version["entity_type"], str(version["entity_id"]))] = version
-    return idx
-
-
-# ──────────────────────────────────────────────────────────────────────
-# TRILHA IMUTÁVEL / AUDITORIA / VERSIONAMENTO
-# ──────────────────────────────────────────────────────────────────────
-def register_version(
-    entity_type: str,
-    entity_id: str,
-    snapshot: Dict[str, Any],
-    actor: str,
-    status: Optional[str] = None,
-    origin: str = "humano",
-) -> Dict[str, Any]:
-    versions = load_json(VERSIONS_FILE, [])
-    prev = None
-    for version in reversed(versions):
-        if version["entity_type"] == entity_type and str(version["entity_id"]) == str(entity_id):
-            prev = version
-            break
-
-    version_record = {
-        "id": next_id(versions),
-        "timestamp": now_iso(),
-        "entity_type": entity_type,
-        "entity_id": str(entity_id),
-        "snapshot": snapshot,
-        "snapshot_hash": json_hash(snapshot),
-        "previous_snapshot_hash": prev["snapshot_hash"] if prev else None,
-        "actor": actor,
-        "status": status,
-        "origin": origin,
-    }
-    versions.append(version_record)
-    save_json(VERSIONS_FILE, versions)
-    return version_record
-
-
-def register_event(
-    action: str,
-    entity_type: str,
-    entity_id: str,
-    actor: str,
-    payload: Dict[str, Any],
-    status: Optional[str] = None,
-    automatic: bool = False,
-    origin: str = "humano",
-    provenance: str = "interface_streamlit",
-    circulation: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    events = load_json(EVENTS_FILE, [])
-    previous_hash = events[-1]["event_hash"] if events else None
-    payload_hash = json_hash(payload)
-    event = {
-        "id": next_id(events),
-        "timestamp": now_iso(),
-        "action": action,
-        "entity_type": entity_type,
-        "entity_id": str(entity_id),
-        "actor": actor,
-        "payload_hash": payload_hash,
-        "previous_event_hash": previous_hash,
-        "provenance": provenance,
-        "automatic": automatic,
-        "origin": origin,
-        "circulation": circulation or {},
-        "status": status,
-    }
-    event["event_hash"] = json_hash(event)
-    events.append(event)
-    save_json(EVENTS_FILE, events)
-    return event
-
-
-def audit_write(
-    collection_file: Path,
-    entity_type: str,
-    records: List[Dict[str, Any]],
-    target_record: Dict[str, Any],
-    actor: str,
-    action: str,
-    status: Optional[str] = None,
-    automatic: bool = False,
-    origin: str = "humano",
-    provenance: str = "interface_streamlit",
-    circulation: Optional[Dict[str, Any]] = None,
-) -> None:
-    save_json(collection_file, records)
-    version = register_version(entity_type, str(target_record["id"]), target_record, actor, status=status, origin=origin)
-    payload = {
-        "record_id": target_record["id"],
-        "version_hash": version["snapshot_hash"],
-        "record": target_record,
-    }
-    register_event(
-        action=action,
-        entity_type=entity_type,
-        entity_id=str(target_record["id"]),
-        actor=actor,
-        payload=payload,
-        status=status,
-        automatic=automatic,
-        origin=origin,
-        provenance=provenance,
-        circulation=circulation,
-    )
-
-
-def audit_delete(
-    collection_file: Path,
-    entity_type: str,
-    entity_id: str,
-    remaining_records: List[Dict[str, Any]],
-    actor: str,
-    payload: Dict[str, Any],
-    provenance: str = "interface_streamlit",
-) -> None:
-    save_json(collection_file, remaining_records)
-    register_event(
-        action="delete",
-        entity_type=entity_type,
-        entity_id=str(entity_id),
-        actor=actor,
-        payload=payload,
-        status="revisado",
-        provenance=provenance,
-    )
-
-
-# ──────────────────────────────────────────────────────────────────────
-# DADOS INICIAIS
-# ──────────────────────────────────────────────────────────────────────
-def default_works() -> List[Dict[str, Any]]:
-    return [
-        {
-            "id": 1,
-            "titulo": "Guernica",
-            "artista": "Pablo Picasso",
-            "ano": "1937",
-            "imagem": "https://upload.wikimedia.org/wikipedia/en/7/74/PicassoGuernica.jpg",
-            "descricao": "Pintura monumental em preto, branco e cinza que trata da violência e do impacto da guerra sobre corpos, animais e arquitetura fragmentada.",
-            "audio_descricao": "Guernica é uma pintura horizontal e extensa, construída em tons de preto, branco e cinza. Vários corpos humanos e animais surgem despedaçados, com expressões de dor, medo e desorientação. À esquerda aparece um touro escuro e, abaixo dele, uma mãe ergue o rosto enquanto segura o filho morto. No centro, um cavalo de boca aberta parece gritar. Linhas angulosas sugerem ruptura, ruína e bombardeio.",
-            "metadados": {"colecao": "Acervo de referência", "origem": "Open access", "licenca": "Uso educacional"},
-        },
-        {
-            "id": 2,
-            "titulo": "A Noite Estrelada",
-            "artista": "Vincent van Gogh",
-            "ano": "1889",
-            "imagem": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/ea/Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg/1200px-Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg",
-            "descricao": "Paisagem noturna com céu em redemoinhos e vila abaixo, marcada por cor, ritmo e sensação de movimento.",
-            "audio_descricao": "Em formato horizontal, a cena mostra uma vila pequena ao fundo e, acima dela, um céu azul profundo atravessado por espirais luminosas. As estrelas aparecem como círculos amarelos intensos, quase vibrando. À esquerda, um cipreste escuro sobe como uma chama vertical. A pintura transmite noite, vento, ritmo e contemplação.",
-            "metadados": {"colecao": "Acervo de referência", "origem": "Open access", "licenca": "Uso educacional"},
-        },
-        {
-            "id": 3,
-            "titulo": "Mona Lisa",
-            "artista": "Leonardo da Vinci",
-            "ano": "1503",
-            "imagem": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/ec/Mona_Lisa%2C_by_Leonardo_da_Vinci%2C_from_C2RMF_retouched.jpg/800px-Mona_Lisa%2C_by_Leonardo_da_Vinci%2C_from_C2RMF_retouched.jpg",
-            "descricao": "Retrato de meia figura com paisagem ao fundo e expressão enigmática.",
-            "audio_descricao": "Uma mulher é vista da cintura para cima, sentada e levemente virada para a direita, enquanto encara o observador. O rosto apresenta expressão serena e um sorriso discreto. Os cabelos escuros caem sobre os ombros. As mãos aparecem cruzadas em primeiro plano. Ao fundo há uma paisagem de montanhas, água e caminhos sinuosos em tons suaves.",
-            "metadados": {"colecao": "Acervo de referência", "origem": "Open access", "licenca": "Uso educacional"},
-        },
-    ]
-
-
-def default_institution_metadata() -> Dict[str, Any]:
-    return {
-        "instituicao": "Instituição Museológica",
-        "sigla": "NUGEP",
-        "responsavel": "Coordenação de documentação",
-        "politica_dados": "Dados analíticos e metadados com trilha auditável, versionamento e controle de proveniência.",
-        "padroes": ["DCMI", "CIDOC-CRM", "Vocabulários híbridos", "Folksonomia"],
-        "colecoes": ["Pintura", "Escultura", "Documentação"],
-        "ultima_atualizacao": now_iso(),
-    }
-
-
-def bootstrap_files() -> None:
-    ensure_data_dir()
-    if not ADMINS_FILE.exists():
-        save_json(ADMINS_FILE, [ADMIN_DEFAULT])
-    if not OBRAS_FILE.exists():
-        save_json(OBRAS_FILE, default_works())
-    if not TAGS_FILE.exists():
-        save_json(TAGS_FILE, [])
-    if not USERS_FILE.exists():
-        save_json(USERS_FILE, [])
-    if not ONTOLOGIES_FILE.exists():
-        default_records = []
-        for idx, ontology in enumerate(BASE_ONTOLOGIES, start=1):
-            default_records.append(
-                {
-                    "id": idx,
-                    "name": ontology["name"],
-                    "slug": slugify(ontology["name"]),
-                    "description": ontology["description"],
-                    "terms": ontology["terms"],
-                    "status": "publicado",
-                    "created_at": now_iso(),
-                    "updated_at": now_iso(),
-                    "created_by": "bootstrap",
-                    "automatic": False,
-                    "origin": "humano",
-                }
-            )
-        save_json(ONTOLOGIES_FILE, default_records)
-    if not RELATIONS_FILE.exists():
-        save_json(RELATIONS_FILE, [])
-    if not EVENTS_FILE.exists():
-        save_json(EVENTS_FILE, [])
-    if not VERSIONS_FILE.exists():
-        save_json(VERSIONS_FILE, [])
-    if not EXPORTS_FILE.exists():
-        save_json(EXPORTS_FILE, [])
-    if not INSTITUTION_FILE.exists():
-        save_json(INSTITUTION_FILE, default_institution_metadata())
-    if not CONFIG_FILE.exists():
-        save_json(CONFIG_FILE, {"seed_loaded": True})
-
-
-# ──────────────────────────────────────────────────────────────────────
-# LOADERS
-# ──────────────────────────────────────────────────────────────────────
-@st.cache_data(ttl=5, show_spinner=False)
-def load_obras() -> List[Dict[str, Any]]:
-    return load_json(OBRAS_FILE, default_works())
-
-
-@st.cache_data(ttl=5, show_spinner=False)
-def load_tags_df() -> pd.DataFrame:
-    df = pd.DataFrame(load_json(TAGS_FILE, []))
-    if df.empty:
-        return pd.DataFrame(columns=[
-            "id", "user_id", "obra_id", "tag_original", "tag_normalized", "created_at",
-            "status", "ontology_group", "ontology_term", "automatic", "origin", "provenance",
-            "validated_by", "validated_at", "notes", "familiaridade", "conhecimento_museologico"
-        ])
-    return require_columns(df, [
-        "id", "user_id", "obra_id", "tag_original", "tag_normalized", "created_at",
-        "status", "ontology_group", "ontology_term", "automatic", "origin", "provenance",
-        "validated_by", "validated_at", "notes", "familiaridade", "conhecimento_museologico"
-    ])
-
-
-@st.cache_data(ttl=5, show_spinner=False)
-def load_users_df() -> pd.DataFrame:
-    df = pd.DataFrame(load_json(USERS_FILE, []))
-    if df.empty:
-        return pd.DataFrame(columns=["user_id", "animal_name", "timestamp", "q1", "q2", "q3"])
-    return require_columns(df, ["user_id", "animal_name", "timestamp", "q1", "q2", "q3"])
-
-
-@st.cache_data(ttl=5, show_spinner=False)
-def load_ontologies_df() -> pd.DataFrame:
-    df = pd.DataFrame(load_json(ONTOLOGIES_FILE, []))
-    if df.empty:
-        return pd.DataFrame(columns=["id", "name", "slug", "description", "terms", "status", "created_at", "updated_at", "created_by", "automatic", "origin"])
-    return require_columns(df, ["id", "name", "slug", "description", "terms", "status", "created_at", "updated_at", "created_by", "automatic", "origin"])
-
-
-@st.cache_data(ttl=5, show_spinner=False)
-def load_relations_df() -> pd.DataFrame:
-    df = pd.DataFrame(load_json(RELATIONS_FILE, []))
-    if df.empty:
-        return pd.DataFrame(columns=["id", "source_type", "source_id", "target_type", "target_id", "relation_type", "confidence", "automatic", "active", "created_at"])
-    return df
-
-
-@st.cache_data(ttl=5, show_spinner=False)
-def load_events_df() -> pd.DataFrame:
-    df = pd.DataFrame(load_json(EVENTS_FILE, []))
-    if df.empty:
-        return pd.DataFrame(columns=["id", "timestamp", "action", "entity_type", "entity_id", "actor", "event_hash", "previous_event_hash", "status", "provenance", "automatic"])
-    return df
-
-
-@st.cache_data(ttl=5, show_spinner=False)
-def load_versions_df() -> pd.DataFrame:
-    df = pd.DataFrame(load_json(VERSIONS_FILE, []))
-    if df.empty:
-        return pd.DataFrame(columns=["id", "timestamp", "entity_type", "entity_id", "snapshot_hash", "previous_snapshot_hash", "actor", "status", "origin"])
-    return df
-
-
-def clear_caches() -> None:
-    st.cache_data.clear()
-
-
-# ──────────────────────────────────────────────────────────────────────
-# CSS / ACESSIBILIDADE
-# ──────────────────────────────────────────────────────────────────────
-def ensure_accessibility_session() -> None:
-    defaults = {
-        "font_scale": 1.0,
-        "theme_mode": "escuro",
-        "contrast_mode": "normal",
-        "focus_audio": True,
-        "user_id": generate_uid(),
-        "animal_name": generate_animal_name(),
-        "step": "intro",
-        "answers": {},
-        "admin_logged_in": False,
-    }
-    for key, value in defaults.items():
-        st.session_state.setdefault(key, value)
-
-
-def load_css() -> None:
-    theme = ACCESS_THEMES[st.session_state.get("theme_mode", "escuro")]
-    contrast = CONTRAST_MODES[st.session_state.get("contrast_mode", "normal")]
-    font_scale = float(st.session_state.get("font_scale", 1.0))
-    focus_audio = st.session_state.get("focus_audio", True)
-    audio_border = contrast["accent"] if focus_audio else contrast["border"]
-
-    st.markdown(
-        f"""
-        <style>
-        :root {{
-            --app-bg: {theme['bg']};
-            --surface: {theme['surface']};
-            --surface-2: rgba(255,255,255,0.08);
-            --text-main: {theme['text']};
-            --text-muted: {theme['muted']};
-            --border: {contrast['border']};
-            --accent: {contrast['accent']};
-            --font-scale: {font_scale};
-            --audio-border: {audio_border};
-        }}
-        html, body, [class*="css"], [class*="st-"] {{
-            font-family: 'Times New Roman', Times, serif !important;
-        }}
-        .stApp {{
-            background: linear-gradient(135deg, var(--app-bg) 0%, #10253f 100%);
-            color: var(--text-main);
-        }}
-        #MainMenu, footer, header {{visibility: hidden;}}
-        .block-container {{padding-top: 1.2rem; padding-bottom: 3rem;}}
-        h1, h2, h3, h4, h5, h6, p, span, div, label {{
-            color: var(--text-main) !important;
-            font-size: calc(1rem * var(--font-scale));
-        }}
-        .app-wrap {{max-width: 1500px; margin: 0 auto;}}
-        .hero {{
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 24px;
-            padding: 1.6rem 1.8rem;
-            margin-bottom: 1rem;
-            box-shadow: 0 8px 30px rgba(0,0,0,0.18);
-        }}
-        .hero h1 {{font-size: calc(2.5rem * var(--font-scale)); margin-bottom: .5rem;}}
-        .hero p {{color: var(--text-muted) !important; line-height: 1.6;}}
-        .glass-card {{
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 22px;
-            padding: 1.2rem 1.4rem;
-            margin: .9rem 0;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.12);
-        }}
-        .obra-card {{
-            background: var(--surface);
-            border: 1px solid var(--audio-border);
-            border-radius: 24px;
-            padding: 1rem;
-            margin-bottom: 1rem;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.12);
-        }}
-        .obra-card img {{width:100%; height:300px; object-fit:cover; border-radius:18px;}}
-        .micro-card {{
-            background: rgba(255,255,255,0.06);
-            border: 1px solid var(--border);
-            border-radius: 18px;
-            padding: 1rem;
-            min-height: 120px;
-        }}
-        .kpi {{font-size: calc(2rem * var(--font-scale)); font-weight: 700; margin: .2rem 0;}}
-        .muted {{color: var(--text-muted) !important;}}
-        .tag-badge {{
-            display:inline-block;
-            margin:.2rem .3rem .2rem 0;
-            padding:.35rem .75rem;
-            border-radius:50px;
-            border:1px solid var(--border);
-            background: rgba(255,255,255,0.08);
-        }}
-        .status-pill {{
-            display:inline-block;
-            padding:.25rem .7rem;
-            border-radius:50px;
-            background: rgba(149,184,255,.18);
-            border:1px solid var(--accent);
-            margin-left:.3rem;
-        }}
-        .audio-box {{
-            border-left: 5px solid var(--audio-border);
-            background: rgba(255,255,255,0.06);
-            padding: 1rem;
-            border-radius: 16px;
-            margin-top: .7rem;
-        }}
-        .audit-row {{
-            background: rgba(255,255,255,0.04);
-            border:1px solid var(--border);
-            border-radius:16px;
-            padding:.85rem 1rem;
-            margin-bottom:.45rem;
-        }}
-        .stButton > button, .stDownloadButton > button {{
-            border-radius: 999px !important;
-            border: 1px solid var(--accent) !important;
-            background: rgba(255,255,255,0.10) !important;
-            color: var(--text-main) !important;
-            font-weight: 700 !important;
-        }}
-        .stTextInput input, .stTextArea textarea, .stSelectbox select, .stNumberInput input {{
-            background: rgba(255,255,255,0.06) !important;
-            border: 1px solid var(--border) !important;
-            color: var(--text-main) !important;
-            border-radius: 14px !important;
-        }}
-        .stTabs [data-baseweb="tab-list"] {{gap:.5rem;}}
-        .stTabs [data-baseweb="tab"] {{
-            border-radius: 999px;
-            background: rgba(255,255,255,0.06);
-            border:1px solid var(--border);
-        }}
-        .stDataFrame, .stTable {{border-radius: 14px; overflow:hidden;}}
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-def render_accessibility_controls() -> None:
-    with st.expander("Acessibilidade e leitura", expanded=True):
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            st.session_state["font_scale"] = st.slider("Tamanho do texto", 0.9, 1.6, float(st.session_state["font_scale"]), 0.1)
-        with c2:
-            st.session_state["contrast_mode"] = st.selectbox("Contraste", list(CONTRAST_MODES.keys()), index=list(CONTRAST_MODES.keys()).index(st.session_state["contrast_mode"]))
-        with c3:
-            st.session_state["theme_mode"] = st.selectbox("Tema", list(ACCESS_THEMES.keys()), index=list(ACCESS_THEMES.keys()).index(st.session_state["theme_mode"]))
-        with c4:
-            st.session_state["focus_audio"] = st.toggle("Foco em audiodescrição", value=st.session_state["focus_audio"])
-    load_css()
-
-
-# ──────────────────────────────────────────────────────────────────────
-# ONTOLOGIAS / SUGESTÕES / RELAÇÕES
-# ──────────────────────────────────────────────────────────────────────
-def ontology_terms_map() -> Dict[str, List[str]]:
-    ont_df = load_ontologies_df()
-    mapping: Dict[str, List[str]] = {}
-    if ont_df.empty:
-        return mapping
-    for _, row in ont_df.iterrows():
-        terms = row["terms"] if isinstance(row["terms"], list) else []
-        mapping[row["name"]] = [normalize_text(term) for term in terms if str(term).strip()]
-    return mapping
-
-
-def build_lexicon() -> List[str]:
-    tag_df = load_tags_df()
-    ontology_map = ontology_terms_map()
-    lexicon = set()
-    if not tag_df.empty:
-        lexicon.update(normalize_text(tag) for tag in tag_df["tag_normalized"].dropna().astype(str).tolist())
-        lexicon.update(normalize_text(tag) for tag in tag_df["tag_original"].dropna().astype(str).tolist())
-    for terms in ontology_map.values():
-        lexicon.update(terms)
-    return sorted(t for t in lexicon if t)
-
-
-def infer_ontology_groups(tag_text: str) -> List[Tuple[str, str, float]]:
-    normalized = normalize_text(tag_text)
-    matches: List[Tuple[str, str, float]] = []
-    for group_name, terms in ontology_terms_map().items():
-        for term in terms:
-            if not term:
-                continue
-            if normalized == term:
-                matches.append((group_name, term, 1.0))
-            elif normalized in term or term in normalized:
-                confidence = round(min(len(normalized), len(term)) / max(len(normalized), len(term)), 3)
-                matches.append((group_name, term, max(0.55, confidence)))
-            else:
-                ratio = len(set(normalized.split()) & set(term.split())) / max(1, len(set(normalized.split()) | set(term.split())))
-                if ratio >= 0.5:
-                    matches.append((group_name, term, round(ratio, 3)))
-    dedup = {}
-    for group_name, term, confidence in matches:
-        key = (group_name, term)
-        dedup[key] = max(confidence, dedup.get(key, 0.0))
-    return sorted([(a, b, c) for (a, b), c in dedup.items()], key=lambda x: x[2], reverse=True)
-
-
-def suggest_corrections(tag_text: str) -> List[str]:
-    normalized = normalize_text(tag_text)
-    if not normalized:
-        return []
-    lexicon = build_lexicon()
-    if normalized in lexicon:
-        return []
-    suggestions = get_close_matches(normalized, lexicon, n=5, cutoff=0.72)
-    repeated_fix = re.sub(r"(.)\1{2,}", r"\1", normalized)
-    if repeated_fix != normalized and repeated_fix in lexicon:
-        suggestions = [repeated_fix] + suggestions
-    seen = []
-    for item in suggestions:
-        if item not in seen:
-            seen.append(item)
-    return seen[:5]
-
-
-def semantic_group_from_tag(tag_text: str) -> str:
-    matches = infer_ontology_groups(tag_text)
-    return matches[0][0] if matches else "Sem classificação"
-
-
-def refresh_tag_relations(tag_record: Dict[str, Any], actor: str = "sistema") -> None:
-    relations = load_json(RELATIONS_FILE, [])
-    target_tag_id = tag_record["id"]
-    for relation in relations:
-        if relation.get("source_type") == "tag" and relation.get("source_id") == target_tag_id and relation.get("automatic"):
-            relation["active"] = False
-            relation["updated_at"] = now_iso()
-
-    matches = infer_ontology_groups(tag_record.get("tag_normalized") or tag_record.get("tag_original", ""))
-    ontologies = load_json(ONTOLOGIES_FILE, [])
-    ont_by_name = {row["name"]: row for row in ontologies}
-    for group_name, term, confidence in matches:
-        ontology = ont_by_name.get(group_name)
-        if not ontology:
-            continue
-        relation = {
-            "id": next_id(relations),
-            "source_type": "tag",
-            "source_id": target_tag_id,
-            "target_type": "ontology",
-            "target_id": ontology["id"],
-            "relation_type": "classificado_em",
-            "confidence": confidence,
-            "automatic": True,
-            "active": True,
-            "created_at": now_iso(),
-            "updated_at": now_iso(),
-            "term_match": term,
-        }
-        relations.append(relation)
-        register_event(
-            action="relation_create",
-            entity_type="relation",
-            entity_id=str(relation["id"]),
-            actor=actor,
-            payload=relation,
-            automatic=True,
-            origin="ia_heuristica",
-            provenance="classificacao_automatica",
-        )
-    save_json(RELATIONS_FILE, relations)
-    clear_caches()
-
-
-# ──────────────────────────────────────────────────────────────────────
-# CRUD PRINCIPAL
-# ──────────────────────────────────────────────────────────────────────
-def check_login(username: str, password: str) -> bool:
-    admins = load_json(ADMINS_FILE, [ADMIN_DEFAULT])
-    password_hash = hashlib.sha256(password.encode("utf-8")).hexdigest()
-    return any(a.get("username") == username and a.get("password_hash") == password_hash for a in admins)
-
-
-def save_answers(user_id: str, animal_name: str, answers: Dict[str, Any]) -> None:
-    users = load_json(USERS_FILE, [])
-    existing = next((u for u in users if u.get("user_id") == user_id), None)
-    record = {
-        "user_id": user_id,
-        "animal_name": animal_name,
-        "timestamp": now_iso(),
-        **answers,
-    }
-    if existing:
-        existing.update(record)
-        save_json(USERS_FILE, users)
-        register_event("update", "user", user_id, user_id, record, status="publicado")
-    else:
-        users.append(record)
-        save_json(USERS_FILE, users)
-        register_version("user", user_id, record, user_id, status="publicado")
-        register_event("create", "user", user_id, user_id, record, status="publicado")
-    clear_caches()
-
-
-def user_profile(user_id: str) -> Dict[str, Any]:
-    users_df = load_users_df()
-    if users_df.empty:
-        return {}
-    row = users_df[users_df["user_id"] == user_id]
-    return row.iloc[0].to_dict() if not row.empty else {}
-
-
-def save_tag(user_id: str, obra_id: int, tag_text: str) -> Dict[str, Any]:
-    tags = load_json(TAGS_FILE, [])
-    profile = user_profile(user_id)
-    record = {
-        "id": next_id(tags),
-        "user_id": user_id,
-        "obra_id": int(obra_id),
-        "tag_original": tag_text.strip(),
-        "tag_normalized": normalize_text(tag_text),
-        "created_at": now_iso(),
-        "updated_at": now_iso(),
-        "status": "bruto",
-        "ontology_group": semantic_group_from_tag(tag_text),
-        "ontology_term": infer_ontology_groups(tag_text)[0][1] if infer_ontology_groups(tag_text) else "",
-        "automatic": False,
-        "origin": "humano",
-        "provenance": "explorar_obras",
-        "validated_by": "",
-        "validated_at": "",
-        "notes": "",
-        "familiaridade": profile.get("q1", "Não informado"),
-        "conhecimento_museologico": profile.get("q2", "Não informado"),
-        "correction_suggestions": suggest_corrections(tag_text),
-    }
-    tags.append(record)
-    audit_write(
-        TAGS_FILE,
-        "tag",
-        tags,
-        record,
-        actor=user_id,
-        action="create",
-        status=record["status"],
-        provenance="submissao_publica",
-    )
-    refresh_tag_relations(record, actor=user_id)
-    clear_caches()
-    return record
-
-
-def update_tag_record(tag_id: int, updates: Dict[str, Any], actor: str, action: str = "update") -> Optional[Dict[str, Any]]:
-    tags = load_json(TAGS_FILE, [])
-    updated = None
-    for record in tags:
-        if int(record["id"]) == int(tag_id):
-            record.update(updates)
-            record["updated_at"] = now_iso()
-            updated = record
-            break
-    if updated is None:
-        return None
-    audit_write(
-        TAGS_FILE,
-        "tag",
-        tags,
-        updated,
-        actor=actor,
-        action=action,
-        status=updated.get("status"),
-        provenance="administracao_tags",
-    )
-    refresh_tag_relations(updated, actor=actor)
-    clear_caches()
-    return updated
-
-
-def create_ontology(name: str, description: str, terms_text: str, actor: str) -> Dict[str, Any]:
-    ontologies = load_json(ONTOLOGIES_FILE, [])
-    terms = [normalize_text(term) for term in re.split(r"[,;\n]", terms_text) if term.strip()]
-    record = {
-        "id": next_id(ontologies),
-        "name": name.strip(),
-        "slug": slugify(name),
-        "description": description.strip(),
-        "terms": sorted(dict.fromkeys(terms)),
-        "status": "publicado",
-        "created_at": now_iso(),
-        "updated_at": now_iso(),
-        "created_by": actor,
-        "automatic": False,
-        "origin": "humano",
-    }
-    ontologies.append(record)
-    audit_write(ONTOLOGIES_FILE, "ontology", ontologies, record, actor=actor, action="create", status="publicado", provenance="administracao_ontologias")
-    clear_caches()
-    return record
-
-
-def update_ontology(ontology_id: int, updates: Dict[str, Any], actor: str) -> Optional[Dict[str, Any]]:
-    ontologies = load_json(ONTOLOGIES_FILE, [])
-    updated = None
-    for record in ontologies:
-        if int(record["id"]) == int(ontology_id):
-            record.update(updates)
-            record["updated_at"] = now_iso()
-            if isinstance(record.get("terms"), str):
-                record["terms"] = [normalize_text(t) for t in re.split(r"[,;\n]", record["terms"]) if t.strip()]
-            updated = record
-            break
-    if updated:
-        audit_write(ONTOLOGIES_FILE, "ontology", ontologies, updated, actor=actor, action="update", status=updated.get("status", "publicado"), provenance="administracao_ontologias")
-        clear_caches()
-    return updated
-
-
-def add_work(payload: Dict[str, Any], actor: str) -> Dict[str, Any]:
-    works = load_json(OBRAS_FILE, default_works())
-    record = {
-        "id": next_id(works),
-        "titulo": payload["titulo"].strip(),
-        "artista": payload.get("artista", "").strip(),
-        "ano": payload.get("ano", "").strip(),
-        "imagem": payload.get("imagem", "").strip(),
-        "descricao": payload.get("descricao", "").strip(),
-        "audio_descricao": payload.get("audio_descricao", "").strip(),
-        "metadados": {
-            "colecao": payload.get("colecao", ""),
-            "origem": payload.get("origem", ""),
-            "licenca": payload.get("licenca", ""),
-        },
-        "created_at": now_iso(),
-        "updated_at": now_iso(),
-    }
-    works.append(record)
-    audit_write(OBRAS_FILE, "obra", works, record, actor=actor, action="create", status="publicado", provenance="administracao_obras")
-    clear_caches()
-    return record
-
-
-def delete_work(work_id: int, actor: str) -> bool:
-    works = load_json(OBRAS_FILE, default_works())
-    target = next((w for w in works if int(w["id"]) == int(work_id)), None)
-    if not target:
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        st.error(f"Erro ao salvar {filepath}: {e}")
         return False
-    remaining = [w for w in works if int(w["id"]) != int(work_id)]
-    audit_delete(OBRAS_FILE, "obra", str(work_id), remaining, actor, payload=target, provenance="administracao_obras")
-    clear_caches()
-    return True
 
+# ── SIMILARIDADE ──────────────────────────────────────────────────────
+def ntag(tag):   return tag.lower().strip()
+def words(tag):  return set(ntag(tag).split())
+def ngrams(text, n=3):
+    t = ntag(text)
+    return set([t]) if len(t) < n else set(t[i:i+n] for i in range(len(t)-n+1))
 
-def update_institution_metadata(metadata: Dict[str, Any], actor: str) -> None:
-    save_json(INSTITUTION_FILE, metadata)
-    register_version("institution_metadata", "principal", metadata, actor, status="publicado")
-    register_event("update", "institution_metadata", "principal", actor, metadata, status="publicado", provenance="metadados_institucionais")
-    clear_caches()
+def sim(t1, t2):
+    a, b = ntag(t1), ntag(t2)
+    if a == b: return 1.0
+    if a in b or b in a:
+        return 0.55 + 0.45*(min(len(a),len(b))/max(len(a),len(b)))
+    w1,w2 = words(t1),words(t2)
+    if w1 and w2:
+        j = len(w1&w2)/len(w1|w2)
+        if j >= 0.5: return j
+    if len(a)>=3 and len(b)>=3:
+        ng1,ng2 = ngrams(a),ngrams(b)
+        nj = len(ng1&ng2)/len(ng1|ng2) if ng1|ng2 else 0
+        if nj > 0:
+            wj = len(w1&w2)/len(w1|w2) if w1|w2 else 0
+            return 0.6*nj + 0.4*wj
+    return 0.0
 
+def tag_connections(tags_list, threshold=0.35):
+    uniq = list(set(ntag(t) for t in tags_list))
+    conns = []
+    for i in range(len(uniq)):
+        for j in range(i+1, len(uniq)):
+            s = sim(uniq[i], uniq[j])
+            if s >= threshold:
+                w1,w2 = words(uniq[i]),words(uniq[j])
+                shared = w1&w2
+                if uniq[i] in uniq[j] or uniq[j] in uniq[i]: tipo = "Contenção"
+                elif shared: tipo = f"Palavra comum: '{', '.join(shared)}'"
+                else: tipo = "Similaridade fonética"
+                conns.append({"tag_a":uniq[i],"tag_b":uniq[j],"similaridade":round(s,3),"tipo":tipo})
+    conns.sort(key=lambda x: x["similaridade"], reverse=True)
+    return conns
 
-def register_export(actor: str, export_type: str, destination: str, note: str, file_hash: str) -> None:
-    exports = load_json(EXPORTS_FILE, [])
-    record = {
-        "id": next_id(exports),
-        "timestamp": now_iso(),
-        "actor": actor,
-        "export_type": export_type,
-        "destination": destination,
-        "note": note,
-        "file_hash": file_hash,
-    }
-    exports.append(record)
-    save_json(EXPORTS_FILE, exports)
-    register_version("export", str(record["id"]), record, actor, status="publicado")
-    register_event(
-        action="export",
-        entity_type="export",
-        entity_id=str(record["id"]),
-        actor=actor,
-        payload=record,
-        status="publicado",
-        provenance="exportacao_open_data",
-        circulation={"destination": destination, "note": note},
-    )
-    clear_caches()
+def tag_clusters(tags_list, threshold=0.35):
+    uniq  = list(set(ntag(t) for t in tags_list))
+    conns = tag_connections(uniq, threshold)
+    par   = {t:t for t in uniq}
+    def find(x):
+        while par[x]!=x: par[x]=par[par[x]]; x=par[x]
+        return x
+    def union(a,b):
+        ra,rb = find(a),find(b)
+        if ra!=rb: par[ra]=rb
+    for c in conns: union(c["tag_a"],c["tag_b"])
+    cl = defaultdict(list)
+    for t in uniq: cl[find(t)].append(t)
+    return [sorted(v) for v in cl.values() if len(v)>1]
 
+# ── CSS ───────────────────────────────────────────────────────────────
+def load_css():
+    st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap');
+*{margin:0;padding:0;box-sizing:border-box;font-family:'Poppins',sans-serif!important}
+@keyframes bg{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
+.stApp{background:linear-gradient(-45deg,#000 0%,#001F3F 25%,#000 50%,#001F3F 75%,#000 100%);
+  background-size:400% 400%;animation:bg 15s ease infinite;color:#e0e0e0}
 
-# ──────────────────────────────────────────────────────────────────────
-# VISUAIS / MÉTRICAS
-# ──────────────────────────────────────────────────────────────────────
-def card(title: str, value: Any, subtitle: str = "") -> None:
-    st.markdown(
-        f"""
-        <div class="micro-card">
-            <div class="muted">{title}</div>
-            <div class="kpi">{value}</div>
-            <div class="muted">{subtitle}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+.top-navbar{position:fixed;top:0;left:0;right:0;z-index:9999;
+  background:rgba(255,255,255,.1);backdrop-filter:blur(20px) saturate(180%);
+  border-bottom:1px solid rgba(255,255,255,.2);padding:1.4rem 3rem;
+  display:flex;justify-content:space-between;align-items:center;
+  box-shadow:0 8px 32px rgba(0,0,0,.1)}
+.navbar-logo{font-size:1.8rem;font-weight:800;
+  background:linear-gradient(135deg,#a7e6ff 0%,#d1baff 100%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;letter-spacing:-1px}
 
+.main-content{margin-top:120px;padding:2rem 3rem;max-width:1600px;margin-left:auto;margin-right:auto}
 
-def speech_player(text: str, label: str = "Ouvir audiodescrição") -> None:
-    if not text:
-        return
-    element_id = f"speech_{uuid.uuid4().hex[:8]}"
-    safe_text = json.dumps(text)
-    components.html(
-        f"""
-        <div>
-          <button id="{element_id}" style="padding:10px 18px;border-radius:999px;border:1px solid #8fb0ff;background:rgba(255,255,255,.08);color:#ffffff;cursor:pointer;font-family:'Times New Roman',serif;">
-            🔊 {label}
-          </button>
-          <script>
-            const btn = document.getElementById('{element_id}');
-            btn.onclick = () => {{
-              const synth = window.speechSynthesis;
-              synth.cancel();
-              const utter = new SpeechSynthesisUtterance({safe_text});
-              utter.lang = 'pt-BR';
-              utter.rate = 0.95;
-              synth.speak(utter);
-            }};
-          </script>
-        </div>
-        """,
-        height=56,
-    )
+.glass-card{background:rgba(255,255,255,.15);backdrop-filter:blur(20px) saturate(180%);
+  border:1px solid rgba(255,255,255,.3);border-radius:24px;padding:2.5rem;margin:1.5rem 0;
+  box-shadow:0 8px 32px rgba(0,0,0,.1);transition:all .4s cubic-bezier(.4,0,.2,1);
+  position:relative;overflow:hidden}
+.glass-card::before{content:'';position:absolute;top:0;left:-100%;width:100%;height:100%;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.3),transparent);transition:left .5s}
+.glass-card:hover::before{left:100%}
+.glass-card:hover{transform:translateY(-8px) scale(1.02);box-shadow:0 16px 48px rgba(0,0,0,.2);
+  border-color:rgba(255,255,255,.5)}
 
+.obra-card{background:rgba(255,255,255,.2);backdrop-filter:blur(15px) saturate(180%);
+  border:1px solid rgba(255,255,255,.3);border-radius:20px;overflow:hidden;
+  transition:all .4s cubic-bezier(.4,0,.2,1);cursor:pointer;position:relative}
+.obra-card::after{content:'';position:absolute;top:0;left:0;right:0;bottom:0;
+  background:linear-gradient(135deg,rgba(0,0,0,.3),rgba(0,31,63,.3));opacity:0;transition:opacity .4s}
+.obra-card:hover::after{opacity:1}
+.obra-card:hover{transform:translateY(-12px) scale(1.03);box-shadow:0 20px 60px rgba(0,31,63,.4);
+  border-color:rgba(255,255,255,.6)}
+.obra-card img{width:100%;height:280px;object-fit:cover;transition:transform .6s cubic-bezier(.4,0,.2,1)}
+.obra-card:hover img{transform:scale(1.15) rotate(2deg)}
 
-def tags_by_user_and_work(obra_id: int, user_id: str) -> pd.DataFrame:
-    tag_df = load_tags_df()
-    if tag_df.empty:
-        return pd.DataFrame(columns=["tag_original", "count"])
-    subset = tag_df[(tag_df["obra_id"].astype(int) == int(obra_id)) & (tag_df["user_id"] == user_id)]
-    if subset.empty:
-        return pd.DataFrame(columns=["tag_original", "count"])
-    count_df = subset["tag_original"].value_counts().reset_index()
-    count_df.columns = ["tag_original", "count"]
-    return count_df
+.main-title{color:white;font-size:3.5rem;font-weight:800;text-align:center;margin:2rem 0 1rem;
+  letter-spacing:-2px;text-shadow:0 4px 20px rgba(0,0,0,.3)}
+.subtitle{color:rgba(255,255,255,.95);font-size:1.3rem;text-align:center;margin-bottom:3rem;
+  line-height:1.8;font-weight:300}
 
+.tag-badge{display:inline-block;background:rgba(255,255,255,.25);backdrop-filter:blur(10px);
+  border:1px solid rgba(255,255,255,.4);color:white;padding:.5rem 1.1rem;border-radius:50px;
+  margin:.3rem;font-size:.88rem;font-weight:600;transition:all .3s}
+.tag-badge:hover{background:rgba(255,255,255,.4);transform:translateY(-3px) scale(1.05)}
+.tag-green {background:rgba(34,197,94,.25)!important;border-color:rgba(34,197,94,.5)!important;color:#dcfce7!important}
+.tag-amber {background:rgba(245,158,11,.25)!important;border-color:rgba(245,158,11,.5)!important;color:#fef3c7!important}
+.tag-blue  {background:rgba(96,165,250,.25)!important;border-color:rgba(96,165,250,.5)!important;color:#dbeafe!important}
 
-def tag_frequency_df() -> pd.DataFrame:
-    tag_df = load_tags_df()
-    if tag_df.empty:
-        return pd.DataFrame(columns=["tag", "frequencia"])
-    freq = tag_df["tag_normalized"].value_counts().reset_index()
-    freq.columns = ["tag", "frequencia"]
-    return freq
+.animal-badge{display:inline-block;background:rgba(167,230,255,.2);border:1px solid rgba(167,230,255,.45);
+  color:#a7e6ff;padding:.35rem 1rem;border-radius:50px;font-size:.85rem;font-weight:700}
 
+.kpi-card{background:rgba(255,255,255,.16);backdrop-filter:blur(20px) saturate(180%);
+  border:1px solid rgba(255,255,255,.28);border-radius:18px;padding:1.6rem;text-align:center;
+  color:white;box-shadow:0 8px 32px rgba(0,0,0,.12);transition:all .4s}
+.kpi-card:hover{transform:translateY(-6px) scale(1.04);box-shadow:0 16px 48px rgba(0,31,63,.28)}
+.kpi-val{font-size:2.5rem;font-weight:800;margin:.6rem 0;text-shadow:0 4px 20px rgba(0,0,0,.2)}
+.kpi-lbl{font-size:.78rem;text-transform:uppercase;letter-spacing:2px;font-weight:600;opacity:.8}
+.kpi-sub{font-size:.7rem;opacity:.5;margin-top:.3rem}
 
-def ontology_coverage_df() -> pd.DataFrame:
-    tag_df = load_tags_df()
-    ont_df = load_ontologies_df()
-    if ont_df.empty:
-        return pd.DataFrame(columns=["Ontologia", "Termos", "Tags ligadas", "Cobertura %"])
-    total_tags = len(tag_df) if not tag_df.empty else 0
-    rows = []
-    for _, row in ont_df.iterrows():
-        terms = row["terms"] if isinstance(row["terms"], list) else []
-        linked = 0
-        if not tag_df.empty:
-            linked = int((tag_df["ontology_group"].fillna("") == row["name"]).sum())
-        rows.append({
-            "Ontologia": row["name"],
-            "Termos": len(terms),
-            "Tags ligadas": linked,
-            "Cobertura %": round((linked / total_tags) * 100, 2) if total_tags else 0,
-            "Descrição": row.get("description", ""),
-        })
-    return pd.DataFrame(rows).sort_values("Tags ligadas", ascending=False)
+.sc{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.13);border-radius:14px;padding:1.3rem;margin:.7rem 0}
+.sc-b{border-left:4px solid #60a5fa;background:rgba(96,165,250,.07)}
+.sc-g{border-left:4px solid #34d399;background:rgba(52,211,153,.07)}
+.sc-p{border-left:4px solid #a78bfa;background:rgba(167,139,250,.07)}
+.sc-a{border-left:4px solid #fbbf24;background:rgba(251,191,36,.07)}
 
+.insight{background:rgba(167,230,255,.1);border:1px solid rgba(167,230,255,.28);border-radius:12px;
+  padding:1rem 1.4rem;margin:.6rem 0;color:rgba(255,255,255,.9);font-size:.9rem;line-height:1.7}
+.insight strong{color:#a7e6ff}
 
-def build_graph(familiaridade_filter: str = "Todas") -> Tuple[nx.Graph, pd.DataFrame]:
-    tag_df = load_tags_df()
-    if tag_df.empty:
-        return nx.Graph(), pd.DataFrame()
-    if familiaridade_filter != "Todas":
-        tag_df = tag_df[tag_df["familiaridade"].fillna("Não informado") == familiaridade_filter]
-    works = {w["id"]: w for w in load_obras()}
-    graph = nx.Graph()
-    edges_meta = []
-    grouped = tag_df.groupby("obra_id")
-    for obra_id, subset in grouped:
-        obra_node = f"obra_{obra_id}"
-        obra_label = works.get(int(obra_id), {}).get("titulo", f"Obra {obra_id}")
-        graph.add_node(obra_node, label=obra_label, node_type="obra")
-        unique_tags = subset["tag_normalized"].dropna().astype(str).unique().tolist()
-        for tag in unique_tags:
-            tag_node = f"tag_{tag}"
-            graph.add_node(tag_node, label=tag, node_type="tag")
-            graph.add_edge(obra_node, tag_node, relation="descreve")
-            edges_meta.append({"source": obra_label, "target": tag, "relation": "descreve"})
-        for idx, tag_a in enumerate(unique_tags):
-            for tag_b in unique_tags[idx + 1:]:
-                if graph.has_edge(f"tag_{tag_a}", f"tag_{tag_b}"):
-                    continue
-                graph.add_edge(f"tag_{tag_a}", f"tag_{tag_b}", relation="coocorrencia")
-                edges_meta.append({"source": tag_a, "target": tag_b, "relation": "coocorrencia"})
+.conn-row{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;
+  background:rgba(255,255,255,.06);border-radius:11px;padding:.85rem 1.2rem;margin:.3rem 0;
+  border-left:3px solid rgba(255,255,255,.2);transition:background .2s}
+.conn-row:hover{background:rgba(255,255,255,.12)}
 
-    ont_df = load_ontologies_df()
-    for _, ont in ont_df.iterrows():
-        ont_node = f"ont_{ont['id']}"
-        graph.add_node(ont_node, label=ont["name"], node_type="ontology")
-    for _, tag in tag_df.iterrows():
-        group_name = tag.get("ontology_group")
-        if pd.isna(group_name) or not str(group_name).strip() or group_name == "Sem classificação":
-            continue
-        tag_node = f"tag_{tag['tag_normalized']}"
-        ont_row = ont_df[ont_df["name"] == group_name]
-        if ont_row.empty:
-            continue
-        ont_node = f"ont_{int(ont_row.iloc[0]['id'])}"
-        if not graph.has_node(tag_node):
-            graph.add_node(tag_node, label=tag["tag_normalized"], node_type="tag")
-        graph.add_edge(tag_node, ont_node, relation="pertence_a")
-        edges_meta.append({"source": tag["tag_normalized"], "target": group_name, "relation": "pertence_a"})
-    return graph, pd.DataFrame(edges_meta)
+.cluster-wrap{background:rgba(255,255,255,.05);border-radius:14px;padding:1.1rem 1.4rem;
+  margin:.5rem 0;border:1px solid rgba(255,255,255,.1)}
+.cluster-title{font-size:.76rem;text-transform:uppercase;letter-spacing:1.5px;
+  color:rgba(167,139,250,.8);margin-bottom:.55rem;font-weight:700}
+.cluster-pill{display:inline-flex;align-items:center;gap:5px;background:rgba(168,85,247,.2);
+  border:1px solid rgba(168,85,247,.38);border-radius:50px;padding:.32rem .85rem;
+  margin:.2rem;font-size:.78rem;font-weight:600;color:#f3e8ff}
 
+.pbar-o{background:rgba(255,255,255,.1);border-radius:50px;height:6px;margin:3px 0;overflow:hidden}
+.pbar-i{height:100%;border-radius:50px;transition:width .5s}
+.divider{height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.22),transparent);margin:1.6rem 0}
 
-def compute_graph_positions(graph: nx.Graph) -> Dict[str, Tuple[float, float]]:
-    nodes = [node for node in graph.nodes()]
-    if not nodes:
-        return {}
-    if HAS_NETWORKX:
-        return nx.spring_layout(graph, seed=42, k=0.9)
-    total = max(len(nodes), 1)
-    radius = 1.0
-    positions: Dict[str, Tuple[float, float]] = {}
-    for idx, node in enumerate(nodes):
-        angle = (2 * np.pi * idx) / total
-        positions[node] = (float(radius * np.cos(angle)), float(radius * np.sin(angle)))
-    return positions
+.stButton button{background:rgba(255,255,255,.25)!important;backdrop-filter:blur(15px)!important;
+  color:white!important;border:1px solid rgba(255,255,255,.4)!important;border-radius:50px!important;
+  padding:1rem 2.5rem!important;font-weight:700!important;font-size:1rem!important;
+  transition:all .4s!important;box-shadow:0 8px 25px rgba(0,0,0,.15)!important;
+  text-transform:uppercase;letter-spacing:1px}
+.stButton button:hover{background:rgba(255,255,255,.4)!important;
+  box-shadow:0 12px 40px rgba(0,31,63,.4)!important;
+  transform:translateY(-4px) scale(1.05)!important;border-color:rgba(255,255,255,.6)!important}
 
+.stTextInput input,.stTextArea textarea,.stSelectbox select{
+  background:rgba(255,255,255,.18)!important;backdrop-filter:blur(10px)!important;
+  border:1px solid rgba(255,255,255,.28)!important;color:white!important;
+  border-radius:14px!important;padding:.9rem!important;font-weight:500!important}
+.stTextInput input::placeholder,.stTextArea textarea::placeholder{color:rgba(255,255,255,.55)!important}
+.stTextInput input:focus,.stTextArea textarea:focus{
+  border-color:rgba(255,255,255,.6)!important;box-shadow:0 0 0 3px rgba(255,255,255,.18)!important}
 
-def plot_network(graph: nx.Graph) -> Optional[str]:
-    if graph.number_of_nodes() == 0:
-        return None
-    pos = compute_graph_positions(graph)
-    width, height = 1100, 640
-    xs = [coord[0] for coord in pos.values()]
-    ys = [coord[1] for coord in pos.values()]
-    min_x, max_x = min(xs), max(xs)
-    min_y, max_y = min(ys), max(ys)
-    pad = 70
+label{color:white!important;font-weight:700!important;font-size:1rem!important;
+  text-shadow:0 2px 10px rgba(0,0,0,.2)}
 
-    def sx(x: float) -> float:
-        if max_x == min_x:
-            return width / 2
-        return pad + ((x - min_x) / (max_x - min_x)) * (width - 2 * pad)
+.stTabs [data-baseweb="tab-list"]{gap:.7rem;background:rgba(255,255,255,.1);
+  backdrop-filter:blur(10px);padding:.45rem;border-radius:14px}
+.stTabs [data-baseweb="tab"]{background:rgba(255,255,255,.14);
+  border:1px solid rgba(255,255,255,.18);border-radius:10px;color:white;
+  padding:.75rem 1.5rem;font-weight:700;transition:all .3s}
+.stTabs [data-baseweb="tab"]:hover{background:rgba(255,255,255,.24);transform:translateY(-2px)}
+.stTabs [aria-selected="true"]{background:rgba(255,255,255,.33)!important;
+  border-color:rgba(255,255,255,.48)!important;box-shadow:0 6px 20px rgba(0,31,63,.25)!important}
 
-    def sy(y: float) -> float:
-        if max_y == min_y:
-            return height / 2
-        return pad + ((y - min_y) / (max_y - min_y)) * (height - 2 * pad)
+.stAlert{background:rgba(255,255,255,.18)!important;backdrop-filter:blur(15px)!important;
+  border-radius:14px!important;border-left:4px solid!important;color:white!important}
+#MainMenu,footer,header{visibility:hidden}
+.stDeployButton{display:none}
+[data-testid="stSidebar"]{display:none}
+h1,h2,h3,h4,h5,h6{color:white;font-weight:700;text-shadow:0 2px 15px rgba(0,0,0,.3)}
+.dataframe{background:rgba(255,255,255,.14)!important;border:1px solid rgba(255,255,255,.2)!important;
+  border-radius:14px!important;color:white!important}
+.dataframe th{background:rgba(255,255,255,.22)!important;color:white!important;font-weight:700!important}
+.dataframe td{color:white!important}
+div[data-testid="stTextInput"]>div{background:transparent!important;border:none!important;
+  box-shadow:none!important;padding:0!important}
+div[data-testid="stTextInput"]{background:transparent!important;border:none!important}
+div[data-testid="stTextInput"] input{border-radius:11px!important;
+  background:rgba(255,255,255,.14)!important;border:1px solid rgba(255,255,255,.22)!important;
+  padding:.75rem 1rem!important}
+@media(max-width:768px){.main-title{font-size:2.5rem}.main-content{margin-top:140px;padding:1rem}}
+</style>""", unsafe_allow_html=True)
 
-    edge_svg: List[str] = []
-    for source, target in graph.edges():
-        x0, y0 = pos[source]
-        x1, y1 = pos[target]
-        edge_svg.append(
-            f"<line x1='{sx(x0):.1f}' y1='{sy(y0):.1f}' x2='{sx(x1):.1f}' y2='{sy(y1):.1f}' "
-            "stroke='rgba(255,255,255,0.28)' stroke-width='1.6' />"
-        )
+# ── HELPERS ───────────────────────────────────────────────────────────
+def kpi(label, value, sub="", color="#a7e6ff"):
+    return (f"<div class='kpi-card'>"
+            f"<div class='kpi-lbl'>{label}</div>"
+            f"<div class='kpi-val' style='color:{color}'>{value}</div>"
+            f"{'<div class=kpi-sub>'+sub+'</div>' if sub else ''}"
+            f"</div>")
 
-    node_svg: List[str] = []
-    legend = {
-        "obra": ("#8ec5ff", 24),
-        "ontology": ("#ffd166", 22),
-        "tag": ("#95f9c3", 18),
-    }
-    for node, data in graph.nodes(data=True):
-        x, y = pos[node]
-        cx, cy = sx(x), sy(y)
-        label = str(data.get("label", node))
-        node_type = str(data.get("node_type", "nó"))
-        fill, radius = legend.get(node_type, ("#e8e8e8", 16))
-        safe_label = label.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        safe_type = node_type.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        node_svg.append(
-            f"<g>"
-            f"<title>{safe_label} · {safe_type}</title>"
-            f"<circle cx='{cx:.1f}' cy='{cy:.1f}' r='{radius}' fill='{fill}' fill-opacity='0.92' "
-            "stroke='rgba(255,255,255,0.88)' stroke-width='1.2' />"
-            f"<text x='{cx:.1f}' y='{cy + radius + 18:.1f}' text-anchor='middle' "
-            "font-family='Times New Roman, serif' font-size='13' fill='white'>"
-            f"{safe_label}</text>"
-            f"</g>"
-        )
+def insight(text):
+    return f"<div class='insight'>{text}</div>"
 
-    legend_html = (
-        "<div style='display:flex;gap:16px;flex-wrap:wrap;margin:.6rem 0 1rem'>"
-        "<span style='display:flex;align-items:center;gap:8px;color:white'><span style='width:14px;height:14px;border-radius:50%;background:#8ec5ff;display:inline-block'></span>Obra</span>"
-        "<span style='display:flex;align-items:center;gap:8px;color:white'><span style='width:14px;height:14px;border-radius:50%;background:#95f9c3;display:inline-block'></span>Tag</span>"
-        "<span style='display:flex;align-items:center;gap:8px;color:white'><span style='width:14px;height:14px;border-radius:50%;background:#ffd166;display:inline-block'></span>Ontologia</span>"
-        "</div>"
-    )
+def divider():
+    return "<div class='divider'></div>"
 
-    svg = (
-        f"<div style='width:100%;overflow:auto;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.16);"
-        "border-radius:18px;padding:12px 12px 18px;'>"
-        f"{legend_html}"
-        f"<svg viewBox='0 0 {width} {height}' width='100%' height='{height}' role='img' aria-label='Grafo de relações entre obras, tags e ontologias'>"
-        f"{''.join(edge_svg)}{''.join(node_svg)}"
-        "</svg></div>"
-    )
-    return svg
+def pbar(pct, color="#60a5fa"):
+    w = min(100, max(0, pct*100))
+    return f"<div class='pbar-o'><div class='pbar-i' style='width:{w:.1f}%;background:{color}'></div></div>"
 
+# ── DADOS ─────────────────────────────────────────────────────────────
+def check_admin():
+    admins = load_json_file(ADMIN_FILE, [])
+    if not admins:
+        hashed = hashlib.sha256(ADMIN_PASSWORD.encode()).hexdigest()
+        save_json_file(ADMIN_FILE, [{"id":1,"username":ADMIN_USERNAME,"password":hashed}])
 
-def compute_analytics_summary() -> Dict[str, Any]:
-    tag_df = load_tags_df()
-    users_df = load_users_df()
-    ont_df = load_ontologies_df()
-    events_df = load_events_df()
-    works = load_obras()
-    return {
-        "gerado_em": now_iso(),
-        "total_tags": int(len(tag_df)),
-        "tags_unicas": int(tag_df["tag_normalized"].nunique()) if not tag_df.empty else 0,
-        "usuarios": int(users_df["user_id"].nunique()) if not users_df.empty else 0,
-        "obras": int(len(works)),
-        "ontologias": int(len(ont_df)),
-        "eventos_auditoria": int(len(events_df)),
-        "status_tags": tag_df["status"].value_counts(dropna=False).to_dict() if not tag_df.empty else {},
-        "grupos_semanticos": tag_df["ontology_group"].value_counts(dropna=False).to_dict() if not tag_df.empty else {},
-        "familiaridade": tag_df["familiaridade"].value_counts(dropna=False).to_dict() if not tag_df.empty else {},
-    }
+def gen_uid():
+    return base64.b64encode(os.urandom(12)).decode('ascii')
 
-
-# ──────────────────────────────────────────────────────────────────────
-# INTRO / FLUXO PÚBLICO
-# ──────────────────────────────────────────────────────────────────────
-def show_intro() -> None:
-    st.markdown("<div class='app-wrap'>", unsafe_allow_html=True)
-    st.markdown(
-        """
-        <div class='hero'>
-            <h1>Sistema Folksonomia Digital com auditoria semântica</h1>
-            <p>
-                Plataforma com trilha de eventos, versionamento de metadados, ontologias administráveis,
-                validação humana e acessibilidade com foco em audiodescrição.
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    with st.container(border=False):
-        st.markdown("### Questionário de entrada")
-        with st.form("intro_form"):
-            c1, c2 = st.columns(2)
-            with c1:
-                q1 = st.selectbox(
-                    "1. Qual é o seu nível de familiaridade com museus?",
-                    ["Nunca visito museus", "Visito raramente", "Visito ocasionalmente", "Visito frequentemente"],
-                )
-                q2 = st.selectbox(
-                    "2. Você já ouviu falar sobre documentação museológica?",
-                    ["Nunca ouvi falar", "Já ouvi, mas não sei o que é", "Tenho uma ideia básica", "Conheço bem o tema"],
-                )
-            with c2:
-                q3 = st.text_area(
-                    "3. O que você entende por tags ou etiquetas digitais aplicadas ao acervo?",
-                    height=190,
-                    placeholder="Descreva com suas palavras.",
-                )
-            submitted = st.form_submit_button("Entrar na plataforma", use_container_width=True)
-            if submitted:
-                if not q3.strip():
-                    st.error("Preencha todas as perguntas.")
-                else:
-                    answers = {"q1": q1, "q2": q2, "q3": q3.strip()}
-                    st.session_state["answers"] = answers
-                    save_answers(st.session_state["user_id"], st.session_state["animal_name"], answers)
-                    st.session_state["step"] = "completed"
-                    st.success("Acesso liberado.")
-                    st.rerun()
-    st.markdown("</div>", unsafe_allow_html=True)
-
-
-def public_filters_ui(obras: List[Dict[str, Any]]) -> Tuple[str, str]:
-    c1, c2 = st.columns([2, 1])
-    with c1:
-        search = st.text_input("Buscar obra", placeholder="Título, artista ou palavra-chave")
-    with c2:
-        group_filter = st.selectbox("Filtrar por grupo semântico", ["Todos"] + sorted(load_ontologies_df()["name"].dropna().astype(str).unique().tolist()))
-    return search, group_filter
-
-
-def show_obras() -> None:
-    obras = load_obras()
-    tag_df = load_tags_df()
-    st.markdown("### Explorar obras")
-    st.markdown("Use as ferramentas abaixo para explorar, ouvir a audiodescrição e contribuir com tags.")
-
-    search, group_filter = public_filters_ui(obras)
-    normalized_search = normalize_text(search)
-    filtered = []
-    for obra in obras:
-        haystack = " ".join([
-            obra.get("titulo", ""),
-            obra.get("artista", ""),
-            obra.get("descricao", ""),
-            obra.get("audio_descricao", ""),
-        ])
-        if normalized_search and normalized_search not in normalize_text(haystack):
-            continue
-        if group_filter != "Todos" and not tag_df.empty:
-            obra_tags = tag_df[(tag_df["obra_id"].astype(int) == int(obra["id"])) & (tag_df["ontology_group"].fillna("") == group_filter)]
-            if obra_tags.empty:
-                continue
-        filtered.append(obra)
-
-    st.info(f"Obras exibidas: {len(filtered)}")
-    cols = st.columns(2)
-    for idx, obra in enumerate(filtered):
-        with cols[idx % 2]:
-            st.markdown("<div class='obra-card'>", unsafe_allow_html=True)
-            st.image(obra.get("imagem", ""), use_container_width=True)
-            st.markdown(f"#### {obra['titulo']}")
-            st.markdown(f"**Artista:** {obra.get('artista','Não informado')}  ")
-            st.markdown(f"**Ano:** {obra.get('ano','Não informado')}  ")
-            st.markdown(f"**Descrição curatorial:** {obra.get('descricao','')}  ")
-            if st.session_state.get("focus_audio", True):
-                st.markdown(f"<div class='audio-box'><strong>Audiodescrição:</strong><br>{obra.get('audio_descricao','Sem audiodescrição cadastrada.')}</div>", unsafe_allow_html=True)
-            with st.expander("Ouvir e detalhar audiodescrição"):
-                st.write(obra.get("audio_descricao", "Sem audiodescrição cadastrada."))
-                speech_player(obra.get("audio_descricao", ""), label="Ler audiodescrição")
-            my_tags = tags_by_user_and_work(obra["id"], st.session_state["user_id"])
-            if not my_tags.empty:
-                st.markdown("**Suas tags nesta obra**")
-                badges = "".join([f"<span class='tag-badge'>{row['tag_original']} ({row['count']})</span>" for _, row in my_tags.iterrows()])
-                st.markdown(badges, unsafe_allow_html=True)
-            with st.form(f"tag_form_{obra['id']}"):
-                tag_text = st.text_input("Adicionar tag", placeholder="Ex.: guerra, azul, sofrimento, religioso")
-                send = st.form_submit_button("Salvar tag", use_container_width=True)
-                if send:
-                    if not tag_text.strip():
-                        st.error("Digite uma tag.")
-                    else:
-                        record = save_tag(st.session_state["user_id"], obra["id"], tag_text)
-                        if record.get("correction_suggestions"):
-                            st.warning("Sugestões ortográficas: " + ", ".join(record["correction_suggestions"]))
-                        st.success(f"Tag '{tag_text}' registrada com status bruto.")
-                        st.rerun()
-            st.markdown("</div>", unsafe_allow_html=True)
-
-
-# ──────────────────────────────────────────────────────────────────────
-# ADMIN
-# ──────────────────────────────────────────────────────────────────────
-def show_admin() -> None:
-    st.markdown("### Área administrativa")
-    if not st.session_state.get("admin_logged_in", False):
-        with st.form("login_admin"):
-            c1, c2 = st.columns(2)
-            with c1:
-                username = st.text_input("Usuário")
-            with c2:
-                password = st.text_input("Senha", type="password")
-            submit = st.form_submit_button("Entrar", use_container_width=True)
-            if submit:
-                if check_login(username, password):
-                    st.session_state["admin_logged_in"] = True
-                    st.session_state["admin_username"] = username
-                    st.success("Login realizado.")
-                    st.rerun()
-                else:
-                    st.error("Credenciais inválidas.")
-        return
-
-    st.success(f"Conectado como {st.session_state.get('admin_username', 'admin')}")
-    tabs = st.tabs([
-        "Painel geral",
-        "Ontologias",
-        "Validação de tags",
-        "Grafo analítico",
-        "Metadados e open data",
-        "Obras",
-        "Auditoria",
-    ])
-    with tabs[0]:
-        tab_dashboard()
-    with tabs[1]:
-        tab_ontologies()
-    with tabs[2]:
-        tab_tag_validation()
-    with tabs[3]:
-        tab_graph_analysis()
-    with tabs[4]:
-        tab_open_data_and_metadata()
-    with tabs[5]:
-        tab_works_admin()
-    with tabs[6]:
-        tab_audit()
-    if st.button("Sair da administração", use_container_width=True):
-        st.session_state["admin_logged_in"] = False
-        st.rerun()
-
-
-def tab_dashboard() -> None:
-    tag_df = load_tags_df()
-    users_df = load_users_df()
-    ont_df = load_ontologies_df()
-    events_df = load_events_df()
-    works = load_obras()
-
-    c1, c2, c3, c4, c5 = st.columns(5)
-    with c1: card("Tags totais", len(tag_df), "com histórico e status")
-    with c2: card("Tags únicas", tag_df["tag_normalized"].nunique() if not tag_df.empty else 0, "vocabulário")
-    with c3: card("Participantes", users_df["user_id"].nunique() if not users_df.empty else 0, "questionários completos")
-    with c4: card("Ontologias", len(ont_df), "grupos e termos")
-    with c5: card("Eventos", len(events_df), "cadeia de auditoria")
-
-    st.markdown("### Síntese analítica")
-    c1, c2 = st.columns(2)
-    with c1:
-        if not tag_df.empty:
-            st.markdown("**Status das tags**")
-            st.bar_chart(tag_df["status"].fillna("Sem status").value_counts())
-        else:
-            st.info("Sem tags para analisar.")
-    with c2:
-        if not tag_df.empty:
-            st.markdown("**Grupos semânticos**")
-            st.bar_chart(tag_df["ontology_group"].fillna("Sem classificação").value_counts().head(15))
-        else:
-            st.info("Sem grupos calculados.")
-
-    st.markdown("### Familiaridade e produção de tags")
-    if not tag_df.empty:
-        fam = tag_df.groupby("familiaridade").agg(Tags=("id", "count"), Tags_unicas=("tag_normalized", "nunique")).reset_index()
-        st.dataframe(fam, use_container_width=True, hide_index=True)
-        st.bar_chart(fam.set_index("familiaridade")["Tags"])
-    else:
-        st.info("Ainda não há dados suficientes.")
-
-    st.markdown("### Cobertura do acervo")
-    works_df = pd.DataFrame(works)
-    if not works_df.empty:
-        coverage = tag_df.groupby("obra_id").size().reset_index(name="tags") if not tag_df.empty else pd.DataFrame(columns=["obra_id", "tags"])
-        merged = works_df.merge(coverage, how="left", left_on="id", right_on="obra_id").fillna({"tags": 0})
-        st.dataframe(merged[["id", "titulo", "artista", "ano", "tags"]], use_container_width=True, hide_index=True)
-
-
-def tab_ontologies() -> None:
-    ont_df = load_ontologies_df()
-    st.markdown("### Ontologias predefinidas e administráveis")
-    coverage_df = ontology_coverage_df()
-    if not coverage_df.empty:
-        st.dataframe(coverage_df, use_container_width=True, hide_index=True)
-        st.bar_chart(coverage_df.set_index("Ontologia")["Tags ligadas"])
-
-    st.markdown("### Criar nova ontologia")
-    with st.form("create_ontology_form"):
-        c1, c2 = st.columns(2)
-        with c1:
-            name = st.text_input("Nome da ontologia")
-            description = st.text_area("Descrição")
-        with c2:
-            terms_text = st.text_area("Termos pré-marcados", placeholder="Separe por vírgula, ponto e vírgula ou quebra de linha")
-        submitted = st.form_submit_button("Criar ontologia", use_container_width=True)
-        if submitted:
-            if not name.strip() or not terms_text.strip():
-                st.error("Informe nome e termos.")
-            else:
-                create_ontology(name, description, terms_text, st.session_state.get("admin_username", "admin"))
-                st.success("Ontologia criada.")
-                st.rerun()
-
-    st.markdown("### Editar ontologia existente")
-    if ont_df.empty:
-        st.info("Nenhuma ontologia cadastrada.")
-        return
-    options = {f"{row['id']} · {row['name']}": row["id"] for _, row in ont_df.iterrows()}
-    selected_label = st.selectbox("Selecione a ontologia", list(options.keys()))
-    selected_id = options[selected_label]
-    selected = ont_df[ont_df["id"].astype(int) == int(selected_id)].iloc[0].to_dict()
-    with st.form("edit_ontology_form"):
-        edit_name = st.text_input("Nome", value=selected["name"])
-        edit_description = st.text_area("Descrição", value=selected.get("description", ""))
-        edit_terms = st.text_area("Termos", value=", ".join(selected.get("terms", []) if isinstance(selected.get("terms"), list) else []))
-        edit_status = st.selectbox("Status", TAG_STATUSES, index=TAG_STATUSES.index(selected.get("status", "publicado")) if selected.get("status", "publicado") in TAG_STATUSES else 4)
-        update = st.form_submit_button("Salvar alterações", use_container_width=True)
-        if update:
-            update_ontology(
-                selected_id,
-                {
-                    "name": edit_name,
-                    "slug": slugify(edit_name),
-                    "description": edit_description,
-                    "terms": [normalize_text(t) for t in re.split(r"[,;\n]", edit_terms) if t.strip()],
-                    "status": edit_status,
-                },
-                st.session_state.get("admin_username", "admin"),
-            )
-            st.success("Ontologia atualizada.")
-            st.rerun()
-
-
-def validation_dataframe() -> pd.DataFrame:
-    tag_df = load_tags_df().copy()
-    if tag_df.empty:
-        return tag_df
-    works = {w["id"]: w["titulo"] for w in load_obras()}
-    tag_df["Obra"] = tag_df["obra_id"].map(works)
-    tag_df["Sugestões ortográficas"] = tag_df["tag_original"].apply(lambda x: ", ".join(suggest_corrections(str(x))))
-    tag_df["Grupo sugerido"] = tag_df["tag_original"].apply(semantic_group_from_tag)
-    return tag_df
-
-
-def tab_tag_validation() -> None:
-    tag_df = validation_dataframe()
-    st.markdown("### Validação administrativa das tags")
-    if tag_df.empty:
-        st.info("Nenhuma tag cadastrada.")
-        return
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        status_filter = st.selectbox("Filtrar por status", ["Todos"] + TAG_STATUSES)
-    with c2:
-        fam_options = ["Todas"] + sorted(tag_df["familiaridade"].fillna("Não informado").astype(str).unique().tolist())
-        fam_filter = st.selectbox("Filtrar por familiaridade", fam_options)
-    with c3:
-        group_options = ["Todos"] + sorted(tag_df["ontology_group"].fillna("Sem classificação").astype(str).unique().tolist())
-        group_filter = st.selectbox("Filtrar por grupo", group_options)
-
-    filtered = tag_df.copy()
-    if status_filter != "Todos":
-        filtered = filtered[filtered["status"].fillna("") == status_filter]
-    if fam_filter != "Todas":
-        filtered = filtered[filtered["familiaridade"].fillna("Não informado") == fam_filter]
-    if group_filter != "Todos":
-        filtered = filtered[filtered["ontology_group"].fillna("Sem classificação") == group_filter]
-
-    display_cols = [
-        "id", "Obra", "tag_original", "tag_normalized", "status", "Grupo sugerido",
-        "ontology_group", "familiaridade", "Sugestões ortográficas", "created_at"
+@st.cache_data(ttl=5, show_spinner=False)
+def load_obras():
+    default = [
+        {"id":1,"titulo":"Guernica","artista":"Pablo Picasso","ano":"1937",
+         "imagem":"https://upload.wikimedia.org/wikipedia/en/7/74/PicassoGuernica.jpg"},
+        {"id":2,"titulo":"A Noite Estrelada","artista":"Vincent van Gogh","ano":"1889",
+         "imagem":"https://upload.wikimedia.org/wikipedia/commons/thumb/e/ea/Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg/1200px-Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg"},
+        {"id":3,"titulo":"Mona Lisa","artista":"Leonardo da Vinci","ano":"1503",
+         "imagem":"https://upload.wikimedia.org/wikipedia/commons/thumb/e/ec/Mona_Lisa%2C_by_Leonardo_da_Vinci%2C_from_C2RMF_retouched.jpg/800px-Mona_Lisa%2C_by_Leonardo_da_Vinci%2C_from_C2RMF_retouched.jpg"}
     ]
-    st.dataframe(filtered[display_cols], use_container_width=True, hide_index=True)
+    obras = load_json_file(OBRAS_FILE, default)
+    if not obras:
+        save_json_file(OBRAS_FILE, default)
+        return default
+    return obras
 
-    tag_options = {f"{int(row['id'])} · {row['tag_original']} · {row['Obra']}": int(row["id"]) for _, row in filtered.iterrows()}
-    if not tag_options:
-        st.warning("Nenhuma tag atende aos filtros.")
-        return
+def save_answers(uid, animal, answers):
+    users = load_json_file(USERS_FILE, [])
+    users.append({"user_id":uid,"animal_name":animal,
+                  "timestamp":datetime.now().strftime("%Y-%m-%d %H:%M:%S"),**answers})
+    return save_json_file(USERS_FILE, users)
 
-    selected_label = st.selectbox("Selecione uma tag para revisar", list(tag_options.keys()))
-    tag_id = tag_options[selected_label]
-    selected = filtered[filtered["id"].astype(int) == int(tag_id)].iloc[0].to_dict()
-    ont_df = load_ontologies_df()
-    ont_names = ["Sem classificação"] + sorted(ont_df["name"].dropna().astype(str).tolist())
-    default_group = selected.get("ontology_group") if selected.get("ontology_group") in ont_names else selected.get("Grupo sugerido", "Sem classificação")
-    if default_group not in ont_names:
-        default_group = "Sem classificação"
+def save_tag(uid, obra_id, tag):
+    tags = load_json_file(TAGS_FILE, [])
+    tags.append({"id":len(tags)+1,"user_id":uid,"obra_id":obra_id,
+                 "tag":tag.lower().strip(),
+                 "timestamp":datetime.now().strftime("%Y-%m-%d %H:%M:%S")})
+    st.cache_data.clear()
+    return save_json_file(TAGS_FILE, tags)
 
-    with st.form("validate_tag_form"):
-        corrected = st.text_input("Forma corrigida", value=selected.get("tag_original", ""))
-        chosen_status = st.selectbox("Novo status", TAG_STATUSES, index=TAG_STATUSES.index(selected.get("status", "bruto")) if selected.get("status", "bruto") in TAG_STATUSES else 0)
-        chosen_group = st.selectbox("Grupo ontológico", ont_names, index=ont_names.index(default_group))
-        notes = st.text_area("Notas curatoriais / correção humana", value=selected.get("notes", ""))
-        submit = st.form_submit_button("Aplicar validação", use_container_width=True)
-        if submit:
-            updates = {
-                "tag_original": corrected.strip(),
-                "tag_normalized": normalize_text(corrected),
-                "status": chosen_status,
-                "ontology_group": chosen_group,
-                "ontology_term": infer_ontology_groups(corrected)[0][1] if infer_ontology_groups(corrected) else "",
-                "validated_by": st.session_state.get("admin_username", "admin"),
-                "validated_at": now_iso(),
-                "notes": notes.strip(),
-                "origin": "humano",
-                "automatic": False,
-                "correction_suggestions": suggest_corrections(corrected),
-            }
-            update_tag_record(tag_id, updates, st.session_state.get("admin_username", "admin"), action="human_override")
-            st.success("Tag revisada sem apagar o histórico anterior.")
-            st.rerun()
+def get_user_tags(uid):
+    tags = load_json_file(TAGS_FILE, [])
+    ut = [t for t in tags if t['user_id']==uid]
+    return pd.DataFrame(ut) if ut else pd.DataFrame()
 
-    st.markdown("### Revisão automática sugerida")
-    risky = filtered[filtered["Sugestões ortográficas"].astype(str) != ""]
-    if risky.empty:
-        st.info("Nenhuma sugestão ortográfica pendente.")
-    else:
-        st.dataframe(risky[["id", "tag_original", "Sugestões ortográficas", "Grupo sugerido", "familiaridade"]], use_container_width=True, hide_index=True)
+def get_obra_user_tags(obra_id, uid):
+    tags = load_json_file(TAGS_FILE, [])
+    f = [t for t in tags if t['obra_id']==obra_id and t['user_id']==uid]
+    if f:
+        df = pd.DataFrame(f)
+        c  = df['tag'].value_counts().reset_index()
+        c.columns = ["tag","count"]
+        return c
+    return pd.DataFrame(columns=["tag","count"])
 
+def check_login(username, password):
+    h = hashlib.sha256(password.encode()).hexdigest()
+    return username==ADMIN_USERNAME and h==hashlib.sha256(ADMIN_PASSWORD.encode()).hexdigest()
 
-def tab_graph_analysis() -> None:
-    st.markdown("### Grafo de análise dos dados coletados")
-    tag_df = load_tags_df()
-    if tag_df.empty:
-        st.info("Cadastre tags para construir o grafo.")
-        return
-    familiaridade_options = ["Todas"] + sorted(tag_df["familiaridade"].fillna("Não informado").astype(str).unique().tolist())
-    familiaridade_filter = st.selectbox("Separar por familiaridade", familiaridade_options)
-    graph, edge_df = build_graph(familiaridade_filter)
-    c1, c2, c3 = st.columns(3)
-    with c1: card("Nós", graph.number_of_nodes(), "obras, tags e ontologias")
-    with c2: card("Arestas", graph.number_of_edges(), "relações e coocorrências")
-    with c3: card("Familiaridade ativa", familiaridade_filter, "filtro do grafo")
+def all_tags():
+    t = load_json_file(TAGS_FILE, [])
+    return pd.DataFrame(t) if t else pd.DataFrame()
 
-    graph_html = plot_network(graph)
-    if graph_html is not None:
-        st.markdown(graph_html, unsafe_allow_html=True)
-    if not edge_df.empty:
-        st.markdown("### Relações do grafo")
-        st.dataframe(edge_df, use_container_width=True, hide_index=True)
+def all_users():
+    u = load_json_file(USERS_FILE, [])
+    return pd.DataFrame(u) if u else pd.DataFrame()
 
+# ── EXPORTAÇÃO ────────────────────────────────────────────────────────
+def html_quest(uid, animal, users_df):
+    if users_df.empty: return None
+    ud = users_df[users_df['user_id']==uid]
+    if ud.empty: return None
+    ui = ud.iloc[0]
+    return f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
+<style>*{{margin:0;padding:0;box-sizing:border-box}}
+body{{font-family:sans-serif;background:linear-gradient(135deg,#000,#001F3F);padding:40px;color:white}}
+.c{{max-width:900px;margin:0 auto;background:rgba(255,255,255,.15);padding:50px;border-radius:24px;border:1px solid rgba(255,255,255,.3)}}
+h1{{text-align:center;margin-bottom:15px;font-size:2.2rem}}
+.hi{{text-align:center;margin-bottom:35px;opacity:.9}}
+.ab{{background:rgba(167,230,255,.25);border:1px solid rgba(167,230,255,.5);color:#a7e6ff;
+  padding:.3rem 1rem;border-radius:50px;font-weight:700;display:inline-block}}
+.qb{{margin:22px 0;padding:18px 22px;background:rgba(255,255,255,.1);
+  border-left:4px solid rgba(255,255,255,.5);border-radius:12px}}
+.q{{font-weight:700;margin-bottom:8px}}.a{{line-height:1.7;opacity:.92}}
+.ft{{text-align:center;margin-top:40px;padding-top:18px;
+  border-top:1px solid rgba(255,255,255,.2);opacity:.65;font-size:.88rem}}</style></head>
+<body><div class="c"><h1>Respostas do Questionário</h1>
+<div class="hi">
+  <p>Usuário Anônimo: <span class="ab">🐾 {animal}</span></p>
+  <p style="margin-top:6px;opacity:.65">Data: {ui.get('timestamp','N/A')}</p>
+</div>
+<div class="qb"><div class="q">1. Nível de familiaridade com museus</div>
+<div class="a">{ui.get('q1','N/A')}</div></div>
+<div class="qb"><div class="q">2. Conhecimento sobre documentação museológica</div>
+<div class="a">{ui.get('q2','N/A')}</div></div>
+<div class="qb"><div class="q">3. O que você entende por 'tags'?</div>
+<div class="a">{ui.get('q3','N/A')}</div></div>
+<div class="ft">Sistema Folksonomia Digital — Ctrl+P → Salvar como PDF</div>
+</div></body></html>"""
 
-def build_open_data_bundle() -> bytes:
-    tag_df = load_tags_df()
-    users_df = load_users_df()
-    ont_df = load_ontologies_df()
-    events_df = load_events_df()
-    versions_df = load_versions_df()
-    relations_df = load_relations_df()
-    works_df = pd.DataFrame(load_obras())
-    metadata = load_json(INSTITUTION_FILE, default_institution_metadata())
-    analytics = compute_analytics_summary()
+def html_tags(uid, animal, obras, tags_df):
+    ut = tags_df[tags_df['user_id']==uid] if not tags_df.empty else pd.DataFrame()
+    if ut.empty: return None
+    od = {o['id']:o for o in obras}
+    rows = "".join(
+        f"<tr><td>{i+1}</td>"
+        f"<td>{od.get(r['obra_id'],{}).get('titulo','Obra '+str(r['obra_id']))}</td>"
+        f"<td><span style='background:rgba(255,255,255,.22);padding:3px 10px;border-radius:50px'>{r['tag']}</span></td>"
+        f"<td>{r['timestamp']}</td></tr>"
+        for i,(_,r) in enumerate(ut.iterrows())
+    )
+    top = "".join(
+        f"<tr><td>{i}</td><td>{t}</td><td>{c}</td></tr>"
+        for i,(t,c) in enumerate(ut['tag'].value_counts().head(10).items(),1)
+    )
+    return f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
+<style>*{{margin:0;padding:0;box-sizing:border-box}}
+body{{font-family:sans-serif;background:linear-gradient(135deg,#000,#001F3F);padding:40px;color:white}}
+.c{{max-width:1100px;margin:0 auto;background:rgba(255,255,255,.15);padding:50px;border-radius:24px;border:1px solid rgba(255,255,255,.3)}}
+h1{{text-align:center;margin-bottom:15px;font-size:2.2rem}}
+.hi{{text-align:center;margin-bottom:28px;opacity:.9}}
+.ab{{background:rgba(167,230,255,.25);border:1px solid rgba(167,230,255,.5);color:#a7e6ff;
+  padding:.3rem 1rem;border-radius:50px;font-weight:700;display:inline-block}}
+.stats{{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:22px 0}}
+.sb{{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.28);
+  padding:18px;border-radius:12px;text-align:center}}
+.sv{{font-size:2.6rem;font-weight:800}}.sl{{font-size:.82rem;text-transform:uppercase;
+  letter-spacing:1.5px;margin-top:7px;opacity:.85}}
+table{{width:100%;border-collapse:collapse;margin:18px 0}}
+th,td{{padding:13px;text-align:left;border-bottom:1px solid rgba(255,255,255,.14)}}
+th{{background:rgba(255,255,255,.18);font-weight:700;text-transform:uppercase;font-size:.82rem}}
+tr:nth-child(even){{background:rgba(255,255,255,.04)}}
+.ft{{text-align:center;margin-top:38px;padding-top:18px;
+  border-top:1px solid rgba(255,255,255,.2);opacity:.65;font-size:.88rem}}</style></head>
+<body><div class="c"><h1>Relatório de Tags</h1>
+<div class="hi">
+  <p>Usuário Anônimo: <span class="ab">🐾 {animal}</span></p>
+  <p style="margin-top:6px;opacity:.65">Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}</p>
+</div>
+<div class="stats">
+  <div class="sb"><div class="sv">{len(ut)}</div><div class="sl">Total de Tags</div></div>
+  <div class="sb"><div class="sv">{ut['tag'].nunique()}</div><div class="sl">Tags Únicas</div></div>
+  <div class="sb"><div class="sv">{ut['obra_id'].nunique()}</div><div class="sl">Obras Etiquetadas</div></div>
+</div>
+<h2 style="margin:28px 0 14px;font-size:1.5rem">Todas as Tags</h2>
+<table><thead><tr><th>#</th><th>Obra</th><th>Tag</th><th>Data/Hora</th></tr></thead>
+<tbody>{rows}</tbody></table>
+<h2 style="margin:28px 0 14px;font-size:1.5rem">Top 10 Tags</h2>
+<table><thead><tr><th>Pos.</th><th>Tag</th><th>Freq.</th></tr></thead>
+<tbody>{top}</tbody></table>
+<div class="ft">Sistema Folksonomia Digital — Ctrl+P → Salvar como PDF</div>
+</div></body></html>"""
 
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr("obras.json", works_df.to_json(orient="records", force_ascii=False, indent=2))
-        archive.writestr("tags.json", tag_df.to_json(orient="records", force_ascii=False, indent=2))
-        archive.writestr("usuarios.json", users_df.to_json(orient="records", force_ascii=False, indent=2))
-        archive.writestr("ontologias.json", ont_df.to_json(orient="records", force_ascii=False, indent=2))
-        archive.writestr("relations.json", relations_df.to_json(orient="records", force_ascii=False, indent=2))
-        archive.writestr("eventos_auditoria.json", events_df.to_json(orient="records", force_ascii=False, indent=2))
-        archive.writestr("versionamento.json", versions_df.to_json(orient="records", force_ascii=False, indent=2))
-        archive.writestr("metadados_institucionais.json", json.dumps(metadata, ensure_ascii=False, indent=2))
-        archive.writestr("analytics_summary.json", json.dumps(analytics, ensure_ascii=False, indent=2))
-        archive.writestr("tags.csv", tag_df.to_csv(index=False))
-        archive.writestr("eventos_auditoria.csv", events_df.to_csv(index=False))
-        archive.writestr("ontologias.csv", ont_df.to_csv(index=False))
-    return buffer.getvalue()
+# ── INTERFACE PRINCIPAL ───────────────────────────────────────────────
+def show_header():
+    st.markdown(
+        "<div class='top-navbar'>"
+        "<div class='navbar-logo'>Sistema Folksonomia Digital</div>"
+        "</div>", unsafe_allow_html=True)
 
-
-def tab_open_data_and_metadata() -> None:
-    st.markdown("### Metadados institucionais conectados")
-    metadata = load_json(INSTITUTION_FILE, default_institution_metadata())
-    with st.form("institution_form"):
-        c1, c2 = st.columns(2)
-        with c1:
-            instituicao = st.text_input("Instituição", value=metadata.get("instituicao", ""))
-            sigla = st.text_input("Sigla", value=metadata.get("sigla", ""))
-            responsavel = st.text_input("Responsável", value=metadata.get("responsavel", ""))
-        with c2:
-            politica = st.text_area("Política de dados", value=metadata.get("politica_dados", ""), height=150)
-            padroes = st.text_area("Padrões e vocabulários", value=", ".join(metadata.get("padroes", [])))
-            colecoes = st.text_area("Coleções", value=", ".join(metadata.get("colecoes", [])))
-        save = st.form_submit_button("Salvar metadados institucionais", use_container_width=True)
-        if save:
-            update_institution_metadata(
-                {
-                    "instituicao": instituicao,
-                    "sigla": sigla,
-                    "responsavel": responsavel,
-                    "politica_dados": politica,
-                    "padroes": [item.strip() for item in padroes.split(",") if item.strip()],
-                    "colecoes": [item.strip() for item in colecoes.split(",") if item.strip()],
-                    "ultima_atualizacao": now_iso(),
-                },
-                st.session_state.get("admin_username", "admin"),
-            )
-            st.success("Metadados institucionais atualizados.")
-            st.rerun()
-
-    st.markdown("### Registro open data")
-    summary = compute_analytics_summary()
-    st.json(summary)
-    bundle = build_open_data_bundle()
-    bundle_hash = hashlib.sha256(bundle).hexdigest()
-    c1, c2 = st.columns(2)
-    with c1:
-        st.download_button(
-            "Baixar pacote open data (.zip)",
-            data=bundle,
-            file_name=f"open_data_folksonomia_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
-            mime="application/zip",
-            use_container_width=True,
-        )
-    with c2:
-        with st.form("register_share_form"):
-            destination = st.text_input("Destino do compartilhamento", placeholder="Ex.: equipe interna, laboratório, repositório")
-            note = st.text_input("Observação de circulação", placeholder="Ex.: open data institucional")
-            submit = st.form_submit_button("Registrar compartilhamento / exportação", use_container_width=True)
-            if submit:
-                register_export(st.session_state.get("admin_username", "admin"), "open_data_bundle", destination or "interno", note or "sem nota", bundle_hash)
-                st.success("Trilha de circulação registrada na auditoria.")
-                st.rerun()
-    st.caption(f"Hash atual do pacote open data: {bundle_hash}")
-
-
-def tab_works_admin() -> None:
-    works = load_obras()
-    st.markdown("### Gestão de obras")
-    works_df = pd.DataFrame(works)
-    if not works_df.empty:
-        st.dataframe(works_df[["id", "titulo", "artista", "ano", "imagem"]], use_container_width=True, hide_index=True)
-
-    st.markdown("### Cadastrar nova obra")
-    with st.form("add_work_form"):
-        c1, c2 = st.columns(2)
-        with c1:
-            titulo = st.text_input("Título")
-            artista = st.text_input("Artista")
-            ano = st.text_input("Ano")
-            imagem = st.text_input("URL da imagem")
-        with c2:
-            colecao = st.text_input("Coleção")
-            origem = st.text_input("Origem")
-            licenca = st.text_input("Licença")
-        descricao = st.text_area("Descrição curatorial")
-        audio_descricao = st.text_area("Audiodescrição detalhada")
-        create = st.form_submit_button("Adicionar obra", use_container_width=True)
-        if create:
-            if not titulo.strip() or not imagem.strip():
-                st.error("Título e imagem são obrigatórios.")
-            else:
-                add_work(
-                    {
-                        "titulo": titulo,
-                        "artista": artista,
-                        "ano": ano,
-                        "imagem": imagem,
-                        "descricao": descricao,
-                        "audio_descricao": audio_descricao,
-                        "colecao": colecao,
-                        "origem": origem,
-                        "licenca": licenca,
-                    },
-                    st.session_state.get("admin_username", "admin"),
-                )
-                st.success("Obra adicionada.")
-                st.rerun()
-
-    st.markdown("### Excluir obra")
-    if works:
-        options = {f"{work['id']} · {work['titulo']}": work["id"] for work in works}
-        choice = st.selectbox("Selecione a obra para excluir", list(options.keys()))
-        if st.button("Excluir obra selecionada", use_container_width=True):
-            ok = delete_work(options[choice], st.session_state.get("admin_username", "admin"))
-            if ok:
-                st.success("Obra excluída com registro de auditoria.")
-                st.rerun()
-            else:
-                st.error("Não foi possível excluir a obra.")
-
-
-def tab_audit() -> None:
-    st.markdown("### Camada de tráfego, auditoria e arquivo semântico")
-    events_df = load_events_df()
-    versions_df = load_versions_df()
-    exports_df = pd.DataFrame(load_json(EXPORTS_FILE, []))
-
-    c1, c2, c3, c4 = st.columns(4)
-    with c1: card("Eventos auditados", len(events_df), "log imutável por evento")
-    with c2: card("Versões registradas", len(versions_df), "versionamento de metadados")
-    with c3: card("Exportações", len(exports_df), "trilha de circulação")
-    with c4:
-        integrity = "Íntegra"
-        if not events_df.empty:
-            integrity = "Íntegra" if events_df["previous_event_hash"].isna().sum() <= 1 else "Verificar"
-        card("Cadeia", integrity, "hash encadeado")
-
-    st.markdown("### Últimos eventos")
-    if events_df.empty:
-        st.info("Nenhum evento registrado ainda.")
-    else:
-        for _, row in events_df.sort_values("id", ascending=False).head(30).iterrows():
-            st.markdown(
-                f"""
-                <div class='audit-row'>
-                    <strong>#{int(row['id'])}</strong> · {row['timestamp']} · {row['action']} · {row['entity_type']}:{row['entity_id']}
-                    <br><span class='muted'>ator: {row['actor']} · origem: {row.get('origin', '')} · proveniência: {row.get('provenance', '')} · hash: {row.get('event_hash', '')[:18]}...</span>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-        st.dataframe(events_df.sort_values("id", ascending=False), use_container_width=True, hide_index=True)
-
-    st.markdown("### Histórico de versões")
-    if versions_df.empty:
-        st.info("Nenhuma versão registrada.")
-    else:
-        st.dataframe(versions_df.sort_values("id", ascending=False), use_container_width=True, hide_index=True)
-
-    if not exports_df.empty:
-        st.markdown("### Exportações e circulação")
-        st.dataframe(exports_df.sort_values("id", ascending=False), use_container_width=True, hide_index=True)
-
-
-# ──────────────────────────────────────────────────────────────────────
-# APP PRINCIPAL
-# ──────────────────────────────────────────────────────────────────────
-def main() -> None:
-    bootstrap_files()
-    ensure_accessibility_session()
+def main():
     load_css()
+    try: check_admin()
+    except Exception as e: st.error(f"Erro ao inicializar: {e}")
 
-    st.markdown("<div class='app-wrap'>", unsafe_allow_html=True)
-    render_accessibility_controls()
+    for k,v in [('user_id',gen_uid()),('animal_name',generate_animal_name()),
+                ('step','intro'),('answers',{})]:
+        if k not in st.session_state: st.session_state[k] = v
 
-    if st.session_state.get("step") != "completed":
+    if st.session_state['step'] != 'completed':
         show_intro()
     else:
-        st.markdown(
-            f"""
-            <div class='hero'>
-                <h1>Folksonomia Digital</h1>
-                <p>
-                    Usuário anônimo atual: <strong>{st.session_state.get('animal_name')}</strong>.
-                    O sistema registra eventos encadeados por hash, mantém versões anteriores,
-                    marca relações automáticas da IA e preserva correções humanas sem apagar o histórico.
-                </p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        public_tab, admin_tab = st.tabs(["Explorar obras", "Área administrativa"])
-        with public_tab:
-            show_obras()
-        with admin_tab:
-            show_admin()
-    st.markdown("</div>", unsafe_allow_html=True)
+        show_header()
+        st.markdown("<div class='main-content'>", unsafe_allow_html=True)
+        t1, t2 = st.tabs([" Explorar Obras"," Área Administrativa"])
+        with t1: show_obras()
+        with t2: show_admin()
+        st.markdown("</div>", unsafe_allow_html=True)
 
+# ── INTRO ─────────────────────────────────────────────────────────────
+def show_intro():
+    st.markdown("<div class='main-content'>", unsafe_allow_html=True)
+    st.markdown("<h1 class='main-title'>Sistema Folksonomia Digital</h1>", unsafe_allow_html=True)
+    st.markdown("<p class='subtitle'>Sistema colaborativo de catalogação de obras de arte<br>"
+                "Complete o questionário para acessar a plataforma</p>", unsafe_allow_html=True)
+    st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align:center;margin-bottom:2.2rem;font-size:1.7rem'>"
+                "Questionário de Acesso</h2>", unsafe_allow_html=True)
+    with st.form("intro_form"):
+        c1, c2 = st.columns(2)
+        with c1:
+            q1 = st.selectbox("1. Qual é o seu nível de familiaridade com museus?",
+                ["Nunca visito museus","Visito raramente","Visito ocasionalmente","Visito frequentemente"])
+            q2 = st.selectbox("2. Você já ouviu falar sobre documentação museológica?",
+                ["Nunca ouvi falar","Já ouvi, mas não sei o que é","Tenho uma ideia básica","Conheço bem o tema"])
+        with c2:
+            q3 = st.text_area("3. O que você entende por 'tags' ou etiquetas digitais aplicadas a acervo?",
+                max_chars=500, height=200, placeholder="Descreva sua compreensão sobre o conceito...")
+        _, cb, _ = st.columns([1,1,1])
+        with cb:
+            submit = st.form_submit_button("Acessar Plataforma", use_container_width=True)
+        if submit:
+            if not q3.strip():
+                st.error("Por favor, responda todas as perguntas para continuar!")
+            else:
+                st.session_state['answers'] = {"q1":q1,"q2":q2,"q3":q3}
+                save_answers(st.session_state['user_id'], st.session_state['animal_name'],
+                             st.session_state['answers'])
+                st.session_state['step'] = 'completed'
+                st.success("Questionário completo! Acesso liberado.")
+                st.balloons()
+                st.rerun()
+    st.markdown("</div></div>", unsafe_allow_html=True)
+
+# ── GALERIA ───────────────────────────────────────────────────────────
+def show_obras():
+    st.markdown("<h1 class='main-title'>Galeria de Obras de Arte</h1>", unsafe_allow_html=True)
+    st.markdown("<p class='subtitle'>Explore as obras e contribua com suas tags descritivas</p>",
+                unsafe_allow_html=True)
+    obras = load_obras()
+    if not obras:
+        st.info("Nenhuma obra cadastrada.")
+        return
+    st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+    c1, c2 = st.columns([2,1])
+    with c1:
+        sid = st.text_input("Filtrar por número da obra:", "", placeholder="Ex: 1, 2, 3…")
+    with c2:
+        sord = st.selectbox("Ordenar por:", ["Número (crescente)","Número (decrescente)"])
+    st.markdown("</div>", unsafe_allow_html=True)
+    filtered = obras
+    if sid.strip().isdigit():
+        filtered = [o for o in obras if str(o['id'])==sid.strip()]
+    filtered = sorted(filtered, key=lambda x: x['id'], reverse=(sord=="Número (decrescente)"))
+    st.markdown(f"<div style='text-align:center;color:white;margin:1.8rem 0;"
+                f"font-size:1.1rem;font-weight:600'>Exibindo "
+                f"<strong style='font-size:1.4rem'>{len(filtered)}</strong> obra(s)</div>",
+                unsafe_allow_html=True)
+    cols = st.columns(3)
+    for i, obra in enumerate(filtered):
+        with cols[i%3]:
+            st.markdown(f"""<div class='obra-card'>
+<img src='{obra['imagem']}' alt='Obra {obra['id']}' />
+<div style='padding:1.4rem'>
+  <h3 style='font-size:1.05rem;font-weight:700;margin-bottom:.35rem'>Obra #{obra['id']}</h3>
+  <p style='font-size:.88rem;opacity:.65'>Adicione uma tag descritiva para esta imagem</p>
+</div></div>""", unsafe_allow_html=True)
+            if st.button(" Adicionar Tag", key=f"btn_{obra['id']}", use_container_width=True):
+                st.session_state['selected_obra'] = obra
+                st.rerun()
+            if ('selected_obra' in st.session_state and
+                    st.session_state['selected_obra']['id'] == obra['id']):
+                with st.form(f"tf_{obra['id']}"):
+                    tag = st.text_input("Sua tag:", key=f"t_{obra['id']}",
+                                        placeholder="Ex: azul, triste, moderno…")
+                    ca, cb = st.columns(2)
+                    with ca: sub = st.form_submit_button(" Enviar", use_container_width=True)
+                    with cb: can = st.form_submit_button(" Cancelar", use_container_width=True)
+                    if sub and tag:
+                        save_tag(st.session_state['user_id'], obra['id'], tag)
+                        st.success(f"Tag '{tag}' adicionada!")
+                        del st.session_state['selected_obra']
+                        st.rerun()
+                    if can:
+                        del st.session_state['selected_obra']
+                        st.rerun()
+            ut = get_obra_user_tags(obra['id'], st.session_state['user_id'])
+            if not ut.empty:
+                st.markdown("**Suas Tags:**")
+                st.markdown("".join(
+                    f"<span class='tag-badge'>{r['tag']} ({r['count']})</span>"
+                    for _, r in ut.iterrows()
+                ), unsafe_allow_html=True)
+            else:
+                st.info("Você ainda não criou tags para esta obra")
+
+# ── ADMIN ─────────────────────────────────────────────────────────────
+def show_admin():
+    if 'admin_logged_in' not in st.session_state:
+        st.session_state['admin_logged_in'] = False
+    if not st.session_state['admin_logged_in']:
+        st.markdown("<h1 class='main-title'>Área Administrativa</h1>", unsafe_allow_html=True)
+        st.markdown("<p class='subtitle'>Acesso restrito</p>", unsafe_allow_html=True)
+        _, c2, _ = st.columns([1,1,1])
+        with c2:
+            st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+            st.markdown("<h2 style='text-align:center;margin-bottom:1.8rem'>"
+                        "Login Administrativo</h2>", unsafe_allow_html=True)
+            with st.form("login"):
+                username = st.text_input("Usuário:", placeholder="Digite seu usuário")
+                password = st.text_input("Senha:", type="password", placeholder="Digite sua senha")
+                sub = st.form_submit_button("Entrar no Sistema", use_container_width=True)
+                if sub:
+                    if check_login(username, password):
+                        st.session_state['admin_logged_in'] = True
+                        st.session_state['admin_username']  = username
+                        st.success("Login realizado com sucesso!")
+                        st.balloons()
+                        st.rerun()
+                    else:
+                        st.error("Credenciais inválidas. Acesso negado.")
+            st.markdown("</div>", unsafe_allow_html=True)
+    else:
+        st.markdown(
+            f"<h1 class='main-title'>Dashboard Administrativo</h1>"
+            f"<p class='subtitle'>Bem-vindo, "
+            f"<strong>{st.session_state.get('admin_username','Admin')}</strong></p>",
+            unsafe_allow_html=True)
+        tabs = st.tabs([
+            " Visão Geral",
+            " Análise de Tags",
+            " Conexões de Tags",
+            " Usuários & Questionário",
+            " Obras",
+            " Exportar"
+        ])
+        with tabs[0]: tab_overview()
+        with tabs[1]: tab_tags()
+        with tabs[2]: tab_connections()
+        with tabs[3]: tab_users_quest()
+        with tabs[4]: tab_obras()
+        with tabs[5]: tab_export()
+        _, c2, _ = st.columns([1,1,1])
+        with c2:
+            if st.button(" Sair do Sistema", use_container_width=True):
+                st.session_state['admin_logged_in'] = False
+                st.rerun()
+
+# ═════════════════════════════════════════════════════════════════════
+# ABA 1 — VISÃO GERAL
+# ═════════════════════════════════════════════════════════════════════
+def tab_overview():
+    tdf = all_tags()
+    udf = all_users()
+    obs = load_obras()
+
+    st.markdown("### Métricas Gerais do Sistema")
+    total  = len(tdf) if not tdf.empty else 0
+    unicas = tdf['tag'].nunique() if not tdf.empty else 0
+    nusers = udf['user_id'].nunique() if not udf.empty else 0
+    nobs   = len(obs)
+    obs_ct = tdf['obra_id'].nunique() if not tdf.empty else 0
+
+    c1,c2,c3,c4,c5 = st.columns(5)
+    for col, lbl, val, sub, clr in [
+        (c1,"Total de Tags",     total,   "registros","#a7e6ff"),
+        (c2,"Tags Únicas",       unicas,  f"{unicas/total:.0%} do total" if total else "—","#d1baff"),
+        (c3,"Participantes",     nusers,  "usuários ativos","#6ee7b7"),
+        (c4,"Obras Cadastradas", nobs,    f"{obs_ct} com tags","#fcd34d"),
+        (c5,"Média Tags/Usuário",f"{total/nusers:.1f}" if nusers else "—","por participante","#f9a8d4"),
+    ]:
+        with col: st.markdown(kpi(lbl,val,sub,clr), unsafe_allow_html=True)
+
+    st.markdown(divider(), unsafe_allow_html=True)
+
+    if not udf.empty and not tdf.empty:
+        st.markdown("### Participantes Anônimos")
+        uct = tdf.groupby('user_id').size().reset_index(name='tags')
+        uuq = tdf.groupby('user_id')['tag'].nunique().reset_index(name='unicas')
+        m   = udf.merge(uct,on='user_id',how='left').merge(uuq,on='user_id',how='left').fillna(0)
+        for _, row in m.iterrows():
+            animal = row.get('animal_name','?')
+            ts     = row.get('timestamp','N/A')
+            nt, nu = int(row['tags']), int(row['unicas'])
+            p      = nu/nt if nt>0 else 0
+            st.markdown(
+                f"<div class='sc sc-b' style='padding:.85rem 1.3rem;margin:.25rem 0'>"
+                f"<div style='display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px'>"
+                f"<div><span class='animal-badge'>🐾 {animal}</span>"
+                f"<span style='color:rgba(255,255,255,.45);font-size:.75rem;margin-left:10px'>Acesso: {ts}</span></div>"
+                f"<div style='text-align:right;min-width:170px'>"
+                f"<span style='color:white;font-weight:700'>{nt} tags</span>"
+                f"<span style='color:rgba(255,255,255,.4);font-size:.78rem'> ({nu} únicas)</span>"
+                f"{pbar(p,'#a7e6ff')}"
+                f"<span style='color:rgba(255,255,255,.38);font-size:.7rem'>riqueza: {p:.0%}</span>"
+                f"</div></div></div>", unsafe_allow_html=True)
+
+    st.markdown(divider(), unsafe_allow_html=True)
+
+    if not tdf.empty:
+        od = {o['id']:o['titulo'] for o in obs}
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("#### Top 15 Tags Mais Usadas")
+            top = tdf['tag'].value_counts().head(15).reset_index()
+            top.columns = ['Tag','Qtd']
+            top['%'] = (top['Qtd']/top['Qtd'].sum()*100).round(1)
+            st.dataframe(top, use_container_width=True, hide_index=True)
+        with c2:
+            st.markdown("#### Obras Mais Tagueadas")
+            ot = tdf.groupby('obra_id').size().reset_index(name='Tags')
+            ot['Obra'] = ot['obra_id'].map(od)
+            st.dataframe(
+                ot[['Obra','Tags']].sort_values('Tags',ascending=False),
+                use_container_width=True, hide_index=True)
+
+# ═════════════════════════════════════════════════════════════════════
+# ABA 2 — ANÁLISE DE TAGS (Frequência + Temporal)
+# ═════════════════════════════════════════════════════════════════════
+def tab_tags():
+    tdf = all_tags()
+    if tdf.empty:
+        st.info("Nenhuma tag disponível.")
+        return
+
+    st.markdown("### Análise de Tags")
+    t1, t2 = st.tabs([" Frequência e Vocabulário", " Evolução Temporal"])
+
+    # ─── FREQUÊNCIA ───────────────────────────────────────────────────
+    with t1:
+        freq = tdf['tag'].value_counts().reset_index()
+        freq.columns = ['Tag','Frequência']
+        total_usos = freq['Frequência'].sum()
+        freq['% do Total']  = (freq['Frequência']/total_usos*100).round(2)
+        freq['% Acumulada'] = freq['% do Total'].cumsum().round(2)
+        freq['Categoria']   = pd.cut(
+            freq['Frequência'],
+            bins=[0,1,2,5,10,99999],
+            labels=['Hapax (1×)','Rara (2×)','Ocasional (3–5×)','Frequente (6–10×)','Muito Frequente (10+×)']
+        )
+
+        hapax  = (freq['Frequência']==1).sum()
+        lei80  = (freq['% Acumulada']<=80).sum()
+        ttr    = len(freq)/total_usos if total_usos else 0
+        top1p  = freq.iloc[0]['% do Total'] if not freq.empty else 0
+
+        c1,c2,c3,c4 = st.columns(4)
+        with c1: st.markdown(kpi("Vocabulário Total",  len(freq), "tags distintas","#a7e6ff"), unsafe_allow_html=True)
+        with c2: st.markdown(kpi("Hapax Legomena",     hapax,     f"{hapax/len(freq):.0%} do vocab.","#f9a8d4"), unsafe_allow_html=True)
+        with c3: st.markdown(kpi("80% dos Usos",       f"{lei80} tags","lei de Zipf","#6ee7b7"), unsafe_allow_html=True)
+        with c4: st.markdown(kpi("Type-Token Ratio",   f"{ttr:.3f}","riqueza global","#fcd34d"), unsafe_allow_html=True)
+
+        st.markdown(insight(
+            f"<strong>Distribuição de Zipf:</strong> As {lei80} tags mais frequentes cobrem 80% de todos os usos. "
+            f"Existem {hapax} hapax legomena — termos usados somente uma vez "
+            f"({hapax/len(freq):.0%} do vocabulário total). "
+            f"TTR global de <strong>{ttr:.3f}</strong> indica "
+            f"{'alta' if ttr>0.5 else 'moderada' if ttr>0.25 else 'baixa'} diversidade lexical."
+        ), unsafe_allow_html=True)
+
+        st.markdown(divider(), unsafe_allow_html=True)
+        st.markdown("#### Frequência — Top 25 Tags")
+        st.bar_chart(tdf['tag'].value_counts().head(25))
+
+        st.markdown("#### Tabela Completa de Frequências")
+        cat_opts = list(freq['Categoria'].cat.categories)
+        cat_sel  = st.multiselect("Filtrar por categoria:", cat_opts, default=cat_opts, key="fc")
+        disp = freq[freq['Categoria'].isin(cat_sel)] if cat_sel else freq
+        st.dataframe(disp, use_container_width=True, hide_index=True)
+
+        c1, c2 = st.columns(2)
+        with c1:
+            st.download_button(
+                " Frequências (CSV)",
+                freq.to_csv(index=False).encode('utf-8'),
+                f"frequencias_{datetime.now().strftime('%Y%m%d')}.csv",
+                "text/csv", use_container_width=True)
+        with c2:
+            st.markdown("**Distribuição por Categoria:**")
+            cd = freq['Categoria'].value_counts().reset_index()
+            cd.columns = ['Categoria','Qtd']
+            st.dataframe(cd, use_container_width=True, hide_index=True)
+
+    # ─── TEMPORAL ─────────────────────────────────────────────────────
+    with t2:
+        st.markdown("#### Evolução Temporal das Tags")
+        try:
+            tf = tdf.copy()
+            tf['ts']    = pd.to_datetime(tf['timestamp'])
+            tf['date']  = tf['ts'].dt.date
+            tf['ano']   = tf['ts'].dt.year
+            tf['mes']   = tf['ts'].dt.month
+            tf['dia']   = tf['ts'].dt.day
+            tf['hora']  = tf['ts'].dt.hour
+            tf['dow']   = tf['ts'].dt.day_name()
+            tf['semana']= tf['ts'].dt.isocalendar().week.astype(int)
+
+            # ── KPIs temporais ──
+            dias_ativos = tf['date'].nunique()
+            media_dia   = len(tf)/dias_ativos if dias_ativos else 0
+            pico_dia    = tf.groupby('date').size()
+            pico_val    = int(pico_dia.max()) if not pico_dia.empty else 0
+            pico_dt     = str(pico_dia.idxmax()) if not pico_dia.empty else "—"
+
+            c1,c2,c3,c4 = st.columns(4)
+            with c1: st.markdown(kpi("Dias com Atividade", dias_ativos,"dias","#a7e6ff"), unsafe_allow_html=True)
+            with c2: st.markdown(kpi("Média por Dia",      f"{media_dia:.1f}","tags/dia","#6ee7b7"), unsafe_allow_html=True)
+            with c3: st.markdown(kpi("Pico de Tags",       pico_val,f"em {pico_dt}","#fcd34d"), unsafe_allow_html=True)
+            with c4: st.markdown(kpi("Período Total",      f"{dias_ativos} dias","registrado","#d1baff"), unsafe_allow_html=True)
+
+            st.markdown(divider(), unsafe_allow_html=True)
+
+            # ── Linha: tags por dia ──
+            daily = tf.groupby('date').agg(
+                Tags=('tag','count'),
+                Tags_Unicas=('tag','nunique'),
+                Usuarios=('user_id','nunique')
+            ).reset_index().rename(columns={'date':'Data'})
+
+            st.markdown("#### Tags Criadas por Dia")
+            st.line_chart(daily.set_index('Data')['Tags'])
+
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown("**Usuários ativos por dia**")
+                st.line_chart(daily.set_index('Data')['Usuarios'])
+            with c2:
+                st.markdown("**Tags únicas por dia**")
+                st.line_chart(daily.set_index('Data')['Tags_Unicas'])
+
+            st.markdown(divider(), unsafe_allow_html=True)
+
+            # ── Por mês ──
+            st.markdown("#### Distribuição Mensal")
+            meses_pt = {1:"Jan",2:"Fev",3:"Mar",4:"Abr",5:"Mai",6:"Jun",
+                        7:"Jul",8:"Ago",9:"Set",10:"Out",11:"Nov",12:"Dez"}
+            monthly = tf.groupby(['ano','mes']).agg(
+                Tags=('tag','count'),
+                Tags_Unicas=('tag','nunique'),
+                Usuarios=('user_id','nunique')
+            ).reset_index()
+            monthly['Mês/Ano'] = monthly['mes'].map(meses_pt)+"/"+monthly['ano'].astype(str)
+            monthly = monthly.sort_values(['ano','mes'])
+
+            st.bar_chart(monthly.set_index('Mês/Ano')['Tags'])
+
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown("**Usuários únicos por mês**")
+                st.bar_chart(monthly.set_index('Mês/Ano')['Usuarios'])
+            with c2:
+                st.markdown("**Tags únicas por mês**")
+                st.bar_chart(monthly.set_index('Mês/Ano')['Tags_Unicas'])
+
+            st.markdown(divider(), unsafe_allow_html=True)
+
+            # ── Por ano ──
+            st.markdown("#### Distribuição Anual")
+            yearly = tf.groupby('ano').agg(
+                Tags=('tag','count'),
+                Tags_Unicas=('tag','nunique'),
+                Usuarios=('user_id','nunique')
+            ).reset_index().rename(columns={'ano':'Ano'})
+            st.bar_chart(yearly.set_index('Ano')['Tags'])
+            st.dataframe(yearly, use_container_width=True, hide_index=True)
+
+            st.markdown(divider(), unsafe_allow_html=True)
+
+            # ── Distribuição por dia da semana e hora ──
+            st.markdown("#### Padrões de Uso")
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown("**Distribuição por Hora do Dia**")
+                st.bar_chart(tf['hora'].value_counts().sort_index().rename("Tags"))
+            with c2:
+                st.markdown("**Distribuição por Dia da Semana**")
+                dow_order = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
+                dow_pt    = {"Monday":"Seg","Tuesday":"Ter","Wednesday":"Qua","Thursday":"Qui",
+                             "Friday":"Sex","Saturday":"Sáb","Sunday":"Dom"}
+                dow_c = tf['dow'].value_counts().reindex(dow_order,fill_value=0)
+                dow_c.index = [dow_pt.get(d,d) for d in dow_c.index]
+                st.bar_chart(dow_c.rename("Tags"))
+
+            st.markdown(divider(), unsafe_allow_html=True)
+
+            # ── Tabela consolidada ──
+            st.markdown("#### Tabela Detalhada por Dia")
+            daily_full = tf.groupby('date').agg(
+                Total=('tag','count'),
+                Unicas=('tag','nunique'),
+                Usuarios=('user_id','nunique'),
+                Tag_Mais_Usada=('tag', lambda x: x.value_counts().index[0])
+            ).reset_index()
+            daily_full.columns = ['Data','Tags Criadas','Tags Únicas','Usuários Ativos','Tag Mais Usada']
+            daily_full = daily_full.sort_values('Data',ascending=False)
+            st.dataframe(daily_full, use_container_width=True, hide_index=True)
+
+            st.markdown("#### Tabela Mensal Consolidada")
+            monthly_full = monthly[['Mês/Ano','Tags','Tags_Unicas','Usuarios']].copy()
+            monthly_full.columns = ['Mês/Ano','Tags Criadas','Tags Únicas','Usuários Ativos']
+            st.dataframe(monthly_full, use_container_width=True, hide_index=True)
+
+            if len(daily)>1:
+                st.markdown(insight(
+                    f"<strong>Tendência:</strong> Pico de <strong>{pico_val} tags</strong> em {pico_dt}. "
+                    f"Média de <strong>{media_dia:.1f} tags/dia</strong> nos {dias_ativos} dias com atividade. "
+                    f"Total de {len(tf)} tags distribuídas ao longo de "
+                    f"{monthly['ano'].nunique()} ano(s) e {len(monthly)} mês(es) registrado(s)."
+                ), unsafe_allow_html=True)
+
+        except Exception as e:
+            st.info(f"Dados insuficientes para análise temporal.")
+
+# ═════════════════════════════════════════════════════════════════════
+# ABA 3 — CONEXÕES DE TAGS
+# ═════════════════════════════════════════════════════════════════════
+def tab_connections():
+    tdf  = all_tags()
+    obs  = load_obras()
+    od   = {o['id']:o['titulo'] for o in obs}
+    if tdf.empty:
+        st.warning("Nenhuma tag disponível.")
+        return
+
+    st.markdown("### Conexões e Agrupamentos de Tags")
+    st.markdown(insight(
+        "<strong>Como funciona:</strong> O algoritmo combina três métricas — "
+        "<strong>Contenção de substring</strong> (ex: 'vaso' → 'vaso verde'), "
+        "<strong>Jaccard de palavras</strong> (ex: 'barco preto' ↔ 'barco de barro') e "
+        "<strong>Jaccard de trigramas</strong> (similaridade fonética). "
+        "Score de 0 (sem relação) a 1 (idênticas)."
+    ), unsafe_allow_html=True)
+
+    c1, c2, c3 = st.columns(3)
+    with c1: threshold = st.slider("Limiar de similaridade:", 0.20, 0.90, 0.35, 0.05, key="ct")
+    with c2: obra_f    = st.selectbox("Filtrar por obra:", ["Todas"]+[f"#{o['id']} — {o['titulo']}" for o in obs], key="co")
+    with c3: max_c     = st.number_input("Máx. conexões:", 10, 300, 60, 10, key="cm")
+
+    fdf = tdf.copy()
+    if obra_f != "Todas":
+        oid = int(obra_f.split("—")[0].replace("#","").strip())
+        fdf = tdf[tdf['obra_id']==oid]
+
+    all_t = fdf['tag'].tolist()
+    if len(set(all_t)) < 2:
+        st.warning("Necessário ao menos 2 tags distintas.")
+        return
+
+    with st.spinner("Calculando conexões…"):
+        conns    = tag_connections(all_t, threshold=threshold)
+        clusters = tag_clusters(all_t, threshold=threshold)
+
+    c1,c2,c3 = st.columns(3)
+    with c1: st.markdown(kpi("Total de Conexões", len(conns),   f"limiar ≥ {threshold:.2f}","#a7e6ff"), unsafe_allow_html=True)
+    with c2: st.markdown(kpi("Grupos Formados",   len(clusters),"clusters de tags","#d1baff"), unsafe_allow_html=True)
+    with c3: st.markdown(kpi("Tags Envolvidas",   len(set(c['tag_a'] for c in conns)|set(c['tag_b'] for c in conns)),
+                              "tags conectadas","#6ee7b7"), unsafe_allow_html=True)
+
+    st.markdown(divider(), unsafe_allow_html=True)
+
+    t1, t2 = st.tabs([" Lista de Conexões"," Grupos de Tags"])
+
+    # ── LISTA ─────────────────────────────────────────────────────────
+    with t1:
+        if not conns:
+            st.info("Nenhuma conexão encontrada. Reduza o limiar de similaridade.")
+        else:
+            tipos    = sorted(set(c['tipo'] for c in conns))
+            tipo_sel = st.multiselect("Filtrar por tipo:", tipos, default=tipos, key="tsel")
+            cf = [c for c in conns if c['tipo'] in tipo_sel][:max_c]
+            freq_map = tdf['tag'].value_counts().to_dict()
+
+            st.markdown(f"Exibindo **{len(cf)}** de **{len(conns)}** conexões")
+            st.markdown(divider(), unsafe_allow_html=True)
+
+            for c in cf:
+                s   = c['similaridade']
+                bar = "█"*int(s*10)+"░"*(10-int(s*10))
+                fa  = freq_map.get(c['tag_a'],0)
+                fb  = freq_map.get(c['tag_b'],0)
+                st.markdown(
+                    f"<div class='conn-row'>"
+                    f"<div style='display:flex;align-items:center;gap:10px;flex-wrap:wrap'>"
+                    f"<span class='tag-badge'>{c['tag_a']}</span>"
+                    f"<span style='color:rgba(255,255,255,.3);font-size:.72rem'>({fa}×)</span>"
+                    f"<span style='color:rgba(255,255,255,.38)'>↔</span>"
+                    f"<span class='tag-badge'>{c['tag_b']}</span>"
+                    f"<span style='color:rgba(255,255,255,.3);font-size:.72rem'>({fb}×)</span>"
+                    f"</div>"
+                    f"<div style='text-align:right;min-width:195px'>"
+                    f"<span style='font-family:monospace;color:rgba(255,255,255,.6);font-size:.78rem'>"
+                    f"{bar} {s:.3f}</span><br>"
+                    f"<span style='font-size:.7rem;color:rgba(255,255,255,.35)'>{c['tipo']}</span>"
+                    f"</div></div>", unsafe_allow_html=True)
+
+            st.markdown(divider(), unsafe_allow_html=True)
+            st.download_button(
+                "⬇️ Baixar conexões (CSV)",
+                pd.DataFrame(conns).to_csv(index=False).encode('utf-8'),
+                f"conexoes_{datetime.now().strftime('%Y%m%d')}.csv","text/csv")
+
+    # ── CLUSTERS ──────────────────────────────────────────────────────
+    with t2:
+        if not clusters:
+            st.info("Nenhum grupo formado. Reduza o limiar de similaridade.")
+        else:
+            COLORS = ["#60a5fa","#34d399","#f9a8d4","#fcd34d","#a78bfa",
+                      "#f87171","#67e8f9","#86efac","#fb923c","#c084fc"]
+            freq_map     = tdf['tag'].value_counts().to_dict()
+            cls_sorted   = sorted(clusters, key=len, reverse=True)
+
+            st.markdown(f"**{len(cls_sorted)} grupo(s) de tags relacionadas**")
+            st.markdown(divider(), unsafe_allow_html=True)
+
+            for i, cl in enumerate(cls_sorted, 1):
+                color      = COLORS[(i-1) % len(COLORS)]
+                total_uses = sum(freq_map.get(t,0) for t in cl)
+                pills = "".join(
+                    f"<span class='cluster-pill'>{t} "
+                    f"<span style='opacity:.5;font-size:.7rem'>({freq_map.get(t,0)}×)</span></span>"
+                    for t in sorted(cl, key=lambda x: freq_map.get(x,0), reverse=True)
+                )
+                st.markdown(
+                    f"<div class='cluster-wrap' style='border-left:3px solid {color}'>"
+                    f"<div class='cluster-title'>Grupo {i} · {len(cl)} tags · {total_uses} usos totais</div>"
+                    f"{pills}</div>", unsafe_allow_html=True)
+
+            st.markdown(divider(), unsafe_allow_html=True)
+            st.markdown("#### Resumo dos Grupos")
+            summ = pd.DataFrame([{
+                "Grupo": f"Grupo {i}",
+                "Qtd Tags": len(cl),
+                "Total Usos": sum(freq_map.get(t,0) for t in cl),
+                "Tags": ", ".join(sorted(cl,key=lambda x:freq_map.get(x,0),reverse=True)[:6])
+                        + ("…" if len(cl)>6 else "")
+            } for i,cl in enumerate(cls_sorted,1)])
+            st.dataframe(summ, use_container_width=True, hide_index=True)
+
+            st.download_button(
+                "⬇️ Baixar grupos (CSV)",
+                summ.to_csv(index=False).encode('utf-8'),
+                f"clusters_{datetime.now().strftime('%Y%m%d')}.csv","text/csv")
+
+# ═════════════════════════════════════════════════════════════════════
+# ABA 4 — USUÁRIOS & QUESTIONÁRIO (unificado)
+# ═════════════════════════════════════════════════════════════════════
+def tab_users_quest():
+    tdf = all_tags()
+    udf = all_users()
+    obs = load_obras()
+    od  = {o['id']:o['titulo'] for o in obs}
+
+    if udf.empty:
+        st.info("Nenhum dado de usuário disponível.")
+        return
+
+    st.markdown("### Usuários & Questionário")
+
+    # ── KPIs combinados ──
+    uct = tdf.groupby('user_id').size().reset_index(name='Total_Tags') if not tdf.empty else pd.DataFrame(columns=['user_id','Total_Tags'])
+    uuq = tdf.groupby('user_id')['tag'].nunique().reset_index(name='Tags_Unicas') if not tdf.empty else pd.DataFrame(columns=['user_id','Tags_Unicas'])
+    uob = tdf.groupby('user_id')['obra_id'].nunique().reset_index(name='Obras') if not tdf.empty else pd.DataFrame(columns=['user_id','Obras'])
+
+    merged = udf.merge(uct,on='user_id',how='left') \
+                .merge(uuq,on='user_id',how='left') \
+                .merge(uob,on='user_id',how='left').fillna(0)
+    merged['TTR']     = (merged['Tags_Unicas']/merged['Total_Tags'].replace(0,np.nan)).fillna(0).round(3)
+    merged['Usuário'] = merged.apply(lambda r: r.get('animal_name', r['user_id'][:8]), axis=1)
+
+    c1,c2,c3,c4 = st.columns(4)
+    top_u = merged.loc[merged['Total_Tags'].idxmax(),'Usuário'] if not merged.empty else "—"
+    with c1: st.markdown(kpi("Participantes",       len(merged),"usuários","#a7e6ff"), unsafe_allow_html=True)
+    with c2: st.markdown(kpi("Média Tags/Usuário",  f"{merged['Total_Tags'].mean():.1f}","","#6ee7b7"), unsafe_allow_html=True)
+    with c3: st.markdown(kpi("Maior Contribuição",  int(merged['Total_Tags'].max()),top_u[:16],"#fcd34d"), unsafe_allow_html=True)
+    with c4: st.markdown(kpi("Riqueza Média (TTR)", f"{merged['TTR'].mean():.2%}","vocabular","#d1baff"), unsafe_allow_html=True)
+
+    st.markdown(divider(), unsafe_allow_html=True)
+
+    t1, t2, t3, t4 = st.tabs([
+        " Tabela de Participantes",
+        " Perfil Individual",
+        "Respostas do Questionário",
+        " Cruzamentos"
+    ])
+
+    # ── TABELA ────────────────────────────────────────────────────────
+    with t1:
+        st.markdown("#### Comparativo Geral de Participantes")
+        dcols = ['Usuário','Total_Tags','Tags_Unicas','TTR','Obras','q1','q2']
+        avail = [c for c in dcols if c in merged.columns]
+        disp  = merged[avail].rename(columns={
+            'Total_Tags':'Tags Criadas','Tags_Unicas':'Tags Únicas',
+            'Obras':'Obras Etiquetadas','q1':'Familiaridade c/ Museus',
+            'q2':'Conhec. Museológico'
+        }).sort_values('Tags Criadas',ascending=False)
+        st.dataframe(disp, use_container_width=True, hide_index=True)
+
+        st.markdown(divider(), unsafe_allow_html=True)
+        st.markdown("#### Contribuição por Participante")
+        st.bar_chart(merged.set_index('Usuário')['Total_Tags'].sort_values(ascending=False))
+
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("**Riqueza Vocabular (TTR) por Usuário**")
+            st.bar_chart(merged.set_index('Usuário')['TTR'].sort_values(ascending=False))
+        with c2:
+            st.markdown("**Obras Etiquetadas por Usuário**")
+            st.bar_chart(merged.set_index('Usuário')['Obras'].sort_values(ascending=False))
+
+    # ── PERFIL INDIVIDUAL ────────────────────────────────────────────
+    with t2:
+        st.markdown("#### Perfil Detalhado por Participante")
+        uopts = [f"🐾 {r.get('animal_name',r['user_id'][:8])}" for _,r in udf.iterrows()]
+        usel  = st.selectbox("Selecione um participante:", uopts, key="ui_sel")
+        uidx  = uopts.index(usel)
+        uid   = udf.iloc[uidx]['user_id']
+        uanim = udf.iloc[uidx].get('animal_name', uid[:8])
+
+        utags = tdf[tdf['user_id']==uid] if not tdf.empty else pd.DataFrame()
+        if utags.empty:
+            st.info("Este participante ainda não criou tags.")
+        else:
+            ttl = len(utags); unq = utags['tag'].nunique()
+            ttr_u = unq/ttl if ttl else 0
+
+            c1,c2,c3 = st.columns(3)
+            with c1: st.markdown(kpi("Tags Criadas", ttl,"","#a7e6ff"), unsafe_allow_html=True)
+            with c2: st.markdown(kpi("Tags Únicas",  unq,f"TTR: {ttr_u:.2%}","#6ee7b7"), unsafe_allow_html=True)
+            with c3: st.markdown(kpi("Obras Tagueadas",utags['obra_id'].nunique(),"","#fcd34d"), unsafe_allow_html=True)
+
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown(f"**Top tags de {uanim}:**")
+                st.bar_chart(utags['tag'].value_counts().head(15))
+            with c2:
+                st.markdown("**Distribuição por obra:**")
+                st.bar_chart(utags.groupby('obra_id').size().rename(index=od))
+
+            st.markdown("**Conexões nas tags deste participante (limiar 0.30):**")
+            uconns = tag_connections(utags['tag'].tolist(), threshold=0.30)
+            if uconns:
+                for c in uconns[:10]:
+                    freq_map = utags['tag'].value_counts().to_dict()
+                    fa = freq_map.get(c['tag_a'],0)
+                    fb = freq_map.get(c['tag_b'],0)
+                    st.markdown(
+                        f"<div class='conn-row'>"
+                        f"<div style='display:flex;align-items:center;gap:9px;flex-wrap:wrap'>"
+                        f"<span class='tag-badge'>{c['tag_a']}</span>"
+                        f"<span style='color:rgba(255,255,255,.3);font-size:.7rem'>({fa}×)</span>"
+                        f"<span style='color:rgba(255,255,255,.35)'>↔</span>"
+                        f"<span class='tag-badge'>{c['tag_b']}</span>"
+                        f"<span style='color:rgba(255,255,255,.3);font-size:.7rem'>({fb}×)</span>"
+                        f"</div>"
+                        f"<span style='color:rgba(255,255,255,.35);font-size:.75rem'>"
+                        f"{c['similaridade']:.3f} · {c['tipo']}</span>"
+                        f"</div>", unsafe_allow_html=True)
+            else:
+                st.info("Nenhuma conexão encontrada nas tags deste participante.")
+
+            st.markdown(divider(), unsafe_allow_html=True)
+            st.markdown("**Todas as tags criadas:**")
+            ft = utags.copy()
+            ft['Obra'] = ft['obra_id'].map(od)
+            st.dataframe(
+                ft[['tag','Obra','timestamp']].rename(columns={'tag':'Tag','timestamp':'Data/Hora'}),
+                use_container_width=True, hide_index=True)
+
+    # ── QUESTIONÁRIO ─────────────────────────────────────────────────
+    with t3:
+        st.markdown("#### Respostas do Questionário de Perfil")
+
+        c1,c2 = st.columns(2)
+        with c1:
+            st.markdown("**Q1 — Familiaridade com Museus**")
+            q1c = udf['q1'].value_counts()
+            st.bar_chart(q1c)
+            q1p = (q1c/q1c.sum()*100).round(1).reset_index()
+            q1p.columns=['Resposta','%']
+            st.dataframe(q1p, use_container_width=True, hide_index=True)
+
+        with c2:
+            st.markdown("**Q2 — Conhecimento sobre Documentação Museológica**")
+            q2c = udf['q2'].value_counts()
+            st.bar_chart(q2c)
+            q2p = (q2c/q2c.sum()*100).round(1).reset_index()
+            q2p.columns=['Resposta','%']
+            st.dataframe(q2p, use_container_width=True, hide_index=True)
+
+        st.markdown(divider(), unsafe_allow_html=True)
+        st.markdown("**Q3 — Respostas Abertas: O que você entende por 'tags'?**")
+        disp = udf.copy()
+        if 'animal_name' in disp.columns:
+            disp = disp.rename(columns={'animal_name':'Usuário Anônimo'})
+        disp['Palavras'] = disp['q3'].str.split().str.len()
+        st.markdown(
+            f"Comprimento médio das respostas: "
+            f"**{disp['Palavras'].mean():.0f} palavras** por participante"
+        )
+        st.bar_chart(disp['Palavras'].value_counts().sort_index().rename("Qtd Respostas"))
+
+        st.markdown(divider(), unsafe_allow_html=True)
+        st.dataframe(
+            disp[['Usuário Anônimo','q3','Palavras','timestamp']]
+            .sort_values('timestamp',ascending=False)
+            .rename(columns={'q3':'Resposta','timestamp':'Data/Hora'}),
+            use_container_width=True, hide_index=True)
+
+    # ── CRUZAMENTOS ───────────────────────────────────────────────────
+    with t4:
+        if tdf.empty:
+            st.info("Dados de tags insuficientes para cruzamentos.")
+            return
+
+        st.markdown("#### Cruzamentos: Perfil do Participante × Comportamento de Tagging")
+
+        m = merged.copy()
+        m['TTR'] = (m['Tags_Unicas']/m['Total_Tags'].replace(0,np.nan)).fillna(0)
+
+        st.markdown(divider(), unsafe_allow_html=True)
+        st.markdown("**Familiaridade com Museus × Média de Tags Criadas**")
+        avg_q1 = m.groupby('q1')['Total_Tags'].mean().sort_values(ascending=False)
+        st.bar_chart(avg_q1)
+        t_q1 = avg_q1.reset_index()
+        t_q1.columns = ['Familiaridade','Média de Tags']
+        t_q1['Média de Tags'] = t_q1['Média de Tags'].round(2)
+        st.dataframe(t_q1, use_container_width=True, hide_index=True)
+
+        st.markdown(divider(), unsafe_allow_html=True)
+        st.markdown("**Conhecimento Museológico × Tags Únicas**")
+        avg_q2 = m.groupby('q2')['Tags_Unicas'].mean().sort_values(ascending=False)
+        st.bar_chart(avg_q2)
+        t_q2 = avg_q2.reset_index()
+        t_q2.columns = ['Conhecimento','Média Tags Únicas']
+        t_q2['Média Tags Únicas'] = t_q2['Média Tags Únicas'].round(2)
+        st.dataframe(t_q2, use_container_width=True, hide_index=True)
+
+        st.markdown(divider(), unsafe_allow_html=True)
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("**Familiaridade × Riqueza Vocabular (TTR)**")
+            avg_ttr = m.groupby('q1')['TTR'].mean().sort_values(ascending=False)
+            st.bar_chart(avg_ttr)
+        with c2:
+            st.markdown("**Conhecimento Museológico × TTR**")
+            avg_ttr2 = m.groupby('q2')['TTR'].mean().sort_values(ascending=False)
+            st.bar_chart(avg_ttr2)
+
+        st.markdown(divider(), unsafe_allow_html=True)
+        st.markdown("#### Tabela Consolidada de Cruzamentos")
+        cross = m.groupby('q1').agg(
+            Usuários     =('user_id','count'),
+            Média_Tags   =('Total_Tags','mean'),
+            Média_Únicas =('Tags_Unicas','mean'),
+            Riqueza_TTR  =('TTR','mean'),
+        ).round(2).reset_index()
+        cross.columns = ['Familiaridade','Usuários','Média Tags','Média Únicas','Riqueza (TTR)']
+        st.dataframe(cross, use_container_width=True, hide_index=True)
+
+        st.markdown(insight(
+            "<strong>Interpretação:</strong> Compare se participantes mais familiarizados com museus "
+            "produzem mais tags, maior diversidade vocabular (TTR) ou tags mais descritivas. "
+            "A riqueza vocabular (TTR) mede a proporção de termos únicos sobre o total criado — "
+            "valores próximos de 1.0 indicam alta originalidade e variedade nas tags."
+        ), unsafe_allow_html=True)
+
+# ═════════════════════════════════════════════════════════════════════
+# ABA 5 — GESTÃO DE OBRAS
+# ═════════════════════════════════════════════════════════════════════
+def tab_obras():
+    st.markdown("### Gestão de Obras")
+    obras = load_obras()
+    t1, t2 = st.tabs(["Listar Obras","Adicionar Nova"])
+
+    with t1:
+        if obras:
+            for obra in obras:
+                c1,c2,c3 = st.columns([1,2,1])
+                with c1: st.image(obra['imagem'], use_container_width=True)
+                with c2:
+                    st.markdown(f"**#{obra['id']} – {obra['titulo']}**")
+                    st.markdown(f"*{obra['artista']} — {obra['ano']}*")
+                with c3:
+                    if st.button("🗑️ Remover", key=f"del_{obra['id']}"):
+                        obras.remove(obra)
+                        save_json_file(OBRAS_FILE, obras)
+                        st.success("Obra removida!")
+                        st.cache_data.clear()
+                        st.rerun()
+                st.divider()
+        else:
+            st.info("Nenhuma obra cadastrada.")
+
+    with t2:
+        with st.form("add_obra"):
+            titulo  = st.text_input("Título da Obra")
+            artista = st.text_input("Artista")
+            ano     = st.text_input("Ano")
+            imagem  = st.text_input("URL da Imagem")
+            if st.form_submit_button(" Adicionar Obra"):
+                if titulo and artista and ano and imagem:
+                    nid = max([o['id'] for o in obras])+1 if obras else 1
+                    obras.append({"id":nid,"titulo":titulo,"artista":artista,"ano":ano,"imagem":imagem})
+                    save_json_file(OBRAS_FILE, obras)
+                    st.success("Obra adicionada!")
+                    st.cache_data.clear()
+                    st.rerun()
+                else:
+                    st.error("Preencha todos os campos!")
+
+# ═════════════════════════════════════════════════════════════════════
+# ABA 6 — EXPORTAR
+# ═════════════════════════════════════════════════════════════════════
+def tab_export():
+    st.markdown("### Central de Exportação")
+    tdf  = all_tags()
+    udf  = all_users()
+    obs  = load_obras()
+
+    t1, t2 = st.tabs([" Exportação Geral"," Por Participante"])
+
+    with t1:
+        c1,c2,c3 = st.columns(3)
+        with c1:
+            st.markdown("#### Tags")
+            if not tdf.empty:
+                st.download_button(" Todas as Tags (CSV)",
+                    tdf.to_csv(index=False).encode('utf-8'),
+                    f"tags_{datetime.now().strftime('%Y%m%d')}.csv","text/csv",
+                    use_container_width=True)
+                freq = tdf['tag'].value_counts().reset_index()
+                freq.columns=['Tag','Frequência']
+                freq['%']=(freq['Frequência']/freq['Frequência'].sum()*100).round(2)
+                st.download_button(" Frequências (CSV)",
+                    freq.to_csv(index=False).encode('utf-8'),
+                    f"freq_{datetime.now().strftime('%Y%m%d')}.csv","text/csv",
+                    use_container_width=True)
+        with c2:
+            st.markdown("#### Usuários")
+            if not udf.empty:
+                st.download_button(" Usuários (CSV)",
+                    udf.to_csv(index=False).encode('utf-8'),
+                    f"usuarios_{datetime.now().strftime('%Y%m%d')}.csv","text/csv",
+                    use_container_width=True)
+        with c3:
+            st.markdown("#### Obras")
+            if obs:
+                st.download_button(" Obras (CSV)",
+                    pd.DataFrame(obs).to_csv(index=False).encode('utf-8'),
+                    f"obras_{datetime.now().strftime('%Y%m%d')}.csv","text/csv",
+                    use_container_width=True)
+
+        st.markdown(divider(), unsafe_allow_html=True)
+        st.markdown("#### Exportar Conexões de Tags")
+        if not tdf.empty:
+            thr = st.slider("Limiar de similaridade:", 0.2, 0.9, 0.35, 0.05, key="exp_thr")
+            if st.button("Gerar arquivo de conexões"):
+                with st.spinner("Calculando…"):
+                    conns = tag_connections(tdf['tag'].tolist(), threshold=thr)
+                if conns:
+                    cdf = pd.DataFrame(conns)
+                    st.download_button(" Conexões (CSV)",
+                        cdf.to_csv(index=False).encode('utf-8'),
+                        f"conexoes_{datetime.now().strftime('%Y%m%d')}.csv","text/csv",
+                        use_container_width=True)
+                    st.success(f"{len(conns)} conexões exportadas.")
+                else:
+                    st.info("Nenhuma conexão encontrada com este limiar.")
+
+    with t2:
+        if udf.empty:
+            st.info("Nenhum participante cadastrado.")
+            return
+        uopts = [f"🐾 {r.get('animal_name',r['user_id'][:8])}" for _,r in udf.iterrows()]
+        usel  = st.selectbox("Selecione um participante:", uopts, key="exp_u")
+        uidx  = uopts.index(usel)
+        uid   = udf.iloc[uidx]['user_id']
+        uanim = udf.iloc[uidx].get('animal_name', uid[:8])
+
+        st.markdown(f"#### Dados de: **{uanim}**")
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("##### Questionário")
+            hq = html_quest(uid, uanim, udf)
+            if hq:
+                st.download_button(" Respostas (HTML/PDF)", hq,
+                    f"quest_{uid[:8]}.html","text/html", use_container_width=True)
+            ud = udf[udf['user_id']==uid]
+            if not ud.empty:
+                st.download_button(" Respostas (CSV)",
+                    ud.to_csv(index=False).encode('utf-8'),
+                    f"quest_{uid[:8]}.csv","text/csv", use_container_width=True)
+        with c2:
+            st.markdown("##### Tags Criadas")
+            ht = html_tags(uid, uanim, obs, tdf)
+            if ht:
+                st.download_button(" Tags (HTML/PDF)", ht,
+                    f"tags_{uid[:8]}.html","text/html", use_container_width=True)
+            ut = get_user_tags(uid)
+            if not ut.empty:
+                st.download_button(" Tags (CSV)",
+                    ut.to_csv(index=False).encode('utf-8'),
+                    f"tags_{uid[:8]}.csv","text/csv", use_container_width=True)
 
 if __name__ == "__main__":
     main()
