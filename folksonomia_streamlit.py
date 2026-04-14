@@ -1,4050 +1,1368 @@
-
-from __future__ import annotations
-
-import base64
-import csv
-import io
-import json
-import math
-import os
-import re
-import uuid
-from collections import Counter, defaultdict
-from datetime import datetime
-from pathlib import Path
-from typing import Any, Dict, List, Tuple
-
 import streamlit as st
 import pandas as pd
+import numpy as np
+import os
+from datetime import datetime
+import hashlib
+import base64
+import json
+import random
+import warnings
+from collections import defaultdict
+warnings.filterwarnings('ignore')
 
-try:
-    import plotly.graph_objects as go
-    PLOTLY_OK = True
-except Exception:
-    PLOTLY_OK = False
-    go = None
+st.set_page_config(
+    page_title="Sistema Folksonomia Digital",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+    page_icon="📚"
+)
 
-try:
-    from reportlab.lib import colors
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-    REPORTLAB_OK = True
-except Exception:
-    REPORTLAB_OK = False
-
-APP_TITLE = "folksonomia"
-APP_DIR = Path("folksonomia_data")
-WORKS_FILE = APP_DIR / "works.json"
-RESPONSES_FILE = APP_DIR / "responses.json"
-TAGS_FILE = APP_DIR / "tags.json"
-VALIDATIONS_FILE = APP_DIR / "validations.json"
-ONTOLOGIES_FILE = APP_DIR / "ontologies.json"
-SETTINGS_FILE = APP_DIR / "settings.json"
-ADMIN_FILE = APP_DIR / "admin.json"
-
-ADMIN_LOGIN = "nugep239@"
+DATA_DIR   = "data"
+OBRAS_FILE = os.path.join(DATA_DIR, "obras.json")
+TAGS_FILE  = os.path.join(DATA_DIR, "tags.json")
+USERS_FILE = os.path.join(DATA_DIR, "users.json")
+ADMIN_FILE = os.path.join(DATA_DIR, "admin.json")
+ADMIN_USERNAME = "nugep"
 ADMIN_PASSWORD = "nugep123"
 
-CATEGORY_OPTIONS = ["tema", "técnica", "material", "período", "lugar", "pessoa", "evento", "iconografia", "outro"]
-DEFAULT_CLASSES = ["tema", "técnica", "material", "período", "lugar", "pessoa", "evento", "iconografia"]
-DEFAULT_RELATIONS = ["obra_tem_tema", "obra_tem_técnica", "obra_tem_material", "obra_tem_lugar", "obra_tem_período", "obra_relaciona_pessoa"]
-COMPLEX_WORDS = {
-    "folksonomia": "Sistema de marcação colaborativa em que as pessoas criam tags livremente.",
-    "ontologia": "Estrutura que organiza conceitos, categorias e relações entre eles.",
-    "interoperabilidade": "Capacidade de diferentes sistemas trocarem e entenderem dados entre si.",
-    "metadados": "Informações descritivas sobre uma obra, como autor, técnica, período e lugar.",
-    "iconografia": "Conjunto de imagens, símbolos e temas representados em uma obra.",
-    "desambiguação": "Processo de diferenciar termos parecidos ou grafias diferentes que podem apontar para o mesmo conceito.",
-    "nlu": "Compreensão de linguagem natural: leitura automática de textos para reconhecer entidades, temas e relações.",
-}
+ANIMAIS = [
+    "Águia","Boto","Capivara","Doninha","Ema","Falcão","Gavião","Harpia","Irara","Jaguar",
+    "Lontra","Mico","Onça","Paca","Quati","Raposa","Tamanduá","Urubu","Veado","Zorrilho",
+    "Arara","Bugio","Caititu","Jaguatirica","Lobo","Mutum","Pirarucu","Tucano","Sucuri","Tatu"
+]
+ADJETIVOS = [
+    "Azul","Bravo","Calmo","Dourado","Esperto","Feroz","Gracioso","Intenso","Jovial","Lento",
+    "Mágico","Nobre","Ousado","Preciso","Rápido","Sábio","Tímido","Único","Valente","Zeloso",
+    "Curioso","Furtivo","Altivo","Sereno","Vibrante","Audaz","Brilhante","Corajoso","Distinto","Elegante"
+]
 
-st.set_page_config(page_title=APP_TITLE, layout="wide", initial_sidebar_state="collapsed")
+def generate_animal_name():
+    random.seed()
+    return f"{random.choice(ANIMAIS)} {random.choice(ADJETIVOS)}"
 
-def now_str() -> str:
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+# ── CORE ──────────────────────────────────────────────────────────────
+def ensure_data_dir():
+    if not os.path.exists(DATA_DIR):
+        os.makedirs(DATA_DIR)
 
-def ensure_dir():
-    APP_DIR.mkdir(exist_ok=True)
-
-def read_json(path: Path, default):
-    ensure_dir()
-    if path.exists():
+def load_json_file(filepath, default):
+    ensure_data_dir()
+    if os.path.exists(filepath):
         try:
-            with path.open("r", encoding="utf-8") as f:
+            with open(filepath, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except Exception:
             return default
     return default
 
-def write_json(path: Path, data):
-    ensure_dir()
-    with path.open("w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+def save_json_file(filepath, data):
+    ensure_data_dir()
+    try:
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        st.error(f"Erro ao salvar {filepath}: {e}")
+        return False
 
-def normalize(text: str) -> str:
-    text = (text or "").strip().lower()
-    text = re.sub(r"\s+", " ", text)
-    return text
+# ── SIMILARIDADE ──────────────────────────────────────────────────────
+def ntag(tag):   return tag.lower().strip()
+def words(tag):  return set(ntag(tag).split())
+def ngrams(text, n=3):
+    t = ntag(text)
+    return set([t]) if len(t) < n else set(t[i:i+n] for i in range(len(t)-n+1))
 
-def similar(a: str, b: str) -> float:
-    a = normalize(a)
-    b = normalize(b)
-    if not a or not b:
-        return 0.0
-    if a == b:
-        return 1.0
+def sim(t1, t2):
+    a, b = ntag(t1), ntag(t2)
+    if a == b: return 1.0
     if a in b or b in a:
-        return 0.85
-    aw = set(a.split())
-    bw = set(b.split())
-    j = len(aw & bw) / max(1, len(aw | bw))
-    grams_a = {a[i:i+3] for i in range(max(1, len(a)-2))}
-    grams_b = {b[i:i+3] for i in range(max(1, len(b)-2))}
-    g = len(grams_a & grams_b) / max(1, len(grams_a | grams_b))
-    return round((j * 0.55) + (g * 0.45), 3)
+        return 0.55 + 0.45*(min(len(a),len(b))/max(len(a),len(b)))
+    w1,w2 = words(t1),words(t2)
+    if w1 and w2:
+        j = len(w1&w2)/len(w1|w2)
+        if j >= 0.5: return j
+    if len(a)>=3 and len(b)>=3:
+        ng1,ng2 = ngrams(a),ngrams(b)
+        nj = len(ng1&ng2)/len(ng1|ng2) if ng1|ng2 else 0
+        if nj > 0:
+            wj = len(w1&w2)/len(w1|w2) if w1|w2 else 0
+            return 0.6*nj + 0.4*wj
+    return 0.0
 
-def boot_data():
-    works = read_json(WORKS_FILE, [])
-    if not works:
-        works = [
-            {
-                "id": "w1",
-                "title": "Guernica",
-                "artist": "Pablo Picasso",
-                "image_url": "https://upload.wikimedia.org/wikipedia/en/7/74/PicassoGuernica.jpg",
-                "museum": "Museo Nacional Centro de Arte Reina Sofía",
-                "collection": "Coleção permanente",
-                "place": "Espanha",
-                "period": "modernismo do século XX",
-                "technique": "óleo sobre tela",
-                "material": "tinta a óleo",
-                "institutional_tags": ["guerra", "violência", "bombardeio", "cavalo", "figura humana"],
-                "description": "Pintura em preto, branco e cinza com figuras humanas e animais fragmentados, associada aos horrores da guerra."
-            },
-            {
-                "id": "w2",
-                "title": "A Noite Estrelada",
-                "artist": "Vincent van Gogh",
-                "image_url": "https://upload.wikimedia.org/wikipedia/commons/e/ea/The_Starry_Night.jpg",
-                "museum": "The Museum of Modern Art",
-                "collection": "Coleção de pintura",
-                "place": "França",
-                "period": "pós-impressionismo",
-                "technique": "óleo sobre tela",
-                "material": "tinta a óleo",
-                "institutional_tags": ["céu", "vila", "noite", "movimento", "paisagem"],
-                "description": "Paisagem noturna azul com redemoinhos no céu, estrelas brilhantes, lua intensa e uma vila abaixo."
-            },
-            {
-                "id": "w3",
-                "title": "Mona Lisa",
-                "artist": "Leonardo da Vinci",
-                "image_url": "https://upload.wikimedia.org/wikipedia/commons/6/6a/Mona_Lisa.jpg",
-                "museum": "Musée du Louvre",
-                "collection": "Pintura renascentista",
-                "place": "Itália",
-                "period": "renascimento",
-                "technique": "óleo sobre madeira",
-                "material": "madeira e tinta a óleo",
-                "institutional_tags": ["retrato", "sorriso", "figura feminina", "paisagem"],
-                "description": "Retrato de uma mulher sentada, com sorriso discreto, mãos cruzadas e fundo paisagístico difuso."
-            },
-        ]
-        write_json(WORKS_FILE, works)
+def tag_connections(tags_list, threshold=0.35):
+    uniq = list(set(ntag(t) for t in tags_list))
+    conns = []
+    for i in range(len(uniq)):
+        for j in range(i+1, len(uniq)):
+            s = sim(uniq[i], uniq[j])
+            if s >= threshold:
+                w1,w2 = words(uniq[i]),words(uniq[j])
+                shared = w1&w2
+                if uniq[i] in uniq[j] or uniq[j] in uniq[i]: tipo = "Contenção"
+                elif shared: tipo = f"Palavra comum: '{', '.join(shared)}'"
+                else: tipo = "Similaridade fonética"
+                conns.append({"tag_a":uniq[i],"tag_b":uniq[j],"similaridade":round(s,3),"tipo":tipo})
+    conns.sort(key=lambda x: x["similaridade"], reverse=True)
+    return conns
 
-    ontologies = read_json(ONTOLOGIES_FILE, [])
-    if not ontologies:
-        ontologies = [
-            {
-                "id": "o1",
-                "name": "Ontologia museológica base",
-                "description": "Estrutura inicial para organizar categorias e relações usadas na validação.",
-                "classes": DEFAULT_CLASSES,
-                "relations": DEFAULT_RELATIONS,
-                "timestamp": now_str(),
-            }
-        ]
-        write_json(ONTOLOGIES_FILE, ontologies)
+def tag_clusters(tags_list, threshold=0.35):
+    uniq  = list(set(ntag(t) for t in tags_list))
+    conns = tag_connections(uniq, threshold)
+    par   = {t:t for t in uniq}
+    def find(x):
+        while par[x]!=x: par[x]=par[par[x]]; x=par[x]
+        return x
+    def union(a,b):
+        ra,rb = find(a),find(b)
+        if ra!=rb: par[ra]=rb
+    for c in conns: union(c["tag_a"],c["tag_b"])
+    cl = defaultdict(list)
+    for t in uniq: cl[find(t)].append(t)
+    return [sorted(v) for v in cl.values() if len(v)>1]
 
-    admins = read_json(ADMIN_FILE, [])
+# ── CSS ───────────────────────────────────────────────────────────────
+def load_css():
+    st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap');
+*{margin:0;padding:0;box-sizing:border-box;font-family:'Poppins',sans-serif!important}
+@keyframes bg{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
+.stApp{background:linear-gradient(-45deg,#000 0%,#001F3F 25%,#000 50%,#001F3F 75%,#000 100%);
+  background-size:400% 400%;animation:bg 15s ease infinite;color:#e0e0e0}
+
+.top-navbar{position:fixed;top:0;left:0;right:0;z-index:9999;
+  background:rgba(255,255,255,.1);backdrop-filter:blur(20px) saturate(180%);
+  border-bottom:1px solid rgba(255,255,255,.2);padding:1.4rem 3rem;
+  display:flex;justify-content:space-between;align-items:center;
+  box-shadow:0 8px 32px rgba(0,0,0,.1)}
+.navbar-logo{font-size:1.8rem;font-weight:800;
+  background:linear-gradient(135deg,#a7e6ff 0%,#d1baff 100%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;letter-spacing:-1px}
+
+.main-content{margin-top:120px;padding:2rem 3rem;max-width:1600px;margin-left:auto;margin-right:auto}
+
+.glass-card{background:rgba(255,255,255,.15);backdrop-filter:blur(20px) saturate(180%);
+  border:1px solid rgba(255,255,255,.3);border-radius:24px;padding:2.5rem;margin:1.5rem 0;
+  box-shadow:0 8px 32px rgba(0,0,0,.1);transition:all .4s cubic-bezier(.4,0,.2,1);
+  position:relative;overflow:hidden}
+.glass-card::before{content:'';position:absolute;top:0;left:-100%;width:100%;height:100%;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.3),transparent);transition:left .5s}
+.glass-card:hover::before{left:100%}
+.glass-card:hover{transform:translateY(-8px) scale(1.02);box-shadow:0 16px 48px rgba(0,0,0,.2);
+  border-color:rgba(255,255,255,.5)}
+
+.obra-card{background:rgba(255,255,255,.2);backdrop-filter:blur(15px) saturate(180%);
+  border:1px solid rgba(255,255,255,.3);border-radius:20px;overflow:hidden;
+  transition:all .4s cubic-bezier(.4,0,.2,1);cursor:pointer;position:relative}
+.obra-card::after{content:'';position:absolute;top:0;left:0;right:0;bottom:0;
+  background:linear-gradient(135deg,rgba(0,0,0,.3),rgba(0,31,63,.3));opacity:0;transition:opacity .4s}
+.obra-card:hover::after{opacity:1}
+.obra-card:hover{transform:translateY(-12px) scale(1.03);box-shadow:0 20px 60px rgba(0,31,63,.4);
+  border-color:rgba(255,255,255,.6)}
+.obra-card img{width:100%;height:280px;object-fit:cover;transition:transform .6s cubic-bezier(.4,0,.2,1)}
+.obra-card:hover img{transform:scale(1.15) rotate(2deg)}
+
+.main-title{color:white;font-size:3.5rem;font-weight:800;text-align:center;margin:2rem 0 1rem;
+  letter-spacing:-2px;text-shadow:0 4px 20px rgba(0,0,0,.3)}
+.subtitle{color:rgba(255,255,255,.95);font-size:1.3rem;text-align:center;margin-bottom:3rem;
+  line-height:1.8;font-weight:300}
+
+.tag-badge{display:inline-block;background:rgba(255,255,255,.25);backdrop-filter:blur(10px);
+  border:1px solid rgba(255,255,255,.4);color:white;padding:.5rem 1.1rem;border-radius:50px;
+  margin:.3rem;font-size:.88rem;font-weight:600;transition:all .3s}
+.tag-badge:hover{background:rgba(255,255,255,.4);transform:translateY(-3px) scale(1.05)}
+.tag-green {background:rgba(34,197,94,.25)!important;border-color:rgba(34,197,94,.5)!important;color:#dcfce7!important}
+.tag-amber {background:rgba(245,158,11,.25)!important;border-color:rgba(245,158,11,.5)!important;color:#fef3c7!important}
+.tag-blue  {background:rgba(96,165,250,.25)!important;border-color:rgba(96,165,250,.5)!important;color:#dbeafe!important}
+
+.animal-badge{display:inline-block;background:rgba(167,230,255,.2);border:1px solid rgba(167,230,255,.45);
+  color:#a7e6ff;padding:.35rem 1rem;border-radius:50px;font-size:.85rem;font-weight:700}
+
+.kpi-card{background:rgba(255,255,255,.16);backdrop-filter:blur(20px) saturate(180%);
+  border:1px solid rgba(255,255,255,.28);border-radius:18px;padding:1.6rem;text-align:center;
+  color:white;box-shadow:0 8px 32px rgba(0,0,0,.12);transition:all .4s}
+.kpi-card:hover{transform:translateY(-6px) scale(1.04);box-shadow:0 16px 48px rgba(0,31,63,.28)}
+.kpi-val{font-size:2.5rem;font-weight:800;margin:.6rem 0;text-shadow:0 4px 20px rgba(0,0,0,.2)}
+.kpi-lbl{font-size:.78rem;text-transform:uppercase;letter-spacing:2px;font-weight:600;opacity:.8}
+.kpi-sub{font-size:.7rem;opacity:.5;margin-top:.3rem}
+
+.sc{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.13);border-radius:14px;padding:1.3rem;margin:.7rem 0}
+.sc-b{border-left:4px solid #60a5fa;background:rgba(96,165,250,.07)}
+.sc-g{border-left:4px solid #34d399;background:rgba(52,211,153,.07)}
+.sc-p{border-left:4px solid #a78bfa;background:rgba(167,139,250,.07)}
+.sc-a{border-left:4px solid #fbbf24;background:rgba(251,191,36,.07)}
+
+.insight{background:rgba(167,230,255,.1);border:1px solid rgba(167,230,255,.28);border-radius:12px;
+  padding:1rem 1.4rem;margin:.6rem 0;color:rgba(255,255,255,.9);font-size:.9rem;line-height:1.7}
+.insight strong{color:#a7e6ff}
+
+.conn-row{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;
+  background:rgba(255,255,255,.06);border-radius:11px;padding:.85rem 1.2rem;margin:.3rem 0;
+  border-left:3px solid rgba(255,255,255,.2);transition:background .2s}
+.conn-row:hover{background:rgba(255,255,255,.12)}
+
+.cluster-wrap{background:rgba(255,255,255,.05);border-radius:14px;padding:1.1rem 1.4rem;
+  margin:.5rem 0;border:1px solid rgba(255,255,255,.1)}
+.cluster-title{font-size:.76rem;text-transform:uppercase;letter-spacing:1.5px;
+  color:rgba(167,139,250,.8);margin-bottom:.55rem;font-weight:700}
+.cluster-pill{display:inline-flex;align-items:center;gap:5px;background:rgba(168,85,247,.2);
+  border:1px solid rgba(168,85,247,.38);border-radius:50px;padding:.32rem .85rem;
+  margin:.2rem;font-size:.78rem;font-weight:600;color:#f3e8ff}
+
+.pbar-o{background:rgba(255,255,255,.1);border-radius:50px;height:6px;margin:3px 0;overflow:hidden}
+.pbar-i{height:100%;border-radius:50px;transition:width .5s}
+.divider{height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.22),transparent);margin:1.6rem 0}
+
+.stButton button{background:rgba(255,255,255,.25)!important;backdrop-filter:blur(15px)!important;
+  color:white!important;border:1px solid rgba(255,255,255,.4)!important;border-radius:50px!important;
+  padding:1rem 2.5rem!important;font-weight:700!important;font-size:1rem!important;
+  transition:all .4s!important;box-shadow:0 8px 25px rgba(0,0,0,.15)!important;
+  text-transform:uppercase;letter-spacing:1px}
+.stButton button:hover{background:rgba(255,255,255,.4)!important;
+  box-shadow:0 12px 40px rgba(0,31,63,.4)!important;
+  transform:translateY(-4px) scale(1.05)!important;border-color:rgba(255,255,255,.6)!important}
+
+.stTextInput input,.stTextArea textarea,.stSelectbox select{
+  background:rgba(255,255,255,.18)!important;backdrop-filter:blur(10px)!important;
+  border:1px solid rgba(255,255,255,.28)!important;color:white!important;
+  border-radius:14px!important;padding:.9rem!important;font-weight:500!important}
+.stTextInput input::placeholder,.stTextArea textarea::placeholder{color:rgba(255,255,255,.55)!important}
+.stTextInput input:focus,.stTextArea textarea:focus{
+  border-color:rgba(255,255,255,.6)!important;box-shadow:0 0 0 3px rgba(255,255,255,.18)!important}
+
+label{color:white!important;font-weight:700!important;font-size:1rem!important;
+  text-shadow:0 2px 10px rgba(0,0,0,.2)}
+
+.stTabs [data-baseweb="tab-list"]{gap:.7rem;background:rgba(255,255,255,.1);
+  backdrop-filter:blur(10px);padding:.45rem;border-radius:14px}
+.stTabs [data-baseweb="tab"]{background:rgba(255,255,255,.14);
+  border:1px solid rgba(255,255,255,.18);border-radius:10px;color:white;
+  padding:.75rem 1.5rem;font-weight:700;transition:all .3s}
+.stTabs [data-baseweb="tab"]:hover{background:rgba(255,255,255,.24);transform:translateY(-2px)}
+.stTabs [aria-selected="true"]{background:rgba(255,255,255,.33)!important;
+  border-color:rgba(255,255,255,.48)!important;box-shadow:0 6px 20px rgba(0,31,63,.25)!important}
+
+.stAlert{background:rgba(255,255,255,.18)!important;backdrop-filter:blur(15px)!important;
+  border-radius:14px!important;border-left:4px solid!important;color:white!important}
+#MainMenu,footer,header{visibility:hidden}
+.stDeployButton{display:none}
+[data-testid="stSidebar"]{display:none}
+h1,h2,h3,h4,h5,h6{color:white;font-weight:700;text-shadow:0 2px 15px rgba(0,0,0,.3)}
+.dataframe{background:rgba(255,255,255,.14)!important;border:1px solid rgba(255,255,255,.2)!important;
+  border-radius:14px!important;color:white!important}
+.dataframe th{background:rgba(255,255,255,.22)!important;color:white!important;font-weight:700!important}
+.dataframe td{color:white!important}
+div[data-testid="stTextInput"]>div{background:transparent!important;border:none!important;
+  box-shadow:none!important;padding:0!important}
+div[data-testid="stTextInput"]{background:transparent!important;border:none!important}
+div[data-testid="stTextInput"] input{border-radius:11px!important;
+  background:rgba(255,255,255,.14)!important;border:1px solid rgba(255,255,255,.22)!important;
+  padding:.75rem 1rem!important}
+@media(max-width:768px){.main-title{font-size:2.5rem}.main-content{margin-top:140px;padding:1rem}}
+</style>""", unsafe_allow_html=True)
+
+# ── HELPERS ───────────────────────────────────────────────────────────
+def kpi(label, value, sub="", color="#a7e6ff"):
+    return (f"<div class='kpi-card'>"
+            f"<div class='kpi-lbl'>{label}</div>"
+            f"<div class='kpi-val' style='color:{color}'>{value}</div>"
+            f"{'<div class=kpi-sub>'+sub+'</div>' if sub else ''}"
+            f"</div>")
+
+def insight(text):
+    return f"<div class='insight'>{text}</div>"
+
+def divider():
+    return "<div class='divider'></div>"
+
+def pbar(pct, color="#60a5fa"):
+    w = min(100, max(0, pct*100))
+    return f"<div class='pbar-o'><div class='pbar-i' style='width:{w:.1f}%;background:{color}'></div></div>"
+
+# ── DADOS ─────────────────────────────────────────────────────────────
+def check_admin():
+    admins = load_json_file(ADMIN_FILE, [])
     if not admins:
-        admins = [{"login": ADMIN_LOGIN, "password": ADMIN_PASSWORD}]
-        write_json(ADMIN_FILE, admins)
+        hashed = hashlib.sha256(ADMIN_PASSWORD.encode()).hexdigest()
+        save_json_file(ADMIN_FILE, [{"id":1,"username":ADMIN_USERNAME,"password":hashed}])
 
-    if not SETTINGS_FILE.exists():
-        write_json(SETTINGS_FILE, {"font_scale": 1.0, "high_contrast": False})
+def gen_uid():
+    return base64.b64encode(os.urandom(12)).decode('ascii')
 
-class Store:
-    def works(self):
-        return read_json(WORKS_FILE, [])
-    def tags(self):
-        return read_json(TAGS_FILE, [])
-    def responses(self):
-        return read_json(RESPONSES_FILE, [])
-    def validations(self):
-        return read_json(VALIDATIONS_FILE, [])
-    def ontologies(self):
-        return read_json(ONTOLOGIES_FILE, [])
-    def settings(self):
-        return read_json(SETTINGS_FILE, {"font_scale": 1.0, "high_contrast": False})
-
-    def save_works(self, data): write_json(WORKS_FILE, data)
-    def save_tags(self, data): write_json(TAGS_FILE, data)
-    def save_responses(self, data): write_json(RESPONSES_FILE, data)
-    def save_validations(self, data): write_json(VALIDATIONS_FILE, data)
-    def save_ontologies(self, data): write_json(ONTOLOGIES_FILE, data)
-    def save_settings(self, data): write_json(SETTINGS_FILE, data)
-
-store = Store()
-boot_data()
-
-def ensure_state():
-    defaults = {
-        "public_unlocked": False,
-        "public_user_id": None,
-        "questionnaire_saved": False,
-        "selected_work_id": None,
-        "admin_logged_in": False,
-        "tab_public": "explorar obras",
-        "tab_admin": "painel",
-    }
-    for k, v in defaults.items():
-        if k not in st.session_state:
-            st.session_state[k] = v
-    if not st.session_state["public_user_id"]:
-        st.session_state["public_user_id"] = f"u_{uuid.uuid4().hex[:10]}"
-
-def inject_css():
-    settings = store.settings()
-    font_scale = float(settings.get("font_scale", 1.0))
-    high_contrast = bool(settings.get("high_contrast", False))
-    text = "#141417" if not high_contrast else "#0b0b0e"
-    sub = "#4f5157" if not high_contrast else "#1e1f24"
-    line = "rgba(255,255,255,.6)"
-    bg = "#efefef" if not high_contrast else "#ffffff"
-    glass = "rgba(255,255,255,.30)" if not high_contrast else "rgba(255,255,255,.55)"
-    css = f"""
-    <style>
-    :root {{
-        --fontScale: {font_scale};
-        --bg: {bg};
-        --text: {text};
-        --textSub: {sub};
-        --glass: {glass};
-        --glassStrong: rgba(255,255,255,.45);
-        --line: {line};
-        --accent: #ea4b4b;
-        --buttonBg: rgba(16, 29, 68, .88);
-        --buttonBorder: rgba(255,255,255,.26);
-        --buttonText: #ffffff;
-    }}
-    html, body, [class*="css"] {{
-        font-family: "Times New Roman", Times, serif !important;
-    }}
-    .stApp {{
-        background:
-            radial-gradient(circle at 20% 20%, rgba(255,255,255,.85), transparent 30%),
-            radial-gradient(circle at 80% 30%, rgba(255,255,255,.55), transparent 28%),
-            linear-gradient(180deg, #ececec 0%, #e9e9e9 100%);
-        color: var(--text);
-    }}
-    #MainMenu, footer, header, [data-testid="stToolbar"] {{
-        visibility: hidden;
-        height: 0;
-    }}
-    [data-testid="stHeader"] {{
-        display: none;
-    }}
-    .app-title {{
-        font-size: calc(3.1rem * var(--fontScale));
-        color: var(--text);
-        margin: 1.1rem 0 .1rem 0;
-        line-height: 1.05;
-        letter-spacing: -.02em;
-        font-weight: 700;
-    }}
-    # subtitle removed to keep header cleaner
-        color: var(--textSub);
-        font-size: calc(1.18rem * var(--fontScale));
-        margin-bottom: 1.2rem;
-    }}
-    .glass-panel {{
-        background: var(--glass);
-        border: 1px solid rgba(255,255,255,.42);
-        border-radius: 28px;
-        box-shadow:
-            inset 0 1px 0 rgba(255,255,255,.48),
-            0 12px 40px rgba(0,0,0,.05);
-        backdrop-filter: blur(14px);
-        padding: 1rem 1.1rem;
-    }}
-    .section-card {{
-        background: rgba(255,255,255,.28);
-        border: 1px solid rgba(255,255,255,.42);
-        border-radius: 24px;
-        padding: 1.2rem 1.3rem;
-        box-shadow: 0 8px 30px rgba(0,0,0,.04);
-        margin-bottom: 1rem;
-        color: var(--text);
-    }}
-    .metric-card {{
-        background: rgba(255,255,255,.28);
-        border: 1px solid rgba(255,255,255,.42);
-        border-radius: 24px;
-        padding: 1rem 1.1rem;
-        min-height: 120px;
-        margin-bottom: .8rem;
-        color: var(--text);
-    }}
-    .metric-label {{
-        font-size: calc(.95rem * var(--fontScale));
-        color: var(--textSub);
-        text-transform: uppercase;
-        letter-spacing: .12em;
-        margin-bottom: .35rem;
-    }}
-    .metric-value {{
-        font-size: calc(2.05rem * var(--fontScale));
-        font-weight: 700;
-        color: var(--text);
-        line-height: 1.1;
-    }}
-    .metric-desc {{
-        color: var(--textSub);
-        font-size: calc(1rem * var(--fontScale));
-        margin-top: .2rem;
-    }}
-    .work-card {{
-        background: rgba(255,255,255,.20);
-        border-radius: 26px;
-        padding: .85rem;
-        border: 1px solid rgba(255,255,255,.36);
-        margin-bottom: 1rem;
-    }}
-    .work-title {{
-        font-size: calc(1.25rem * var(--fontScale));
-        color: var(--text);
-        font-weight: 700;
-        margin-top: .2rem;
-    }}
-    .work-meta {{
-        color: var(--textSub);
-        font-size: calc(1rem * var(--fontScale));
-        line-height: 1.55;
-        margin-top: .25rem;
-    }}
-    .small-note {{
-        color: var(--textSub);
-        font-size: calc(.98rem * var(--fontScale));
-    }}
-    .success-chip {{
-        display: inline-block;
-        padding: .28rem .65rem;
-        border-radius: 999px;
-        background: rgba(36, 141, 87, .12);
-        color: #185f3d;
-        border: 1px solid rgba(36, 141, 87, .18);
-        margin-right: .35rem;
-        margin-bottom: .35rem;
-    }}
-    .ontology-chip {{
-        display: inline-block;
-        padding: .28rem .65rem;
-        border-radius: 999px;
-        background: rgba(80, 93, 220, .10);
-        color: #2f3e96;
-        border: 1px solid rgba(80,93,220,.18);
-        margin-right: .35rem;
-        margin-bottom: .35rem;
-    }}
-    h1,h2,h3,h4,h5,p,span,div,label {{
-        color: var(--text) !important;
-    }}
-    .stTabs [data-baseweb="tab-list"] {{
-        background: rgba(255,255,255,.25);
-        border: 1px solid rgba(255,255,255,.42);
-        padding: .55rem;
-        border-radius: 30px;
-        gap: .45rem;
-    }}
-    .stTabs [data-baseweb="tab"] {{
-        background: rgba(255,255,255,.22);
-        border: 1px solid rgba(255,255,255,.38);
-        border-radius: 999px;
-        padding: .85rem 1.15rem;
-        color: var(--text) !important;
-        font-size: calc(1rem * var(--fontScale));
-    }}
-    .stTabs [aria-selected="true"] {{
-        box-shadow: inset 0 1px 0 rgba(255,255,255,.5), 0 4px 18px rgba(234,75,75,.15);
-        border-color: rgba(234,75,75,.25) !important;
-    }}
-    .stButton button, .stDownloadButton button, .stFormSubmitButton button {{
-        background:
-            linear-gradient(180deg, rgba(255,255,255,.22), rgba(255,255,255,.10)),
-            var(--buttonBg) !important;
-        color: var(--buttonText) !important;
-        border: 1px solid var(--buttonBorder) !important;
-        border-radius: 26px !important;
-        backdrop-filter: blur(18px) !important;
-        box-shadow:
-            inset 0 1px 0 rgba(255,255,255,.15),
-            0 10px 24px rgba(0,0,0,.14) !important;
-        padding: .88rem 1.2rem !important;
-        font-size: calc(1rem * var(--fontScale)) !important;
-        min-height: 58px !important;
-    }}
-    .stButton button:hover, .stDownloadButton button:hover, .stFormSubmitButton button:hover {{
-        border-color: rgba(255,255,255,.42) !important;
-        box-shadow: inset 0 1px 0 rgba(255,255,255,.24), 0 12px 28px rgba(0,0,0,.18) !important;
-    }}
-    .stTextInput input, .stTextArea textarea, .stSelectbox div[data-baseweb="select"] > div {{
-        background: rgba(255,255,255,.52) !important;
-        color: #1a1a1d !important;
-        border: 1px solid rgba(22,25,45,.65) !important;
-        border-radius: 24px !important;
-        font-size: calc(1.02rem * var(--fontScale)) !important;
-    }}
-    .stTextInput input::placeholder, .stTextArea textarea::placeholder {{
-        color: #60626a !important;
-        opacity: 1 !important;
-    }}
-    .stTextArea textarea {{
-        min-height: 150px !important;
-    }}
-    [data-baseweb="popover"] * {{
-        color: #1b1c20 !important;
-    }}
-    div[data-baseweb="select"] span, div[data-baseweb="select"] input {{
-        color: #1a1a1d !important;
-    }}
-    div[role="listbox"] * {{
-        color: #1a1a1d !important;
-        background: #f6f6f8 !important;
-    }}
-    .streamlit-expanderHeader {{
-        color: var(--text) !important;
-    }}
-    .block-container {{
-        padding-top: 1rem;
-        padding-bottom: 3rem;
-    }}
-    .audio-box {{
-        background: rgba(255,255,255,.24);
-        border: 1px solid rgba(255,255,255,.4);
-        border-radius: 22px;
-        padding: .9rem 1rem;
-        margin-top: .5rem;
-    }}
-    .divider-line {{
-        height: 1px;
-        background: linear-gradient(90deg, transparent, rgba(0,0,0,.07), transparent);
-        margin: .9rem 0 1.2rem 0;
-    }}
-    </style>
-    """
-    st.markdown(css, unsafe_allow_html=True)
-
-def build_description(work: Dict[str, Any]) -> str:
-    title = work.get("title", "obra")
-    artist = work.get("artist", "autor não informado")
-    period = work.get("period", "")
-    place = work.get("place", "")
-    museum = work.get("museum", "")
-    technique = work.get("technique", "")
-    tags = ", ".join(work.get("institutional_tags", [])[:5])
-    base = work.get("description", "")
-    desc = (
-        f"Descrição da obra {title}, de {artist}. "
-        f"É uma imagem vinculada ao contexto de {period}. "
-        f"Relaciona-se a {place}. "
-        f"Está associada ao museu {museum}. "
-        f"Técnica registrada: {technique}. "
-        f"Aspectos principais: {tags}. "
-        f"{base}"
-    )
-    return re.sub(r"\s+", " ", desc).strip()
-
-def explain_complex_terms(text: str) -> List[str]:
-    found = []
-    t = normalize(text)
-    for term, explanation in COMPLEX_WORDS.items():
-        if term in t:
-            found.append(f"{term}: {explanation}")
-    return found
-
-def get_user_tags_for_work(user_id: str, work_id: str) -> List[Dict[str, Any]]:
-    return [t for t in store.tags() if t.get("user_id") == user_id and t.get("work_id") == work_id]
-
-def add_tag(user_id: str, work_id: str, tag: str):
-    tags = store.tags()
-    tags.append({
-        "id": f"t_{uuid.uuid4().hex[:10]}",
-        "user_id": user_id,
-        "work_id": work_id,
-        "tag": tag.strip(),
-        "normalized": normalize(tag),
-        "timestamp": now_str(),
-    })
-    store.save_tags(tags)
-
-def save_questionnaire():
-    responses = store.responses()
-    user_id = st.session_state["public_user_id"]
-    payload = {
-        "user_id": user_id,
-        "q1": st.session_state.get("q1_value", ""),
-        "q2": st.session_state.get("q2_value", ""),
-        "q3": st.session_state.get("q3_value", ""),
-        "timestamp": now_str(),
-    }
-    responses = [r for r in responses if r.get("user_id") != user_id]
-    responses.append(payload)
-    store.save_responses(responses)
-    st.session_state["public_unlocked"] = True
-    st.session_state["questionnaire_saved"] = True
-
-def login_ok(login: str, password: str) -> bool:
-    admins = read_json(ADMIN_FILE, [])
-    if any(a.get("login") == login and a.get("password") == password for a in admins):
-        return True
-    if login == ADMIN_LOGIN and password == ADMIN_PASSWORD:
-        admins = [{"login": ADMIN_LOGIN, "password": ADMIN_PASSWORD}]
-        write_json(ADMIN_FILE, admins)
-        return True
-    return False
-
-def learning_index() -> Dict[str, Any]:
-    works = store.works()
-    tags = store.tags()
-    validations = store.validations()
-    ontologies = store.ontologies()
-
-    work_map = {w["id"]: w for w in works}
-    exact_category = {}
-    exact_concept = {}
-    for v in validations:
-        tag = normalize(v.get("tag", ""))
-        if tag:
-            if v.get("category"):
-                exact_category[tag] = v["category"]
-            if v.get("concept"):
-                exact_concept[tag] = v["concept"]
-
-    ontology_terms = []
-    for o in ontologies:
-        ontology_terms.extend(o.get("classes", []))
-        ontology_terms.extend(o.get("relations", []))
-
-    work_context = defaultdict(list)
-    for t in tags:
-        w = work_map.get(t.get("work_id"))
-        if not w:
-            continue
-        work_context[w["id"]].append(normalize(t.get("tag", "")))
-
-    return {
-        "work_map": work_map,
-        "exact_category": exact_category,
-        "exact_concept": exact_concept,
-        "ontology_terms": sorted(set(normalize(x) for x in ontology_terms if x)),
-        "work_context": work_context,
-    }
-
-def predict_tag(tag: str, work: Dict[str, Any]) -> Tuple[str, str, List[str], List[str]]:
-    idx = learning_index()
-    ntag = normalize(tag)
-    if not ntag:
-        return "outro", "", [], []
-
-    exact_cat = idx["exact_category"].get(ntag)
-    exact_con = idx["exact_concept"].get(ntag)
-    if exact_cat or exact_con:
-        examples = [f"aprendido anteriormente para {ntag}"]
-        warnings = []
-        return exact_cat or "outro", exact_con or ntag, examples, warnings
-
-    metadata_bag = []
-    for key in ["artist", "museum", "collection", "place", "period", "technique", "material", "description", "title"]:
-        metadata_bag.append(str(work.get(key, "")))
-    metadata_bag.extend(work.get("institutional_tags", []))
-    meta_text = " ".join(metadata_bag)
-    examples = []
-    warnings = []
-
-    cat = "tema"
-    concept = ntag
-    if normalize(work.get("artist", "")) and similar(ntag, work.get("artist", "")) > 0.75:
-        cat = "pessoa"
-    elif normalize(work.get("place", "")) and similar(ntag, work.get("place", "")) > 0.75:
-        cat = "lugar"
-    elif normalize(work.get("period", "")) and (similar(ntag, work.get("period", "")) > 0.65 or ntag in normalize(work.get("period", ""))):
-        cat = "período"
-    elif normalize(work.get("technique", "")) and (similar(ntag, work.get("technique", "")) > 0.65 or ntag in normalize(work.get("technique", ""))):
-        cat = "técnica"
-    elif normalize(work.get("material", "")) and (similar(ntag, work.get("material", "")) > 0.65 or ntag in normalize(work.get("material", ""))):
-        cat = "material"
-    else:
-        meta_hits = []
-        for t in work.get("institutional_tags", []):
-            s = similar(ntag, t)
-            if s > 0.6:
-                meta_hits.append((t, s))
-        meta_hits = sorted(meta_hits, key=lambda x: x[1], reverse=True)[:3]
-        examples.extend([f"similar a {a}" for a, _ in meta_hits])
-        if meta_hits:
-            concept = meta_hits[0][0]
-
-    for vtag in idx["exact_category"].keys():
-        if similar(ntag, vtag) > 0.75 and vtag != ntag:
-            warnings.append(f"possível variação de grafia de '{vtag}'")
-            break
-
-    return cat, concept, examples[:3], warnings[:3]
-
-def save_validation(tag_id: str, category: str, concept: str, decision: str, ontology_name: str, notes: str):
-    tags = store.tags()
-    tag_obj = next((x for x in tags if x["id"] == tag_id), None)
-    if not tag_obj:
-        return
-    vals = store.validations()
-    vals = [v for v in vals if v.get("tag_id") != tag_id]
-    vals.append({
-        "id": f"v_{uuid.uuid4().hex[:10]}",
-        "tag_id": tag_id,
-        "tag": tag_obj["tag"],
-        "work_id": tag_obj["work_id"],
-        "category": category,
-        "concept": concept,
-        "decision": decision,
-        "ontology": ontology_name,
-        "notes": notes,
-        "timestamp": now_str(),
-    })
-    store.save_validations(vals)
-
-def build_search_rows() -> List[Dict[str, Any]]:
-    works = store.works()
-    tags = store.tags()
-    validations = store.validations()
-    work_map = {w["id"]: w for w in works}
-    val_by_tag = {v["tag_id"]: v for v in validations}
-    rows = []
-
-    for w in works:
-        rows.append({
-            "type": "obra",
-            "label": w["title"],
-            "work_id": w["id"],
-            "payload": " ".join([
-                w.get("title", ""), w.get("artist", ""), w.get("museum", ""), w.get("collection", ""),
-                w.get("place", ""), w.get("period", ""), w.get("technique", ""), w.get("material", ""),
-                w.get("description", ""), " ".join(w.get("institutional_tags", []))
-            ])
-        })
-
-    for t in tags:
-        w = work_map.get(t["work_id"], {})
-        v = val_by_tag.get(t["id"], {})
-        rows.append({
-            "type": "tag",
-            "label": t["tag"],
-            "work_id": t["work_id"],
-            "payload": " ".join([
-                t.get("tag", ""), w.get("title", ""), w.get("artist", ""), w.get("museum", ""),
-                v.get("category", ""), v.get("concept", ""), " ".join(w.get("institutional_tags", [])),
-                w.get("description", "")
-            ])
-        })
-    return rows
-
-def search_connected(query: str) -> List[Dict[str, Any]]:
-    q = normalize(query)
-    if not q:
-        return []
-    rows = build_search_rows()
-    scored = []
-    for row in rows:
-        payload = normalize(row["payload"])
-        s = similar(q, payload) if q in payload else 0
-        if q in payload:
-            s = max(s, 0.8)
-        if s > 0.22:
-            scored.append((s, row))
-    scored = sorted(scored, key=lambda x: x[0], reverse=True)
-    return [r for _, r in scored[:20]]
-
-def temporal_frames() -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    tags = store.tags()
-    if not tags:
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
-    df = pd.DataFrame(tags)
-    df["timestamp"] = pd.to_datetime(df["timestamp"])
-    df["day"] = df["timestamp"].dt.date.astype(str)
-    df["month"] = df["timestamp"].dt.to_period("M").astype(str)
-    df["year"] = df["timestamp"].dt.year.astype(str)
-
-    by_day = df.groupby("day").agg(
-        total=("id", "count"),
-        tags=("tag", lambda x: ", ".join(sorted(pd.Series(x).astype(str).unique())[:20])),
-    ).reset_index()
-
-    by_month = df.groupby("month").agg(
-        total=("id", "count"),
-        tags=("tag", lambda x: ", ".join(sorted(pd.Series(x).astype(str).unique())[:25])),
-    ).reset_index()
-
-    by_year = df.groupby("year").agg(
-        total=("id", "count"),
-        tags=("tag", lambda x: ", ".join(sorted(pd.Series(x).astype(str).unique())[:25])),
-    ).reset_index()
-
-    return by_day, by_month, by_year
-
-def ontology_count() -> int:
-    return len(store.ontologies())
-
-def metrics():
-    works = store.works()
-    tags = store.tags()
-    validations = store.validations()
-    validated = len([v for v in validations if v.get("decision") == "approved"])
-    pending = max(0, len(tags) - len(validations))
-    return {
-        "obras": len(works),
-        "tags": len(tags),
-        "fila": pending,
-        "validadas": validated,
-        "ontologias": len(store.ontologies()),
-    }
-
-def figure_temporal(df: pd.DataFrame, x_col: str, title: str):
-    if df.empty:
-        return None
-    if PLOTLY_OK:
-        fig = go.Figure(
-            data=[go.Bar(x=df[x_col], y=df["total"], marker=dict(color="rgba(38,92,255,.65)"))]
-        )
-        fig.update_layout(
-            title=title,
-            paper_bgcolor="rgba(255,255,255,.02)",
-            plot_bgcolor="rgba(255,255,255,.02)",
-            font=dict(family="Times New Roman", color="#1a1a1d", size=16),
-            margin=dict(l=20, r=20, t=60, b=20),
-            height=360,
-        )
-        return fig
-    return None
-
-def build_network_elements(selected_layers: List[str]):
-    works = store.works()
-    tags = store.tags()
-    validations = store.validations()
-    ontologies = store.ontologies()
-    val_by_tag = {v["tag_id"]: v for v in validations}
-
-    nodes = []
-    edges = []
-    node_seen = set()
-
-    def add_node(node_id: str, label: str, layer: str, color: str):
-        if layer not in selected_layers:
-            return
-        if node_id in node_seen:
-            return
-        node_seen.add(node_id)
-        nodes.append({"id": node_id, "label": label, "layer": layer, "color": color})
-
-    def add_edge(a: str, b: str):
-        edges.append((a, b))
-
-    for w in works:
-        wid = f"work:{w['id']}"
-        add_node(wid, w["title"], "obras", "#1f77b4")
-        artist = f"artist:{w['artist']}"
-        add_node(artist, w["artist"], "metadados", "#8e44ad")
-        museum = f"museum:{w['museum']}"
-        add_node(museum, w["museum"], "metadados", "#16a085")
-        period = f"period:{w['period']}"
-        add_node(period, w["period"], "metadados", "#e67e22")
-        technique = f"tech:{w['technique']}"
-        add_node(technique, w["technique"], "metadados", "#c0392b")
-        material = f"material:{w['material']}"
-        add_node(material, w["material"], "metadados", "#2c3e50")
-        place = f"place:{w['place']}"
-        add_node(place, w["place"], "metadados", "#27ae60")
-        add_edge(wid, artist)
-        add_edge(wid, museum)
-        add_edge(wid, period)
-        add_edge(wid, technique)
-        add_edge(wid, material)
-        add_edge(wid, place)
-        for tag in w.get("institutional_tags", []):
-            tid = f"it:{normalize(tag)}"
-            add_node(tid, tag, "institucionais", "#7f8c8d")
-            add_edge(wid, tid)
-
-    for t in tags:
-        work_id = f"work:{t['work_id']}"
-        tid = f"tag:{t['id']}"
-        add_node(tid, t["tag"], "tags públicas", "#000000")
-        add_edge(work_id, tid)
-        v = val_by_tag.get(t["id"])
-        if v and v.get("concept"):
-            cid = f"concept:{normalize(v['concept'])}"
-            add_node(cid, v["concept"], "conceitos", "#9b59b6")
-            add_edge(tid, cid)
-            if v.get("ontology"):
-                oid = f"ontology:{normalize(v['ontology'])}"
-                add_node(oid, v["ontology"], "ontologias", "#d35400")
-                add_edge(cid, oid)
-
-    for o in ontologies:
-        oid = f"ontology:{normalize(o['name'])}"
-        add_node(oid, o["name"], "ontologias", "#d35400")
-        for cl in o.get("classes", []):
-            cid = f"class:{normalize(cl)}"
-            add_node(cid, cl, "ontologias", "#95a5a6")
-            add_edge(oid, cid)
-
-    return nodes, edges
-
-def network_figure(selected_layers: List[str], node_scale: int = 12):
-    nodes, edges = build_network_elements(selected_layers)
-    if not nodes:
-        return None
-
-    if not PLOTLY_OK:
-        return None
-
-    n = len(nodes)
-    coords = {}
-    for i, node in enumerate(nodes):
-        angle = (2 * math.pi * i) / max(1, n)
-        z = math.sin(i * 0.37) * 4
-        radius = 5 + (i % 7) * 0.7
-        x = math.cos(angle) * radius
-        y = math.sin(angle) * radius
-        coords[node["id"]] = (x, y, z)
-
-    edge_x, edge_y, edge_z = [], [], []
-    for a, b in edges:
-        if a in coords and b in coords:
-            x0, y0, z0 = coords[a]
-            x1, y1, z1 = coords[b]
-            edge_x += [x0, x1, None]
-            edge_y += [y0, y1, None]
-            edge_z += [z0, z1, None]
-
-    fig = go.Figure()
-    fig.add_trace(go.Scatter3d(
-        x=edge_x, y=edge_y, z=edge_z,
-        mode="lines",
-        line=dict(color="rgba(80,80,80,.22)", width=2),
-        hoverinfo="none",
-        showlegend=False
-    ))
-    for layer in sorted(set(n["layer"] for n in nodes)):
-        subset = [n for n in nodes if n["layer"] == layer]
-        xs = [coords[n["id"]][0] for n in subset]
-        ys = [coords[n["id"]][1] for n in subset]
-        zs = [coords[n["id"]][2] for n in subset]
-        labels = [n["label"] for n in subset]
-        colors = [n["color"] for n in subset]
-        fig.add_trace(go.Scatter3d(
-            x=xs, y=ys, z=zs,
-            mode="markers+text",
-            text=labels,
-            textposition="top center",
-            marker=dict(size=node_scale, color=colors, opacity=.9),
-            name=layer,
-            hovertemplate="%{text}<extra></extra>"
-        ))
-    fig.update_layout(
-        paper_bgcolor="rgba(255,255,255,.02)",
-        plot_bgcolor="rgba(255,255,255,.02)",
-        font=dict(family="Times New Roman", color="#1a1a1d", size=14),
-        margin=dict(l=0, r=0, t=10, b=0),
-        height=720,
-        scene=dict(
-            xaxis=dict(visible=False),
-            yaxis=dict(visible=False),
-            zaxis=dict(visible=False),
-            bgcolor="rgba(255,255,255,.02)",
-            camera=dict(eye=dict(x=1.35, y=1.35, z=1.15)),
-        ),
-        legend=dict(orientation="h", yanchor="bottom", y=1.01, x=0)
-    )
-    return fig
-
-def generate_pdf_bytes() -> bytes | None:
-    if not REPORTLAB_OK:
-        return None
-    data = metrics()
-    works = store.works()
-    tags = store.tags()
-    vals = store.validations()
-    by_day, by_month, by_year = temporal_frames()
-
-    buff = io.BytesIO()
-    doc = SimpleDocTemplate(buff, pagesize=A4, leftMargin=32, rightMargin=32, topMargin=32, bottomMargin=32)
-    styles = getSampleStyleSheet()
-    styles.add(ParagraphStyle(name="TitleCustom", fontName="Times-Roman", fontSize=20, leading=24, textColor=colors.HexColor("#111111")))
-    styles.add(ParagraphStyle(name="BodyCustom", fontName="Times-Roman", fontSize=11.5, leading=16, textColor=colors.HexColor("#222222")))
-    story = [
-        Paragraph("folksonomia — relatório administrativo", styles["TitleCustom"]),
-        Spacer(1, 12),
-        Paragraph(f"Gerado em {now_str()}.", styles["BodyCustom"]),
-        Spacer(1, 10),
-        Paragraph(f"Obras: {data['obras']} | Tags: {data['tags']} | Fila curatorial: {data['fila']} | Validações: {data['validadas']} | Ontologias: {data['ontologias']}", styles["BodyCustom"]),
-        Spacer(1, 12),
+@st.cache_data(ttl=5, show_spinner=False)
+def load_obras():
+    default = [
+        {"id":1,"titulo":"Guernica","artista":"Pablo Picasso","ano":"1937",
+         "imagem":"https://upload.wikimedia.org/wikipedia/en/7/74/PicassoGuernica.jpg"},
+        {"id":2,"titulo":"A Noite Estrelada","artista":"Vincent van Gogh","ano":"1889",
+         "imagem":"https://upload.wikimedia.org/wikipedia/commons/thumb/e/ea/Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg/1200px-Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg"},
+        {"id":3,"titulo":"Mona Lisa","artista":"Leonardo da Vinci","ano":"1503",
+         "imagem":"https://upload.wikimedia.org/wikipedia/commons/thumb/e/ec/Mona_Lisa%2C_by_Leonardo_da_Vinci%2C_from_C2RMF_retouched.jpg/800px-Mona_Lisa%2C_by_Leonardo_da_Vinci%2C_from_C2RMF_retouched.jpg"}
     ]
-    table_data = [["Obra", "Museu", "Período", "Técnica"]]
-    for w in works:
-        table_data.append([w["title"], w["museum"], w["period"], w["technique"]])
-    tb = Table(table_data, repeatRows=1)
-    tb.setStyle(TableStyle([
-        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#dfe5ff")),
-        ("TEXTCOLOR", (0,0), (-1,-1), colors.black),
-        ("FONTNAME", (0,0), (-1,-1), "Times-Roman"),
-        ("GRID", (0,0), (-1,-1), .4, colors.HexColor("#999999")),
-        ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.whitesmoke, colors.HexColor("#f7f7f7")]),
-    ]))
-    story.extend([tb, Spacer(1, 14)])
-    for title, frame in [("Tags por dia", by_day), ("Tags por mês", by_month), ("Tags por ano", by_year)]:
-        story.append(Paragraph(title, styles["BodyCustom"]))
-        rows = [[frame.columns[0], "total", "tags"]]
-        for _, row in frame.head(12).iterrows():
-            rows.append([str(row.iloc[0]), str(row["total"]), str(row["tags"])[:110]])
-        tab = Table(rows, repeatRows=1)
-        tab.setStyle(TableStyle([
-            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#f1e6e6")),
-            ("TEXTCOLOR", (0,0), (-1,-1), colors.black),
-            ("FONTNAME", (0,0), (-1,-1), "Times-Roman"),
-            ("GRID", (0,0), (-1,-1), .35, colors.HexColor("#bbbbbb"))
-        ]))
-        story.extend([tab, Spacer(1, 10)])
-    story.append(Paragraph(f"Total de tags validadas: {len(vals)}.", styles["BodyCustom"]))
-    doc.build(story)
-    return buff.getvalue()
+    obras = load_json_file(OBRAS_FILE, default)
+    if not obras:
+        save_json_file(OBRAS_FILE, default)
+        return default
+    return obras
 
-def export_csv_bytes(rows: List[Dict[str, Any]]) -> bytes:
-    if not rows:
-        return b""
-    frame = pd.DataFrame(rows)
-    return frame.to_csv(index=False).encode("utf-8")
+def save_answers(uid, animal, answers):
+    users = load_json_file(USERS_FILE, [])
+    users.append({"user_id":uid,"animal_name":animal,
+                  "timestamp":datetime.now().strftime("%Y-%m-%d %H:%M:%S"),**answers})
+    return save_json_file(USERS_FILE, users)
 
-def render_header():
-    st.markdown(f"<div class='app-title'>{APP_TITLE}</div>", unsafe_allow_html=True)
-    st.markdown("<div class='app-subtitle'>marcação, validação, busca conectada, ontologias e teia 3d</div>", unsafe_allow_html=True)
+def save_tag(uid, obra_id, tag):
+    tags = load_json_file(TAGS_FILE, [])
+    tags.append({"id":len(tags)+1,"user_id":uid,"obra_id":obra_id,
+                 "tag":tag.lower().strip(),
+                 "timestamp":datetime.now().strftime("%Y-%m-%d %H:%M:%S")})
+    st.cache_data.clear()
+    return save_json_file(TAGS_FILE, tags)
 
-def render_questionnaire():
-    st.markdown("<div class='section-card'><h2>acesso inicial</h2><p class='small-note'>responda às três perguntas para liberar a marcação das obras.</p></div>", unsafe_allow_html=True)
-    st.selectbox(
-        "1. qual é a sua frequência de visita a museus?",
-        ["nunca", "raramente", "ocasionalmente", "frequentemente"],
-        key="q1_value",
+def get_user_tags(uid):
+    tags = load_json_file(TAGS_FILE, [])
+    ut = [t for t in tags if t['user_id']==uid]
+    return pd.DataFrame(ut) if ut else pd.DataFrame()
+
+def get_obra_user_tags(obra_id, uid):
+    tags = load_json_file(TAGS_FILE, [])
+    f = [t for t in tags if t['obra_id']==obra_id and t['user_id']==uid]
+    if f:
+        df = pd.DataFrame(f)
+        c  = df['tag'].value_counts().reset_index()
+        c.columns = ["tag","count"]
+        return c
+    return pd.DataFrame(columns=["tag","count"])
+
+def check_login(username, password):
+    h = hashlib.sha256(password.encode()).hexdigest()
+    return username==ADMIN_USERNAME and h==hashlib.sha256(ADMIN_PASSWORD.encode()).hexdigest()
+
+def all_tags():
+    t = load_json_file(TAGS_FILE, [])
+    return pd.DataFrame(t) if t else pd.DataFrame()
+
+def all_users():
+    u = load_json_file(USERS_FILE, [])
+    return pd.DataFrame(u) if u else pd.DataFrame()
+
+# ── EXPORTAÇÃO ────────────────────────────────────────────────────────
+def html_quest(uid, animal, users_df):
+    if users_df.empty: return None
+    ud = users_df[users_df['user_id']==uid]
+    if ud.empty: return None
+    ui = ud.iloc[0]
+    return f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
+<style>*{{margin:0;padding:0;box-sizing:border-box}}
+body{{font-family:sans-serif;background:linear-gradient(135deg,#000,#001F3F);padding:40px;color:white}}
+.c{{max-width:900px;margin:0 auto;background:rgba(255,255,255,.15);padding:50px;border-radius:24px;border:1px solid rgba(255,255,255,.3)}}
+h1{{text-align:center;margin-bottom:15px;font-size:2.2rem}}
+.hi{{text-align:center;margin-bottom:35px;opacity:.9}}
+.ab{{background:rgba(167,230,255,.25);border:1px solid rgba(167,230,255,.5);color:#a7e6ff;
+  padding:.3rem 1rem;border-radius:50px;font-weight:700;display:inline-block}}
+.qb{{margin:22px 0;padding:18px 22px;background:rgba(255,255,255,.1);
+  border-left:4px solid rgba(255,255,255,.5);border-radius:12px}}
+.q{{font-weight:700;margin-bottom:8px}}.a{{line-height:1.7;opacity:.92}}
+.ft{{text-align:center;margin-top:40px;padding-top:18px;
+  border-top:1px solid rgba(255,255,255,.2);opacity:.65;font-size:.88rem}}</style></head>
+<body><div class="c"><h1>Respostas do Questionário</h1>
+<div class="hi">
+  <p>Usuário Anônimo: <span class="ab">🐾 {animal}</span></p>
+  <p style="margin-top:6px;opacity:.65">Data: {ui.get('timestamp','N/A')}</p>
+</div>
+<div class="qb"><div class="q">1. Nível de familiaridade com museus</div>
+<div class="a">{ui.get('q1','N/A')}</div></div>
+<div class="qb"><div class="q">2. Conhecimento sobre documentação museológica</div>
+<div class="a">{ui.get('q2','N/A')}</div></div>
+<div class="qb"><div class="q">3. O que você entende por 'tags'?</div>
+<div class="a">{ui.get('q3','N/A')}</div></div>
+<div class="ft">Sistema Folksonomia Digital — Ctrl+P → Salvar como PDF</div>
+</div></body></html>"""
+
+def html_tags(uid, animal, obras, tags_df):
+    ut = tags_df[tags_df['user_id']==uid] if not tags_df.empty else pd.DataFrame()
+    if ut.empty: return None
+    od = {o['id']:o for o in obras}
+    rows = "".join(
+        f"<tr><td>{i+1}</td>"
+        f"<td>{od.get(r['obra_id'],{}).get('titulo','Obra '+str(r['obra_id']))}</td>"
+        f"<td><span style='background:rgba(255,255,255,.22);padding:3px 10px;border-radius:50px'>{r['tag']}</span></td>"
+        f"<td>{r['timestamp']}</td></tr>"
+        for i,(_,r) in enumerate(ut.iterrows())
     )
-    st.selectbox(
-        "2. você já ouviu falar sobre documentação museológica?",
-        ["nenhum", "já ouvi falar", "tenho noção", "conheço bem"],
-        key="q2_value",
+    top = "".join(
+        f"<tr><td>{i}</td><td>{t}</td><td>{c}</td></tr>"
+        for i,(t,c) in enumerate(ut['tag'].value_counts().head(10).items(),1)
     )
-    st.text_area(
-        "3. o que você entende por tags aplicadas a acervos? descreva com suas palavras.",
-        key="q3_value",
-        placeholder="escreva com suas palavras",
-    )
-    if st.button("liberar acesso às obras", key="unlock_btn"):
-        if normalize(st.session_state.get("q3_value", "")):
-            save_questionnaire()
-            st.success("acesso liberado.")
-            st.rerun()
-        else:
-            st.error("preencha a terceira resposta para continuar.")
+    return f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
+<style>*{{margin:0;padding:0;box-sizing:border-box}}
+body{{font-family:sans-serif;background:linear-gradient(135deg,#000,#001F3F);padding:40px;color:white}}
+.c{{max-width:1100px;margin:0 auto;background:rgba(255,255,255,.15);padding:50px;border-radius:24px;border:1px solid rgba(255,255,255,.3)}}
+h1{{text-align:center;margin-bottom:15px;font-size:2.2rem}}
+.hi{{text-align:center;margin-bottom:28px;opacity:.9}}
+.ab{{background:rgba(167,230,255,.25);border:1px solid rgba(167,230,255,.5);color:#a7e6ff;
+  padding:.3rem 1rem;border-radius:50px;font-weight:700;display:inline-block}}
+.stats{{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:22px 0}}
+.sb{{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.28);
+  padding:18px;border-radius:12px;text-align:center}}
+.sv{{font-size:2.6rem;font-weight:800}}.sl{{font-size:.82rem;text-transform:uppercase;
+  letter-spacing:1.5px;margin-top:7px;opacity:.85}}
+table{{width:100%;border-collapse:collapse;margin:18px 0}}
+th,td{{padding:13px;text-align:left;border-bottom:1px solid rgba(255,255,255,.14)}}
+th{{background:rgba(255,255,255,.18);font-weight:700;text-transform:uppercase;font-size:.82rem}}
+tr:nth-child(even){{background:rgba(255,255,255,.04)}}
+.ft{{text-align:center;margin-top:38px;padding-top:18px;
+  border-top:1px solid rgba(255,255,255,.2);opacity:.65;font-size:.88rem}}</style></head>
+<body><div class="c"><h1>Relatório de Tags</h1>
+<div class="hi">
+  <p>Usuário Anônimo: <span class="ab">🐾 {animal}</span></p>
+  <p style="margin-top:6px;opacity:.65">Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}</p>
+</div>
+<div class="stats">
+  <div class="sb"><div class="sv">{len(ut)}</div><div class="sl">Total de Tags</div></div>
+  <div class="sb"><div class="sv">{ut['tag'].nunique()}</div><div class="sl">Tags Únicas</div></div>
+  <div class="sb"><div class="sv">{ut['obra_id'].nunique()}</div><div class="sl">Obras Etiquetadas</div></div>
+</div>
+<h2 style="margin:28px 0 14px;font-size:1.5rem">Todas as Tags</h2>
+<table><thead><tr><th>#</th><th>Obra</th><th>Tag</th><th>Data/Hora</th></tr></thead>
+<tbody>{rows}</tbody></table>
+<h2 style="margin:28px 0 14px;font-size:1.5rem">Top 10 Tags</h2>
+<table><thead><tr><th>Pos.</th><th>Tag</th><th>Freq.</th></tr></thead>
+<tbody>{top}</tbody></table>
+<div class="ft">Sistema Folksonomia Digital — Ctrl+P → Salvar como PDF</div>
+</div></body></html>"""
 
-def accessibility_popover(work: Dict[str, Any]):
-    with st.popover("Acessibilidade", use_container_width=True):
-        settings = store.settings()
-        font_scale = st.slider("tamanho das letras", 0.9, 1.5, float(settings.get("font_scale", 1.0)), 0.05, key=f"font_{work['id']}")
-        high_contrast = st.toggle("contraste reforçado", value=bool(settings.get("high_contrast", False)), key=f"contrast_{work['id']}")
-        if st.button("aplicar acessibilidade", key=f"apply_acc_{work['id']}"):
-            store.save_settings({"font_scale": font_scale, "high_contrast": high_contrast})
-            st.rerun()
-
-        desc = build_description(work)
-        st.markdown("<div class='audio-box'><strong>descrição da imagem</strong><br>" + desc + "</div>", unsafe_allow_html=True)
-
-        b64 = base64.b64encode(desc.encode("utf-8")).decode("utf-8")
-        if st.button("ouvir descrição", key=f"listen_{work['id']}"):
-            js = f"""
-            <script>
-            const txt = decodeURIComponent(escape(atob('{b64}')));
-            const u = new SpeechSynthesisUtterance(txt);
-            u.lang = 'pt-BR';
-            window.speechSynthesis.cancel();
-            window.speechSynthesis.speak(u);
-            </script>
-            """
-            st.components.v1.html(js, height=0)
-        if st.button("parar leitura", key=f"stop_{work['id']}"):
-            st.components.v1.html("<script>window.speechSynthesis.cancel();</script>", height=0)
-
-        explanations = explain_complex_terms(desc + " " + " ".join(work.get("institutional_tags", [])))
-        if explanations:
-            st.markdown("**explicação de palavras complexas**")
-            for item in explanations:
-                st.markdown(f"- {item}")
-
-def render_work_card(work: Dict[str, Any], user_id: str):
-    with st.container(border=False):
-        st.markdown("<div class='work-card'>", unsafe_allow_html=True)
-        st.image(work["image_url"], use_container_width=True)
-        c1, c2 = st.columns([1, 1.2])
-        with c1:
-            if st.button("Marcar", key=f"mark_{work['id']}", use_container_width=True):
-                current = st.session_state.get("selected_work_id")
-                st.session_state["selected_work_id"] = None if current == work["id"] else work["id"]
-                st.rerun()
-        with c2:
-            accessibility_popover(work)
-
-        if st.session_state.get("selected_work_id") == work["id"]:
-            st.markdown("<div class='section-card'>", unsafe_allow_html=True)
-            with st.form(f"tag_form_{work['id']}", clear_on_submit=True):
-                tag_value = st.text_input("sua tag", key=f"tag_input_{work['id']}", placeholder="escreva a tag")
-                submitted = st.form_submit_button("registrar tag", use_container_width=True)
-                if submitted:
-                    value = (tag_value or "").strip()
-                    if value:
-                        add_tag(user_id, work["id"], value)
-                        st.success("tag registrada.")
-                        st.rerun()
-                    else:
-                        st.error("digite uma tag.")
-            if st.button("fechar", key=f"close_{work['id']}", use_container_width=True):
-                st.session_state["selected_work_id"] = None
-                st.rerun()
-            st.markdown("<div class='small-note'>suas tags nesta imagem</div>", unsafe_allow_html=True)
-            user_tags = get_user_tags_for_work(user_id, work["id"])
-            if user_tags:
-                chips = "".join([f"<span class='success-chip'>{x['tag']}</span>" for x in user_tags])
-                st.markdown(chips, unsafe_allow_html=True)
-            else:
-                st.markdown("<div class='section-card'>nenhuma tag registrada por você nesta imagem ainda.</div>", unsafe_allow_html=True)
-            st.markdown("</div>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-def render_public():
-    if not st.session_state["public_unlocked"]:
-        render_questionnaire()
-        return
-    st.markdown("<div class='divider-line'></div>", unsafe_allow_html=True)
-    for work in store.works():
-        render_work_card(work, st.session_state["public_user_id"])
-
-def admin_login():
-    st.markdown("<div class='section-card'><h2>login administrativo</h2></div>", unsafe_allow_html=True)
-    login = st.text_input("login", value=ADMIN_LOGIN, key="admin_login_input")
-    password = st.text_input("senha", value=ADMIN_PASSWORD, type="password", key="admin_pass_input")
-    if st.button("entrar", key="admin_enter", use_container_width=True):
-        if login_ok(login, password):
-            st.session_state["admin_logged_in"] = True
-            st.rerun()
-        else:
-            st.error("credenciais inválidas.")
-
-def render_panel():
-    data = metrics()
-    c1, c2, c3, c4, c5 = st.columns(5)
-    metrics_info = [
-        ("obras", data["obras"], "obras monitoradas"),
-        ("tags", data["tags"], "marcações recebidas"),
-        ("fila", data["fila"], "pendentes de revisão"),
-        ("validações", data["validadas"], "decisões salvas"),
-        ("ontologias", data["ontologias"], "estruturas ativas"),
-    ]
-    for col, (label, value, desc) in zip([c1, c2, c3, c4, c5], metrics_info):
-        with col:
-            st.markdown(f"<div class='metric-card'><div class='metric-label'>{label}</div><div class='metric-value'>{value}</div><div class='metric-desc'>{desc}</div></div>", unsafe_allow_html=True)
-
-def render_validation():
-    tags = store.tags()
-    works = {w["id"]: w for w in store.works()}
-    ontologies = store.ontologies()
-    onto_names = ["nenhuma"] + [o["name"] for o in ontologies]
-    if not tags:
-        st.info("ainda não há tags para validar.")
-        return
-    for tag in tags:
-        work = works.get(tag["work_id"])
-        if not work:
-            continue
-        pred_cat, pred_concept, examples, warnings = predict_tag(tag["tag"], work)
-        st.markdown("<div class='section-card'>", unsafe_allow_html=True)
-        st.markdown(f"### {tag['tag']} · {work['title']}")
-        st.markdown(f"**previsão de categoria:** {pred_cat}")
-        st.markdown(f"**conceito sugerido:** {pred_concept or 'nenhum'}")
-        if examples:
-            st.markdown("**3 exemplos próximos**")
-            for ex in examples[:3]:
-                st.markdown(f"- {ex}")
-        if warnings:
-            st.markdown("**possíveis alertas**")
-            for w in warnings:
-                st.markdown(f"- {w}")
-        st.markdown(f"**metadados da obra:** artista {work['artist']} · museu {work['museum']} · período {work['period']} · técnica {work['technique']}")
-        cat = st.selectbox("categoria validada", CATEGORY_OPTIONS, index=max(0, CATEGORY_OPTIONS.index(pred_cat) if pred_cat in CATEGORY_OPTIONS else 0), key=f"cat_{tag['id']}")
-        concept = st.text_input("conceito reconciliado", value=pred_concept, key=f"concept_{tag['id']}")
-        decision = st.selectbox("decisão", ["approved", "review", "rejected"], key=f"decision_{tag['id']}")
-        ontology_name = st.selectbox("ontologia", onto_names, key=f"onto_{tag['id']}")
-        notes = st.text_area("notas curatoriais", key=f"notes_{tag['id']}")
-        if st.button("registrar validação", key=f"save_validation_{tag['id']}", use_container_width=True):
-            save_validation(tag["id"], cat, concept, decision, ontology_name if ontology_name != "nenhuma" else "", notes)
-            st.success("validação registrada.")
-            st.rerun()
-        st.markdown("</div>", unsafe_allow_html=True)
-
-def render_ontologies():
-    st.markdown("<div class='section-card'><h2>ontologias</h2><p class='small-note'>criação e administração das ontologias usadas na validação e na conectividade.</p></div>", unsafe_allow_html=True)
-    with st.form("ontology_form_unique"):
-        name = st.text_input("nome da ontologia")
-        description = st.text_area("descrição")
-        classes = st.text_input("classes", placeholder="tema, técnica, material")
-        relations = st.text_input("relações", placeholder="obra_tem_tema, obra_tem_técnica")
-        submit = st.form_submit_button("criar ontologia", use_container_width=True)
-        if submit and name.strip():
-            ontologies = store.ontologies()
-            ontologies.append({
-                "id": f"o_{uuid.uuid4().hex[:10]}",
-                "name": name.strip(),
-                "description": description.strip(),
-                "classes": [x.strip() for x in classes.split(",") if x.strip()],
-                "relations": [x.strip() for x in relations.split(",") if x.strip()],
-                "timestamp": now_str(),
-            })
-            store.save_ontologies(ontologies)
-            st.success("ontologia criada.")
-            st.rerun()
-
-    for onto in store.ontologies():
-        st.markdown("<div class='section-card'>", unsafe_allow_html=True)
-        st.markdown(f"### {onto['name']}")
-        st.markdown(onto.get("description", ""))
-        if onto.get("classes"):
-            chips = "".join([f"<span class='ontology-chip'>{c}</span>" for c in onto["classes"]])
-            st.markdown(chips, unsafe_allow_html=True)
-        if onto.get("relations"):
-            rel = "".join([f"<span class='success-chip'>{r}</span>" for r in onto["relations"]])
-            st.markdown(rel, unsafe_allow_html=True)
-        if st.button("excluir ontologia", key=f"del_onto_{onto['id']}"):
-            ontologies = [x for x in store.ontologies() if x["id"] != onto["id"]]
-            store.save_ontologies(ontologies)
-            st.rerun()
-        st.markdown("</div>", unsafe_allow_html=True)
-
-def render_search():
-    st.markdown("<div class='section-card'><h2>busca conectada</h2><p class='small-note'>procura por metadados, tags públicas, tags institucionais e conceitos validados.</p></div>", unsafe_allow_html=True)
-    q = st.text_input("pesquisar", key="search_query_input")
-    results = search_connected(q)
-    if q and not results:
-        st.info("nenhum resultado encontrado.")
-    for row in results:
-        st.markdown("<div class='section-card'>", unsafe_allow_html=True)
-        st.markdown(f"**tipo:** {row['type']}")
-        st.markdown(f"**resultado:** {row['label']}")
-        st.markdown(f"**obra relacionada:** {row['work_id']}")
-        st.markdown("</div>", unsafe_allow_html=True)
-
-def render_temporal():
-    by_day, by_month, by_year = temporal_frames()
-    st.markdown("<div class='section-card'><h2>análise temporal</h2><p class='small-note'>acompanha as tags criadas por dia, mês e ano, detalhando termos usados em cada período.</p></div>", unsafe_allow_html=True)
-    for title, frame, xcol in [
-        ("tags por dia", by_day, "day"),
-        ("tags por mês", by_month, "month"),
-        ("tags por ano", by_year, "year"),
-    ]:
-        st.markdown(f"### {title}")
-        if frame.empty:
-            st.info("sem dados ainda.")
-            continue
-        fig = figure_temporal(frame, xcol, title)
-        if fig:
-            st.plotly_chart(fig, use_container_width=True, config={"displaylogo": False})
-        else:
-            st.bar_chart(frame.set_index(xcol)["total"])
-        st.dataframe(frame, use_container_width=True, hide_index=True)
-
-def render_3d():
-    st.markdown("<div class='section-card'><h2>teia 3d de conectividade</h2><p class='small-note'>rede de compartilhamento e interoperabilidade entre metadados institucionais, tags públicas, conceitos validados e ontologias.</p></div>", unsafe_allow_html=True)
-    selected = st.multiselect(
-        "camadas visíveis",
-        ["obras", "metadados", "institucionais", "tags públicas", "conceitos", "ontologias"],
-        default=["obras", "metadados", "tags públicas", "conceitos", "ontologias"],
-    )
-    node_scale = st.slider("tamanho dos nós", 6, 22, 12, 1)
-    fig = network_figure(selected, node_scale=node_scale)
-    if fig is None:
-        st.warning("plotly não disponível nesta execução.")
-        return
-    st.plotly_chart(fig, use_container_width=True, config={"displaylogo": False, "scrollZoom": True})
-
-def render_admin_works():
-    st.markdown("<div class='section-card'><h2>obras</h2><p class='small-note'>inclua novas obras ou exclua registros existentes.</p></div>", unsafe_allow_html=True)
-    with st.form("add_work_form_unique"):
-        title = st.text_input("título")
-        artist = st.text_input("artista")
-        image_url = st.text_input("url da imagem")
-        museum = st.text_input("museu")
-        collection = st.text_input("coleção")
-        place = st.text_input("lugar")
-        period = st.text_input("período")
-        technique = st.text_input("técnica")
-        material = st.text_input("material")
-        institutional_tags = st.text_input("tags institucionais", placeholder="guerra, cavalo, figura humana")
-        description = st.text_area("descrição")
-        add = st.form_submit_button("adicionar obra", use_container_width=True)
-        if add and title.strip() and image_url.strip():
-            works = store.works()
-            works.append({
-                "id": f"w_{uuid.uuid4().hex[:8]}",
-                "title": title.strip(),
-                "artist": artist.strip(),
-                "image_url": image_url.strip(),
-                "museum": museum.strip(),
-                "collection": collection.strip(),
-                "place": place.strip(),
-                "period": period.strip(),
-                "technique": technique.strip(),
-                "material": material.strip(),
-                "institutional_tags": [x.strip() for x in institutional_tags.split(",") if x.strip()],
-                "description": description.strip(),
-            })
-            store.save_works(works)
-            st.success("obra adicionada.")
-            st.rerun()
-
-    for work in store.works():
-        st.markdown("<div class='section-card'>", unsafe_allow_html=True)
-        st.image(work["image_url"], width=240)
-        st.markdown(f"### {work['title']}")
-        st.markdown(f"{work['artist']} · {work['museum']}")
-        if st.button("excluir obra", key=f"delete_work_{work['id']}"):
-            works = [w for w in store.works() if w["id"] != work["id"]]
-            tags = [t for t in store.tags() if t["work_id"] != work["id"]]
-            vals = [v for v in store.validations() if v["work_id"] != work["id"]]
-            store.save_works(works)
-            store.save_tags(tags)
-            store.save_validations(vals)
-            st.rerun()
-        st.markdown("</div>", unsafe_allow_html=True)
-
-def render_export():
-    st.markdown("<div class='section-card'><h2>exportar</h2><p class='small-note'>exporte relatório em pdf e dados estruturados em csv.</p></div>", unsafe_allow_html=True)
-    pdf_bytes = generate_pdf_bytes()
-    if pdf_bytes:
-        st.download_button("exportar pdf", data=pdf_bytes, file_name="folksonomia_relatorio.pdf", mime="application/pdf", use_container_width=True)
-    else:
-        st.error("não foi possível gerar o pdf nesta execução: reportlab.")
-    st.download_button("exportar tags em csv", data=export_csv_bytes(store.tags()), file_name="tags.csv", mime="text/csv", use_container_width=True)
-    st.download_button("exportar obras em csv", data=export_csv_bytes(store.works()), file_name="obras.csv", mime="text/csv", use_container_width=True)
-    st.download_button("exportar ontologias em csv", data=export_csv_bytes(store.ontologies()), file_name="ontologias.csv", mime="text/csv", use_container_width=True)
-
-def render_admin():
-    if not st.session_state["admin_logged_in"]:
-        admin_login()
-        return
-    render_panel()
-    tabs = st.tabs(["validação", "ontologias", "busca conectada", "análise temporal", "teia 3d", "obras", "exportar"])
-    with tabs[0]:
-        render_validation()
-    with tabs[1]:
-        render_ontologies()
-    with tabs[2]:
-        render_search()
-    with tabs[3]:
-        render_temporal()
-    with tabs[4]:
-        render_3d()
-    with tabs[5]:
-        render_admin_works()
-    with tabs[6]:
-        render_export()
-    if st.button("sair da área administrativa", key="logout_admin", use_container_width=True):
-        st.session_state["admin_logged_in"] = False
-        st.rerun()
+# ── INTERFACE PRINCIPAL ───────────────────────────────────────────────
+def show_header():
+    st.markdown(
+        "<div class='top-navbar'>"
+        "<div class='navbar-logo'>Sistema Folksonomia Digital</div>"
+        "</div>", unsafe_allow_html=True)
 
 def main():
-    ensure_state()
-    inject_css()
-    render_header()
-    top_tabs = st.tabs(["explorar obras", "área administrativa"])
-    with top_tabs[0]:
-        render_public()
-    with top_tabs[1]:
-        render_admin()
+    load_css()
+    try: check_admin()
+    except Exception as e: st.error(f"Erro ao inicializar: {e}")
+
+    for k,v in [('user_id',gen_uid()),('animal_name',generate_animal_name()),
+                ('step','intro'),('answers',{})]:
+        if k not in st.session_state: st.session_state[k] = v
+
+    if st.session_state['step'] != 'completed':
+        show_intro()
+    else:
+        show_header()
+        st.markdown("<div class='main-content'>", unsafe_allow_html=True)
+        t1, t2 = st.tabs([" Explorar Obras"," Área Administrativa"])
+        with t1: show_obras()
+        with t2: show_admin()
+        st.markdown("</div>", unsafe_allow_html=True)
+
+# ── INTRO ─────────────────────────────────────────────────────────────
+def show_intro():
+    st.markdown("<div class='main-content'>", unsafe_allow_html=True)
+    st.markdown("<h1 class='main-title'>Sistema Folksonomia Digital</h1>", unsafe_allow_html=True)
+    st.markdown("<p class='subtitle'>Sistema colaborativo de catalogação de obras de arte<br>"
+                "Complete o questionário para acessar a plataforma</p>", unsafe_allow_html=True)
+    st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align:center;margin-bottom:2.2rem;font-size:1.7rem'>"
+                "Questionário de Acesso</h2>", unsafe_allow_html=True)
+    with st.form("intro_form"):
+        c1, c2 = st.columns(2)
+        with c1:
+            q1 = st.selectbox("1. Qual é o seu nível de familiaridade com museus?",
+                ["Nunca visito museus","Visito raramente","Visito ocasionalmente","Visito frequentemente"])
+            q2 = st.selectbox("2. Você já ouviu falar sobre documentação museológica?",
+                ["Nunca ouvi falar","Já ouvi, mas não sei o que é","Tenho uma ideia básica","Conheço bem o tema"])
+        with c2:
+            q3 = st.text_area("3. O que você entende por 'tags' ou etiquetas digitais aplicadas a acervo?",
+                max_chars=500, height=200, placeholder="Descreva sua compreensão sobre o conceito...")
+        _, cb, _ = st.columns([1,1,1])
+        with cb:
+            submit = st.form_submit_button("Acessar Plataforma", use_container_width=True)
+        if submit:
+            if not q3.strip():
+                st.error("Por favor, responda todas as perguntas para continuar!")
+            else:
+                st.session_state['answers'] = {"q1":q1,"q2":q2,"q3":q3}
+                save_answers(st.session_state['user_id'], st.session_state['animal_name'],
+                             st.session_state['answers'])
+                st.session_state['step'] = 'completed'
+                st.success("Questionário completo! Acesso liberado.")
+                st.balloons()
+                st.rerun()
+    st.markdown("</div></div>", unsafe_allow_html=True)
+
+# ── GALERIA ───────────────────────────────────────────────────────────
+def show_obras():
+    st.markdown("<h1 class='main-title'>Galeria de Obras de Arte</h1>", unsafe_allow_html=True)
+    st.markdown("<p class='subtitle'>Explore as obras e contribua com suas tags descritivas</p>",
+                unsafe_allow_html=True)
+    obras = load_obras()
+    if not obras:
+        st.info("Nenhuma obra cadastrada.")
+        return
+    st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+    c1, c2 = st.columns([2,1])
+    with c1:
+        sid = st.text_input("Filtrar por número da obra:", "", placeholder="Ex: 1, 2, 3…")
+    with c2:
+        sord = st.selectbox("Ordenar por:", ["Número (crescente)","Número (decrescente)"])
+    st.markdown("</div>", unsafe_allow_html=True)
+    filtered = obras
+    if sid.strip().isdigit():
+        filtered = [o for o in obras if str(o['id'])==sid.strip()]
+    filtered = sorted(filtered, key=lambda x: x['id'], reverse=(sord=="Número (decrescente)"))
+    st.markdown(f"<div style='text-align:center;color:white;margin:1.8rem 0;"
+                f"font-size:1.1rem;font-weight:600'>Exibindo "
+                f"<strong style='font-size:1.4rem'>{len(filtered)}</strong> obra(s)</div>",
+                unsafe_allow_html=True)
+    cols = st.columns(3)
+    for i, obra in enumerate(filtered):
+        with cols[i%3]:
+            st.markdown(f"""<div class='obra-card'>
+<img src='{obra['imagem']}' alt='Obra {obra['id']}' />
+<div style='padding:1.4rem'>
+  <h3 style='font-size:1.05rem;font-weight:700;margin-bottom:.35rem'>Obra #{obra['id']}</h3>
+  <p style='font-size:.88rem;opacity:.65'>Adicione uma tag descritiva para esta imagem</p>
+</div></div>""", unsafe_allow_html=True)
+            if st.button(" Adicionar Tag", key=f"btn_{obra['id']}", use_container_width=True):
+                st.session_state['selected_obra'] = obra
+                st.rerun()
+            if ('selected_obra' in st.session_state and
+                    st.session_state['selected_obra']['id'] == obra['id']):
+                with st.form(f"tf_{obra['id']}"):
+                    tag = st.text_input("Sua tag:", key=f"t_{obra['id']}",
+                                        placeholder="Ex: azul, triste, moderno…")
+                    ca, cb = st.columns(2)
+                    with ca: sub = st.form_submit_button(" Enviar", use_container_width=True)
+                    with cb: can = st.form_submit_button(" Cancelar", use_container_width=True)
+                    if sub and tag:
+                        save_tag(st.session_state['user_id'], obra['id'], tag)
+                        st.success(f"Tag '{tag}' adicionada!")
+                        del st.session_state['selected_obra']
+                        st.rerun()
+                    if can:
+                        del st.session_state['selected_obra']
+                        st.rerun()
+            ut = get_obra_user_tags(obra['id'], st.session_state['user_id'])
+            if not ut.empty:
+                st.markdown("**Suas Tags:**")
+                st.markdown("".join(
+                    f"<span class='tag-badge'>{r['tag']} ({r['count']})</span>"
+                    for _, r in ut.iterrows()
+                ), unsafe_allow_html=True)
+            else:
+                st.info("Você ainda não criou tags para esta obra")
+
+# ── ADMIN ─────────────────────────────────────────────────────────────
+def show_admin():
+    if 'admin_logged_in' not in st.session_state:
+        st.session_state['admin_logged_in'] = False
+    if not st.session_state['admin_logged_in']:
+        st.markdown("<h1 class='main-title'>Área Administrativa</h1>", unsafe_allow_html=True)
+        st.markdown("<p class='subtitle'>Acesso restrito</p>", unsafe_allow_html=True)
+        _, c2, _ = st.columns([1,1,1])
+        with c2:
+            st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+            st.markdown("<h2 style='text-align:center;margin-bottom:1.8rem'>"
+                        "Login Administrativo</h2>", unsafe_allow_html=True)
+            with st.form("login"):
+                username = st.text_input("Usuário:", placeholder="Digite seu usuário")
+                password = st.text_input("Senha:", type="password", placeholder="Digite sua senha")
+                sub = st.form_submit_button("Entrar no Sistema", use_container_width=True)
+                if sub:
+                    if check_login(username, password):
+                        st.session_state['admin_logged_in'] = True
+                        st.session_state['admin_username']  = username
+                        st.success("Login realizado com sucesso!")
+                        st.balloons()
+                        st.rerun()
+                    else:
+                        st.error("Credenciais inválidas. Acesso negado.")
+            st.markdown("</div>", unsafe_allow_html=True)
+    else:
+        st.markdown(
+            f"<h1 class='main-title'>Dashboard Administrativo</h1>"
+            f"<p class='subtitle'>Bem-vindo, "
+            f"<strong>{st.session_state.get('admin_username','Admin')}</strong></p>",
+            unsafe_allow_html=True)
+        tabs = st.tabs([
+            " Visão Geral",
+            " Análise de Tags",
+            " Conexões de Tags",
+            " Usuários & Questionário",
+            " Obras",
+            " Exportar"
+        ])
+        with tabs[0]: tab_overview()
+        with tabs[1]: tab_tags()
+        with tabs[2]: tab_connections()
+        with tabs[3]: tab_users_quest()
+        with tabs[4]: tab_obras()
+        with tabs[5]: tab_export()
+        _, c2, _ = st.columns([1,1,1])
+        with c2:
+            if st.button(" Sair do Sistema", use_container_width=True):
+                st.session_state['admin_logged_in'] = False
+                st.rerun()
+
+# ═════════════════════════════════════════════════════════════════════
+# ABA 1 — VISÃO GERAL
+# ═════════════════════════════════════════════════════════════════════
+def tab_overview():
+    tdf = all_tags()
+    udf = all_users()
+    obs = load_obras()
+
+    st.markdown("### Métricas Gerais do Sistema")
+    total  = len(tdf) if not tdf.empty else 0
+    unicas = tdf['tag'].nunique() if not tdf.empty else 0
+    nusers = udf['user_id'].nunique() if not udf.empty else 0
+    nobs   = len(obs)
+    obs_ct = tdf['obra_id'].nunique() if not tdf.empty else 0
+
+    c1,c2,c3,c4,c5 = st.columns(5)
+    for col, lbl, val, sub, clr in [
+        (c1,"Total de Tags",     total,   "registros","#a7e6ff"),
+        (c2,"Tags Únicas",       unicas,  f"{unicas/total:.0%} do total" if total else "—","#d1baff"),
+        (c3,"Participantes",     nusers,  "usuários ativos","#6ee7b7"),
+        (c4,"Obras Cadastradas", nobs,    f"{obs_ct} com tags","#fcd34d"),
+        (c5,"Média Tags/Usuário",f"{total/nusers:.1f}" if nusers else "—","por participante","#f9a8d4"),
+    ]:
+        with col: st.markdown(kpi(lbl,val,sub,clr), unsafe_allow_html=True)
+
+    st.markdown(divider(), unsafe_allow_html=True)
+
+    if not udf.empty and not tdf.empty:
+        st.markdown("### Participantes Anônimos")
+        uct = tdf.groupby('user_id').size().reset_index(name='tags')
+        uuq = tdf.groupby('user_id')['tag'].nunique().reset_index(name='unicas')
+        m   = udf.merge(uct,on='user_id',how='left').merge(uuq,on='user_id',how='left').fillna(0)
+        for _, row in m.iterrows():
+            animal = row.get('animal_name','?')
+            ts     = row.get('timestamp','N/A')
+            nt, nu = int(row['tags']), int(row['unicas'])
+            p      = nu/nt if nt>0 else 0
+            st.markdown(
+                f"<div class='sc sc-b' style='padding:.85rem 1.3rem;margin:.25rem 0'>"
+                f"<div style='display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px'>"
+                f"<div><span class='animal-badge'>🐾 {animal}</span>"
+                f"<span style='color:rgba(255,255,255,.45);font-size:.75rem;margin-left:10px'>Acesso: {ts}</span></div>"
+                f"<div style='text-align:right;min-width:170px'>"
+                f"<span style='color:white;font-weight:700'>{nt} tags</span>"
+                f"<span style='color:rgba(255,255,255,.4);font-size:.78rem'> ({nu} únicas)</span>"
+                f"{pbar(p,'#a7e6ff')}"
+                f"<span style='color:rgba(255,255,255,.38);font-size:.7rem'>riqueza: {p:.0%}</span>"
+                f"</div></div></div>", unsafe_allow_html=True)
+
+    st.markdown(divider(), unsafe_allow_html=True)
+
+    if not tdf.empty:
+        od = {o['id']:o['titulo'] for o in obs}
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("#### Top 15 Tags Mais Usadas")
+            top = tdf['tag'].value_counts().head(15).reset_index()
+            top.columns = ['Tag','Qtd']
+            top['%'] = (top['Qtd']/top['Qtd'].sum()*100).round(1)
+            st.dataframe(top, use_container_width=True, hide_index=True)
+        with c2:
+            st.markdown("#### Obras Mais Tagueadas")
+            ot = tdf.groupby('obra_id').size().reset_index(name='Tags')
+            ot['Obra'] = ot['obra_id'].map(od)
+            st.dataframe(
+                ot[['Obra','Tags']].sort_values('Tags',ascending=False),
+                use_container_width=True, hide_index=True)
+
+# ═════════════════════════════════════════════════════════════════════
+# ABA 2 — ANÁLISE DE TAGS (Frequência + Temporal)
+# ═════════════════════════════════════════════════════════════════════
+def tab_tags():
+    tdf = all_tags()
+    if tdf.empty:
+        st.info("Nenhuma tag disponível.")
+        return
+
+    st.markdown("### Análise de Tags")
+    t1, t2 = st.tabs([" Frequência e Vocabulário", " Evolução Temporal"])
+
+    # ─── FREQUÊNCIA ───────────────────────────────────────────────────
+    with t1:
+        freq = tdf['tag'].value_counts().reset_index()
+        freq.columns = ['Tag','Frequência']
+        total_usos = freq['Frequência'].sum()
+        freq['% do Total']  = (freq['Frequência']/total_usos*100).round(2)
+        freq['% Acumulada'] = freq['% do Total'].cumsum().round(2)
+        freq['Categoria']   = pd.cut(
+            freq['Frequência'],
+            bins=[0,1,2,5,10,99999],
+            labels=['Hapax (1×)','Rara (2×)','Ocasional (3–5×)','Frequente (6–10×)','Muito Frequente (10+×)']
+        )
+
+        hapax  = (freq['Frequência']==1).sum()
+        lei80  = (freq['% Acumulada']<=80).sum()
+        ttr    = len(freq)/total_usos if total_usos else 0
+        top1p  = freq.iloc[0]['% do Total'] if not freq.empty else 0
+
+        c1,c2,c3,c4 = st.columns(4)
+        with c1: st.markdown(kpi("Vocabulário Total",  len(freq), "tags distintas","#a7e6ff"), unsafe_allow_html=True)
+        with c2: st.markdown(kpi("Hapax Legomena",     hapax,     f"{hapax/len(freq):.0%} do vocab.","#f9a8d4"), unsafe_allow_html=True)
+        with c3: st.markdown(kpi("80% dos Usos",       f"{lei80} tags","lei de Zipf","#6ee7b7"), unsafe_allow_html=True)
+        with c4: st.markdown(kpi("Type-Token Ratio",   f"{ttr:.3f}","riqueza global","#fcd34d"), unsafe_allow_html=True)
+
+        st.markdown(insight(
+            f"<strong>Distribuição de Zipf:</strong> As {lei80} tags mais frequentes cobrem 80% de todos os usos. "
+            f"Existem {hapax} hapax legomena — termos usados somente uma vez "
+            f"({hapax/len(freq):.0%} do vocabulário total). "
+            f"TTR global de <strong>{ttr:.3f}</strong> indica "
+            f"{'alta' if ttr>0.5 else 'moderada' if ttr>0.25 else 'baixa'} diversidade lexical."
+        ), unsafe_allow_html=True)
+
+        st.markdown(divider(), unsafe_allow_html=True)
+        st.markdown("#### Frequência — Top 25 Tags")
+        st.bar_chart(tdf['tag'].value_counts().head(25))
+
+        st.markdown("#### Tabela Completa de Frequências")
+        cat_opts = list(freq['Categoria'].cat.categories)
+        cat_sel  = st.multiselect("Filtrar por categoria:", cat_opts, default=cat_opts, key="fc")
+        disp = freq[freq['Categoria'].isin(cat_sel)] if cat_sel else freq
+        st.dataframe(disp, use_container_width=True, hide_index=True)
+
+        c1, c2 = st.columns(2)
+        with c1:
+            st.download_button(
+                " Frequências (CSV)",
+                freq.to_csv(index=False).encode('utf-8'),
+                f"frequencias_{datetime.now().strftime('%Y%m%d')}.csv",
+                "text/csv", use_container_width=True)
+        with c2:
+            st.markdown("**Distribuição por Categoria:**")
+            cd = freq['Categoria'].value_counts().reset_index()
+            cd.columns = ['Categoria','Qtd']
+            st.dataframe(cd, use_container_width=True, hide_index=True)
+
+    # ─── TEMPORAL ─────────────────────────────────────────────────────
+    with t2:
+        st.markdown("#### Evolução Temporal das Tags")
+        try:
+            tf = tdf.copy()
+            tf['ts']    = pd.to_datetime(tf['timestamp'])
+            tf['date']  = tf['ts'].dt.date
+            tf['ano']   = tf['ts'].dt.year
+            tf['mes']   = tf['ts'].dt.month
+            tf['dia']   = tf['ts'].dt.day
+            tf['hora']  = tf['ts'].dt.hour
+            tf['dow']   = tf['ts'].dt.day_name()
+            tf['semana']= tf['ts'].dt.isocalendar().week.astype(int)
+
+            # ── KPIs temporais ──
+            dias_ativos = tf['date'].nunique()
+            media_dia   = len(tf)/dias_ativos if dias_ativos else 0
+            pico_dia    = tf.groupby('date').size()
+            pico_val    = int(pico_dia.max()) if not pico_dia.empty else 0
+            pico_dt     = str(pico_dia.idxmax()) if not pico_dia.empty else "—"
+
+            c1,c2,c3,c4 = st.columns(4)
+            with c1: st.markdown(kpi("Dias com Atividade", dias_ativos,"dias","#a7e6ff"), unsafe_allow_html=True)
+            with c2: st.markdown(kpi("Média por Dia",      f"{media_dia:.1f}","tags/dia","#6ee7b7"), unsafe_allow_html=True)
+            with c3: st.markdown(kpi("Pico de Tags",       pico_val,f"em {pico_dt}","#fcd34d"), unsafe_allow_html=True)
+            with c4: st.markdown(kpi("Período Total",      f"{dias_ativos} dias","registrado","#d1baff"), unsafe_allow_html=True)
+
+            st.markdown(divider(), unsafe_allow_html=True)
+
+            # ── Linha: tags por dia ──
+            daily = tf.groupby('date').agg(
+                Tags=('tag','count'),
+                Tags_Unicas=('tag','nunique'),
+                Usuarios=('user_id','nunique')
+            ).reset_index().rename(columns={'date':'Data'})
+
+            st.markdown("#### Tags Criadas por Dia")
+            st.line_chart(daily.set_index('Data')['Tags'])
+
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown("**Usuários ativos por dia**")
+                st.line_chart(daily.set_index('Data')['Usuarios'])
+            with c2:
+                st.markdown("**Tags únicas por dia**")
+                st.line_chart(daily.set_index('Data')['Tags_Unicas'])
+
+            st.markdown(divider(), unsafe_allow_html=True)
+
+            # ── Por mês ──
+            st.markdown("#### Distribuição Mensal")
+            meses_pt = {1:"Jan",2:"Fev",3:"Mar",4:"Abr",5:"Mai",6:"Jun",
+                        7:"Jul",8:"Ago",9:"Set",10:"Out",11:"Nov",12:"Dez"}
+            monthly = tf.groupby(['ano','mes']).agg(
+                Tags=('tag','count'),
+                Tags_Unicas=('tag','nunique'),
+                Usuarios=('user_id','nunique')
+            ).reset_index()
+            monthly['Mês/Ano'] = monthly['mes'].map(meses_pt)+"/"+monthly['ano'].astype(str)
+            monthly = monthly.sort_values(['ano','mes'])
+
+            st.bar_chart(monthly.set_index('Mês/Ano')['Tags'])
+
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown("**Usuários únicos por mês**")
+                st.bar_chart(monthly.set_index('Mês/Ano')['Usuarios'])
+            with c2:
+                st.markdown("**Tags únicas por mês**")
+                st.bar_chart(monthly.set_index('Mês/Ano')['Tags_Unicas'])
+
+            st.markdown(divider(), unsafe_allow_html=True)
+
+            # ── Por ano ──
+            st.markdown("#### Distribuição Anual")
+            yearly = tf.groupby('ano').agg(
+                Tags=('tag','count'),
+                Tags_Unicas=('tag','nunique'),
+                Usuarios=('user_id','nunique')
+            ).reset_index().rename(columns={'ano':'Ano'})
+            st.bar_chart(yearly.set_index('Ano')['Tags'])
+            st.dataframe(yearly, use_container_width=True, hide_index=True)
+
+            st.markdown(divider(), unsafe_allow_html=True)
+
+            # ── Distribuição por dia da semana e hora ──
+            st.markdown("#### Padrões de Uso")
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown("**Distribuição por Hora do Dia**")
+                st.bar_chart(tf['hora'].value_counts().sort_index().rename("Tags"))
+            with c2:
+                st.markdown("**Distribuição por Dia da Semana**")
+                dow_order = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
+                dow_pt    = {"Monday":"Seg","Tuesday":"Ter","Wednesday":"Qua","Thursday":"Qui",
+                             "Friday":"Sex","Saturday":"Sáb","Sunday":"Dom"}
+                dow_c = tf['dow'].value_counts().reindex(dow_order,fill_value=0)
+                dow_c.index = [dow_pt.get(d,d) for d in dow_c.index]
+                st.bar_chart(dow_c.rename("Tags"))
+
+            st.markdown(divider(), unsafe_allow_html=True)
+
+            # ── Tabela consolidada ──
+            st.markdown("#### Tabela Detalhada por Dia")
+            daily_full = tf.groupby('date').agg(
+                Total=('tag','count'),
+                Unicas=('tag','nunique'),
+                Usuarios=('user_id','nunique'),
+                Tag_Mais_Usada=('tag', lambda x: x.value_counts().index[0])
+            ).reset_index()
+            daily_full.columns = ['Data','Tags Criadas','Tags Únicas','Usuários Ativos','Tag Mais Usada']
+            daily_full = daily_full.sort_values('Data',ascending=False)
+            st.dataframe(daily_full, use_container_width=True, hide_index=True)
+
+            st.markdown("#### Tabela Mensal Consolidada")
+            monthly_full = monthly[['Mês/Ano','Tags','Tags_Unicas','Usuarios']].copy()
+            monthly_full.columns = ['Mês/Ano','Tags Criadas','Tags Únicas','Usuários Ativos']
+            st.dataframe(monthly_full, use_container_width=True, hide_index=True)
+
+            if len(daily)>1:
+                st.markdown(insight(
+                    f"<strong>Tendência:</strong> Pico de <strong>{pico_val} tags</strong> em {pico_dt}. "
+                    f"Média de <strong>{media_dia:.1f} tags/dia</strong> nos {dias_ativos} dias com atividade. "
+                    f"Total de {len(tf)} tags distribuídas ao longo de "
+                    f"{monthly['ano'].nunique()} ano(s) e {len(monthly)} mês(es) registrado(s)."
+                ), unsafe_allow_html=True)
+
+        except Exception as e:
+            st.info(f"Dados insuficientes para análise temporal.")
+
+# ═════════════════════════════════════════════════════════════════════
+# ABA 3 — CONEXÕES DE TAGS
+# ═════════════════════════════════════════════════════════════════════
+def tab_connections():
+    tdf  = all_tags()
+    obs  = load_obras()
+    od   = {o['id']:o['titulo'] for o in obs}
+    if tdf.empty:
+        st.warning("Nenhuma tag disponível.")
+        return
+
+    st.markdown("### Conexões e Agrupamentos de Tags")
+    st.markdown(insight(
+        "<strong>Como funciona:</strong> O algoritmo combina três métricas — "
+        "<strong>Contenção de substring</strong> (ex: 'vaso' → 'vaso verde'), "
+        "<strong>Jaccard de palavras</strong> (ex: 'barco preto' ↔ 'barco de barro') e "
+        "<strong>Jaccard de trigramas</strong> (similaridade fonética). "
+        "Score de 0 (sem relação) a 1 (idênticas)."
+    ), unsafe_allow_html=True)
+
+    c1, c2, c3 = st.columns(3)
+    with c1: threshold = st.slider("Limiar de similaridade:", 0.20, 0.90, 0.35, 0.05, key="ct")
+    with c2: obra_f    = st.selectbox("Filtrar por obra:", ["Todas"]+[f"#{o['id']} — {o['titulo']}" for o in obs], key="co")
+    with c3: max_c     = st.number_input("Máx. conexões:", 10, 300, 60, 10, key="cm")
+
+    fdf = tdf.copy()
+    if obra_f != "Todas":
+        oid = int(obra_f.split("—")[0].replace("#","").strip())
+        fdf = tdf[tdf['obra_id']==oid]
+
+    all_t = fdf['tag'].tolist()
+    if len(set(all_t)) < 2:
+        st.warning("Necessário ao menos 2 tags distintas.")
+        return
+
+    with st.spinner("Calculando conexões…"):
+        conns    = tag_connections(all_t, threshold=threshold)
+        clusters = tag_clusters(all_t, threshold=threshold)
+
+    c1,c2,c3 = st.columns(3)
+    with c1: st.markdown(kpi("Total de Conexões", len(conns),   f"limiar ≥ {threshold:.2f}","#a7e6ff"), unsafe_allow_html=True)
+    with c2: st.markdown(kpi("Grupos Formados",   len(clusters),"clusters de tags","#d1baff"), unsafe_allow_html=True)
+    with c3: st.markdown(kpi("Tags Envolvidas",   len(set(c['tag_a'] for c in conns)|set(c['tag_b'] for c in conns)),
+                              "tags conectadas","#6ee7b7"), unsafe_allow_html=True)
+
+    st.markdown(divider(), unsafe_allow_html=True)
+
+    t1, t2 = st.tabs([" Lista de Conexões"," Grupos de Tags"])
+
+    # ── LISTA ─────────────────────────────────────────────────────────
+    with t1:
+        if not conns:
+            st.info("Nenhuma conexão encontrada. Reduza o limiar de similaridade.")
+        else:
+            tipos    = sorted(set(c['tipo'] for c in conns))
+            tipo_sel = st.multiselect("Filtrar por tipo:", tipos, default=tipos, key="tsel")
+            cf = [c for c in conns if c['tipo'] in tipo_sel][:max_c]
+            freq_map = tdf['tag'].value_counts().to_dict()
+
+            st.markdown(f"Exibindo **{len(cf)}** de **{len(conns)}** conexões")
+            st.markdown(divider(), unsafe_allow_html=True)
+
+            for c in cf:
+                s   = c['similaridade']
+                bar = "█"*int(s*10)+"░"*(10-int(s*10))
+                fa  = freq_map.get(c['tag_a'],0)
+                fb  = freq_map.get(c['tag_b'],0)
+                st.markdown(
+                    f"<div class='conn-row'>"
+                    f"<div style='display:flex;align-items:center;gap:10px;flex-wrap:wrap'>"
+                    f"<span class='tag-badge'>{c['tag_a']}</span>"
+                    f"<span style='color:rgba(255,255,255,.3);font-size:.72rem'>({fa}×)</span>"
+                    f"<span style='color:rgba(255,255,255,.38)'>↔</span>"
+                    f"<span class='tag-badge'>{c['tag_b']}</span>"
+                    f"<span style='color:rgba(255,255,255,.3);font-size:.72rem'>({fb}×)</span>"
+                    f"</div>"
+                    f"<div style='text-align:right;min-width:195px'>"
+                    f"<span style='font-family:monospace;color:rgba(255,255,255,.6);font-size:.78rem'>"
+                    f"{bar} {s:.3f}</span><br>"
+                    f"<span style='font-size:.7rem;color:rgba(255,255,255,.35)'>{c['tipo']}</span>"
+                    f"</div></div>", unsafe_allow_html=True)
+
+            st.markdown(divider(), unsafe_allow_html=True)
+            st.download_button(
+                "⬇️ Baixar conexões (CSV)",
+                pd.DataFrame(conns).to_csv(index=False).encode('utf-8'),
+                f"conexoes_{datetime.now().strftime('%Y%m%d')}.csv","text/csv")
+
+    # ── CLUSTERS ──────────────────────────────────────────────────────
+    with t2:
+        if not clusters:
+            st.info("Nenhum grupo formado. Reduza o limiar de similaridade.")
+        else:
+            COLORS = ["#60a5fa","#34d399","#f9a8d4","#fcd34d","#a78bfa",
+                      "#f87171","#67e8f9","#86efac","#fb923c","#c084fc"]
+            freq_map     = tdf['tag'].value_counts().to_dict()
+            cls_sorted   = sorted(clusters, key=len, reverse=True)
+
+            st.markdown(f"**{len(cls_sorted)} grupo(s) de tags relacionadas**")
+            st.markdown(divider(), unsafe_allow_html=True)
+
+            for i, cl in enumerate(cls_sorted, 1):
+                color      = COLORS[(i-1) % len(COLORS)]
+                total_uses = sum(freq_map.get(t,0) for t in cl)
+                pills = "".join(
+                    f"<span class='cluster-pill'>{t} "
+                    f"<span style='opacity:.5;font-size:.7rem'>({freq_map.get(t,0)}×)</span></span>"
+                    for t in sorted(cl, key=lambda x: freq_map.get(x,0), reverse=True)
+                )
+                st.markdown(
+                    f"<div class='cluster-wrap' style='border-left:3px solid {color}'>"
+                    f"<div class='cluster-title'>Grupo {i} · {len(cl)} tags · {total_uses} usos totais</div>"
+                    f"{pills}</div>", unsafe_allow_html=True)
+
+            st.markdown(divider(), unsafe_allow_html=True)
+            st.markdown("#### Resumo dos Grupos")
+            summ = pd.DataFrame([{
+                "Grupo": f"Grupo {i}",
+                "Qtd Tags": len(cl),
+                "Total Usos": sum(freq_map.get(t,0) for t in cl),
+                "Tags": ", ".join(sorted(cl,key=lambda x:freq_map.get(x,0),reverse=True)[:6])
+                        + ("…" if len(cl)>6 else "")
+            } for i,cl in enumerate(cls_sorted,1)])
+            st.dataframe(summ, use_container_width=True, hide_index=True)
+
+            st.download_button(
+                "⬇️ Baixar grupos (CSV)",
+                summ.to_csv(index=False).encode('utf-8'),
+                f"clusters_{datetime.now().strftime('%Y%m%d')}.csv","text/csv")
+
+# ═════════════════════════════════════════════════════════════════════
+# ABA 4 — USUÁRIOS & QUESTIONÁRIO (unificado)
+# ═════════════════════════════════════════════════════════════════════
+def tab_users_quest():
+    tdf = all_tags()
+    udf = all_users()
+    obs = load_obras()
+    od  = {o['id']:o['titulo'] for o in obs}
+
+    if udf.empty:
+        st.info("Nenhum dado de usuário disponível.")
+        return
+
+    st.markdown("### Usuários & Questionário")
+
+    # ── KPIs combinados ──
+    uct = tdf.groupby('user_id').size().reset_index(name='Total_Tags') if not tdf.empty else pd.DataFrame(columns=['user_id','Total_Tags'])
+    uuq = tdf.groupby('user_id')['tag'].nunique().reset_index(name='Tags_Unicas') if not tdf.empty else pd.DataFrame(columns=['user_id','Tags_Unicas'])
+    uob = tdf.groupby('user_id')['obra_id'].nunique().reset_index(name='Obras') if not tdf.empty else pd.DataFrame(columns=['user_id','Obras'])
+
+    merged = udf.merge(uct,on='user_id',how='left') \
+                .merge(uuq,on='user_id',how='left') \
+                .merge(uob,on='user_id',how='left').fillna(0)
+    merged['TTR']     = (merged['Tags_Unicas']/merged['Total_Tags'].replace(0,np.nan)).fillna(0).round(3)
+    merged['Usuário'] = merged.apply(lambda r: r.get('animal_name', r['user_id'][:8]), axis=1)
+
+    c1,c2,c3,c4 = st.columns(4)
+    top_u = merged.loc[merged['Total_Tags'].idxmax(),'Usuário'] if not merged.empty else "—"
+    with c1: st.markdown(kpi("Participantes",       len(merged),"usuários","#a7e6ff"), unsafe_allow_html=True)
+    with c2: st.markdown(kpi("Média Tags/Usuário",  f"{merged['Total_Tags'].mean():.1f}","","#6ee7b7"), unsafe_allow_html=True)
+    with c3: st.markdown(kpi("Maior Contribuição",  int(merged['Total_Tags'].max()),top_u[:16],"#fcd34d"), unsafe_allow_html=True)
+    with c4: st.markdown(kpi("Riqueza Média (TTR)", f"{merged['TTR'].mean():.2%}","vocabular","#d1baff"), unsafe_allow_html=True)
+
+    st.markdown(divider(), unsafe_allow_html=True)
+
+    t1, t2, t3, t4 = st.tabs([
+        " Tabela de Participantes",
+        " Perfil Individual",
+        "Respostas do Questionário",
+        " Cruzamentos"
+    ])
+
+    # ── TABELA ────────────────────────────────────────────────────────
+    with t1:
+        st.markdown("#### Comparativo Geral de Participantes")
+        dcols = ['Usuário','Total_Tags','Tags_Unicas','TTR','Obras','q1','q2']
+        avail = [c for c in dcols if c in merged.columns]
+        disp  = merged[avail].rename(columns={
+            'Total_Tags':'Tags Criadas','Tags_Unicas':'Tags Únicas',
+            'Obras':'Obras Etiquetadas','q1':'Familiaridade c/ Museus',
+            'q2':'Conhec. Museológico'
+        }).sort_values('Tags Criadas',ascending=False)
+        st.dataframe(disp, use_container_width=True, hide_index=True)
+
+        st.markdown(divider(), unsafe_allow_html=True)
+        st.markdown("#### Contribuição por Participante")
+        st.bar_chart(merged.set_index('Usuário')['Total_Tags'].sort_values(ascending=False))
+
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("**Riqueza Vocabular (TTR) por Usuário**")
+            st.bar_chart(merged.set_index('Usuário')['TTR'].sort_values(ascending=False))
+        with c2:
+            st.markdown("**Obras Etiquetadas por Usuário**")
+            st.bar_chart(merged.set_index('Usuário')['Obras'].sort_values(ascending=False))
+
+    # ── PERFIL INDIVIDUAL ────────────────────────────────────────────
+    with t2:
+        st.markdown("#### Perfil Detalhado por Participante")
+        uopts = [f"🐾 {r.get('animal_name',r['user_id'][:8])}" for _,r in udf.iterrows()]
+        usel  = st.selectbox("Selecione um participante:", uopts, key="ui_sel")
+        uidx  = uopts.index(usel)
+        uid   = udf.iloc[uidx]['user_id']
+        uanim = udf.iloc[uidx].get('animal_name', uid[:8])
+
+        utags = tdf[tdf['user_id']==uid] if not tdf.empty else pd.DataFrame()
+        if utags.empty:
+            st.info("Este participante ainda não criou tags.")
+        else:
+            ttl = len(utags); unq = utags['tag'].nunique()
+            ttr_u = unq/ttl if ttl else 0
+
+            c1,c2,c3 = st.columns(3)
+            with c1: st.markdown(kpi("Tags Criadas", ttl,"","#a7e6ff"), unsafe_allow_html=True)
+            with c2: st.markdown(kpi("Tags Únicas",  unq,f"TTR: {ttr_u:.2%}","#6ee7b7"), unsafe_allow_html=True)
+            with c3: st.markdown(kpi("Obras Tagueadas",utags['obra_id'].nunique(),"","#fcd34d"), unsafe_allow_html=True)
+
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown(f"**Top tags de {uanim}:**")
+                st.bar_chart(utags['tag'].value_counts().head(15))
+            with c2:
+                st.markdown("**Distribuição por obra:**")
+                st.bar_chart(utags.groupby('obra_id').size().rename(index=od))
+
+            st.markdown("**Conexões nas tags deste participante (limiar 0.30):**")
+            uconns = tag_connections(utags['tag'].tolist(), threshold=0.30)
+            if uconns:
+                for c in uconns[:10]:
+                    freq_map = utags['tag'].value_counts().to_dict()
+                    fa = freq_map.get(c['tag_a'],0)
+                    fb = freq_map.get(c['tag_b'],0)
+                    st.markdown(
+                        f"<div class='conn-row'>"
+                        f"<div style='display:flex;align-items:center;gap:9px;flex-wrap:wrap'>"
+                        f"<span class='tag-badge'>{c['tag_a']}</span>"
+                        f"<span style='color:rgba(255,255,255,.3);font-size:.7rem'>({fa}×)</span>"
+                        f"<span style='color:rgba(255,255,255,.35)'>↔</span>"
+                        f"<span class='tag-badge'>{c['tag_b']}</span>"
+                        f"<span style='color:rgba(255,255,255,.3);font-size:.7rem'>({fb}×)</span>"
+                        f"</div>"
+                        f"<span style='color:rgba(255,255,255,.35);font-size:.75rem'>"
+                        f"{c['similaridade']:.3f} · {c['tipo']}</span>"
+                        f"</div>", unsafe_allow_html=True)
+            else:
+                st.info("Nenhuma conexão encontrada nas tags deste participante.")
+
+            st.markdown(divider(), unsafe_allow_html=True)
+            st.markdown("**Todas as tags criadas:**")
+            ft = utags.copy()
+            ft['Obra'] = ft['obra_id'].map(od)
+            st.dataframe(
+                ft[['tag','Obra','timestamp']].rename(columns={'tag':'Tag','timestamp':'Data/Hora'}),
+                use_container_width=True, hide_index=True)
+
+    # ── QUESTIONÁRIO ─────────────────────────────────────────────────
+    with t3:
+        st.markdown("#### Respostas do Questionário de Perfil")
+
+        c1,c2 = st.columns(2)
+        with c1:
+            st.markdown("**Q1 — Familiaridade com Museus**")
+            q1c = udf['q1'].value_counts()
+            st.bar_chart(q1c)
+            q1p = (q1c/q1c.sum()*100).round(1).reset_index()
+            q1p.columns=['Resposta','%']
+            st.dataframe(q1p, use_container_width=True, hide_index=True)
+
+        with c2:
+            st.markdown("**Q2 — Conhecimento sobre Documentação Museológica**")
+            q2c = udf['q2'].value_counts()
+            st.bar_chart(q2c)
+            q2p = (q2c/q2c.sum()*100).round(1).reset_index()
+            q2p.columns=['Resposta','%']
+            st.dataframe(q2p, use_container_width=True, hide_index=True)
+
+        st.markdown(divider(), unsafe_allow_html=True)
+        st.markdown("**Q3 — Respostas Abertas: O que você entende por 'tags'?**")
+        disp = udf.copy()
+        if 'animal_name' in disp.columns:
+            disp = disp.rename(columns={'animal_name':'Usuário Anônimo'})
+        disp['Palavras'] = disp['q3'].str.split().str.len()
+        st.markdown(
+            f"Comprimento médio das respostas: "
+            f"**{disp['Palavras'].mean():.0f} palavras** por participante"
+        )
+        st.bar_chart(disp['Palavras'].value_counts().sort_index().rename("Qtd Respostas"))
+
+        st.markdown(divider(), unsafe_allow_html=True)
+        st.dataframe(
+            disp[['Usuário Anônimo','q3','Palavras','timestamp']]
+            .sort_values('timestamp',ascending=False)
+            .rename(columns={'q3':'Resposta','timestamp':'Data/Hora'}),
+            use_container_width=True, hide_index=True)
+
+    # ── CRUZAMENTOS ───────────────────────────────────────────────────
+    with t4:
+        if tdf.empty:
+            st.info("Dados de tags insuficientes para cruzamentos.")
+            return
+
+        st.markdown("#### Cruzamentos: Perfil do Participante × Comportamento de Tagging")
+
+        m = merged.copy()
+        m['TTR'] = (m['Tags_Unicas']/m['Total_Tags'].replace(0,np.nan)).fillna(0)
+
+        st.markdown(divider(), unsafe_allow_html=True)
+        st.markdown("**Familiaridade com Museus × Média de Tags Criadas**")
+        avg_q1 = m.groupby('q1')['Total_Tags'].mean().sort_values(ascending=False)
+        st.bar_chart(avg_q1)
+        t_q1 = avg_q1.reset_index()
+        t_q1.columns = ['Familiaridade','Média de Tags']
+        t_q1['Média de Tags'] = t_q1['Média de Tags'].round(2)
+        st.dataframe(t_q1, use_container_width=True, hide_index=True)
+
+        st.markdown(divider(), unsafe_allow_html=True)
+        st.markdown("**Conhecimento Museológico × Tags Únicas**")
+        avg_q2 = m.groupby('q2')['Tags_Unicas'].mean().sort_values(ascending=False)
+        st.bar_chart(avg_q2)
+        t_q2 = avg_q2.reset_index()
+        t_q2.columns = ['Conhecimento','Média Tags Únicas']
+        t_q2['Média Tags Únicas'] = t_q2['Média Tags Únicas'].round(2)
+        st.dataframe(t_q2, use_container_width=True, hide_index=True)
+
+        st.markdown(divider(), unsafe_allow_html=True)
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("**Familiaridade × Riqueza Vocabular (TTR)**")
+            avg_ttr = m.groupby('q1')['TTR'].mean().sort_values(ascending=False)
+            st.bar_chart(avg_ttr)
+        with c2:
+            st.markdown("**Conhecimento Museológico × TTR**")
+            avg_ttr2 = m.groupby('q2')['TTR'].mean().sort_values(ascending=False)
+            st.bar_chart(avg_ttr2)
+
+        st.markdown(divider(), unsafe_allow_html=True)
+        st.markdown("#### Tabela Consolidada de Cruzamentos")
+        cross = m.groupby('q1').agg(
+            Usuários     =('user_id','count'),
+            Média_Tags   =('Total_Tags','mean'),
+            Média_Únicas =('Tags_Unicas','mean'),
+            Riqueza_TTR  =('TTR','mean'),
+        ).round(2).reset_index()
+        cross.columns = ['Familiaridade','Usuários','Média Tags','Média Únicas','Riqueza (TTR)']
+        st.dataframe(cross, use_container_width=True, hide_index=True)
+
+        st.markdown(insight(
+            "<strong>Interpretação:</strong> Compare se participantes mais familiarizados com museus "
+            "produzem mais tags, maior diversidade vocabular (TTR) ou tags mais descritivas. "
+            "A riqueza vocabular (TTR) mede a proporção de termos únicos sobre o total criado — "
+            "valores próximos de 1.0 indicam alta originalidade e variedade nas tags."
+        ), unsafe_allow_html=True)
+
+# ═════════════════════════════════════════════════════════════════════
+# ABA 5 — GESTÃO DE OBRAS
+# ═════════════════════════════════════════════════════════════════════
+def tab_obras():
+    st.markdown("### Gestão de Obras")
+    obras = load_obras()
+    t1, t2 = st.tabs(["Listar Obras","Adicionar Nova"])
+
+    with t1:
+        if obras:
+            for obra in obras:
+                c1,c2,c3 = st.columns([1,2,1])
+                with c1: st.image(obra['imagem'], use_container_width=True)
+                with c2:
+                    st.markdown(f"**#{obra['id']} – {obra['titulo']}**")
+                    st.markdown(f"*{obra['artista']} — {obra['ano']}*")
+                with c3:
+                    if st.button("🗑️ Remover", key=f"del_{obra['id']}"):
+                        obras.remove(obra)
+                        save_json_file(OBRAS_FILE, obras)
+                        st.success("Obra removida!")
+                        st.cache_data.clear()
+                        st.rerun()
+                st.divider()
+        else:
+            st.info("Nenhuma obra cadastrada.")
+
+    with t2:
+        with st.form("add_obra"):
+            titulo  = st.text_input("Título da Obra")
+            artista = st.text_input("Artista")
+            ano     = st.text_input("Ano")
+            imagem  = st.text_input("URL da Imagem")
+            if st.form_submit_button(" Adicionar Obra"):
+                if titulo and artista and ano and imagem:
+                    nid = max([o['id'] for o in obras])+1 if obras else 1
+                    obras.append({"id":nid,"titulo":titulo,"artista":artista,"ano":ano,"imagem":imagem})
+                    save_json_file(OBRAS_FILE, obras)
+                    st.success("Obra adicionada!")
+                    st.cache_data.clear()
+                    st.rerun()
+                else:
+                    st.error("Preencha todos os campos!")
+
+# ═════════════════════════════════════════════════════════════════════
+# ABA 6 — EXPORTAR
+# ═════════════════════════════════════════════════════════════════════
+def tab_export():
+    st.markdown("### Central de Exportação")
+    tdf  = all_tags()
+    udf  = all_users()
+    obs  = load_obras()
+
+    t1, t2 = st.tabs([" Exportação Geral"," Por Participante"])
+
+    with t1:
+        c1,c2,c3 = st.columns(3)
+        with c1:
+            st.markdown("#### Tags")
+            if not tdf.empty:
+                st.download_button(" Todas as Tags (CSV)",
+                    tdf.to_csv(index=False).encode('utf-8'),
+                    f"tags_{datetime.now().strftime('%Y%m%d')}.csv","text/csv",
+                    use_container_width=True)
+                freq = tdf['tag'].value_counts().reset_index()
+                freq.columns=['Tag','Frequência']
+                freq['%']=(freq['Frequência']/freq['Frequência'].sum()*100).round(2)
+                st.download_button(" Frequências (CSV)",
+                    freq.to_csv(index=False).encode('utf-8'),
+                    f"freq_{datetime.now().strftime('%Y%m%d')}.csv","text/csv",
+                    use_container_width=True)
+        with c2:
+            st.markdown("#### Usuários")
+            if not udf.empty:
+                st.download_button(" Usuários (CSV)",
+                    udf.to_csv(index=False).encode('utf-8'),
+                    f"usuarios_{datetime.now().strftime('%Y%m%d')}.csv","text/csv",
+                    use_container_width=True)
+        with c3:
+            st.markdown("#### Obras")
+            if obs:
+                st.download_button(" Obras (CSV)",
+                    pd.DataFrame(obs).to_csv(index=False).encode('utf-8'),
+                    f"obras_{datetime.now().strftime('%Y%m%d')}.csv","text/csv",
+                    use_container_width=True)
+
+        st.markdown(divider(), unsafe_allow_html=True)
+        st.markdown("#### Exportar Conexões de Tags")
+        if not tdf.empty:
+            thr = st.slider("Limiar de similaridade:", 0.2, 0.9, 0.35, 0.05, key="exp_thr")
+            if st.button("Gerar arquivo de conexões"):
+                with st.spinner("Calculando…"):
+                    conns = tag_connections(tdf['tag'].tolist(), threshold=thr)
+                if conns:
+                    cdf = pd.DataFrame(conns)
+                    st.download_button(" Conexões (CSV)",
+                        cdf.to_csv(index=False).encode('utf-8'),
+                        f"conexoes_{datetime.now().strftime('%Y%m%d')}.csv","text/csv",
+                        use_container_width=True)
+                    st.success(f"{len(conns)} conexões exportadas.")
+                else:
+                    st.info("Nenhuma conexão encontrada com este limiar.")
+
+    with t2:
+        if udf.empty:
+            st.info("Nenhum participante cadastrado.")
+            return
+        uopts = [f"🐾 {r.get('animal_name',r['user_id'][:8])}" for _,r in udf.iterrows()]
+        usel  = st.selectbox("Selecione um participante:", uopts, key="exp_u")
+        uidx  = uopts.index(usel)
+        uid   = udf.iloc[uidx]['user_id']
+        uanim = udf.iloc[uidx].get('animal_name', uid[:8])
+
+        st.markdown(f"#### Dados de: **{uanim}**")
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("##### Questionário")
+            hq = html_quest(uid, uanim, udf)
+            if hq:
+                st.download_button(" Respostas (HTML/PDF)", hq,
+                    f"quest_{uid[:8]}.html","text/html", use_container_width=True)
+            ud = udf[udf['user_id']==uid]
+            if not ud.empty:
+                st.download_button(" Respostas (CSV)",
+                    ud.to_csv(index=False).encode('utf-8'),
+                    f"quest_{uid[:8]}.csv","text/csv", use_container_width=True)
+        with c2:
+            st.markdown("##### Tags Criadas")
+            ht = html_tags(uid, uanim, obs, tdf)
+            if ht:
+                st.download_button(" Tags (HTML/PDF)", ht,
+                    f"tags_{uid[:8]}.html","text/html", use_container_width=True)
+            ut = get_user_tags(uid)
+            if not ut.empty:
+                st.download_button(" Tags (CSV)",
+                    ut.to_csv(index=False).encode('utf-8'),
+                    f"tags_{uid[:8]}.csv","text/csv", use_container_width=True)
 
 if __name__ == "__main__":
     main()
-PADDING_DOC = """
-padding line 1
-padding line 2
-padding line 3
-padding line 4
-padding line 5
-padding line 6
-padding line 7
-padding line 8
-padding line 9
-padding line 10
-padding line 11
-padding line 12
-padding line 13
-padding line 14
-padding line 15
-padding line 16
-padding line 17
-padding line 18
-padding line 19
-padding line 20
-padding line 21
-padding line 22
-padding line 23
-padding line 24
-padding line 25
-padding line 26
-padding line 27
-padding line 28
-padding line 29
-padding line 30
-padding line 31
-padding line 32
-padding line 33
-padding line 34
-padding line 35
-padding line 36
-padding line 37
-padding line 38
-padding line 39
-padding line 40
-padding line 41
-padding line 42
-padding line 43
-padding line 44
-padding line 45
-padding line 46
-padding line 47
-padding line 48
-padding line 49
-padding line 50
-padding line 51
-padding line 52
-padding line 53
-padding line 54
-padding line 55
-padding line 56
-padding line 57
-padding line 58
-padding line 59
-padding line 60
-padding line 61
-padding line 62
-padding line 63
-padding line 64
-padding line 65
-padding line 66
-padding line 67
-padding line 68
-padding line 69
-padding line 70
-padding line 71
-padding line 72
-padding line 73
-padding line 74
-padding line 75
-padding line 76
-padding line 77
-padding line 78
-padding line 79
-padding line 80
-padding line 81
-padding line 82
-padding line 83
-padding line 84
-padding line 85
-padding line 86
-padding line 87
-padding line 88
-padding line 89
-padding line 90
-padding line 91
-padding line 92
-padding line 93
-padding line 94
-padding line 95
-padding line 96
-padding line 97
-padding line 98
-padding line 99
-padding line 100
-padding line 101
-padding line 102
-padding line 103
-padding line 104
-padding line 105
-padding line 106
-padding line 107
-padding line 108
-padding line 109
-padding line 110
-padding line 111
-padding line 112
-padding line 113
-padding line 114
-padding line 115
-padding line 116
-padding line 117
-padding line 118
-padding line 119
-padding line 120
-padding line 121
-padding line 122
-padding line 123
-padding line 124
-padding line 125
-padding line 126
-padding line 127
-padding line 128
-padding line 129
-padding line 130
-padding line 131
-padding line 132
-padding line 133
-padding line 134
-padding line 135
-padding line 136
-padding line 137
-padding line 138
-padding line 139
-padding line 140
-padding line 141
-padding line 142
-padding line 143
-padding line 144
-padding line 145
-padding line 146
-padding line 147
-padding line 148
-padding line 149
-padding line 150
-padding line 151
-padding line 152
-padding line 153
-padding line 154
-padding line 155
-padding line 156
-padding line 157
-padding line 158
-padding line 159
-padding line 160
-padding line 161
-padding line 162
-padding line 163
-padding line 164
-padding line 165
-padding line 166
-padding line 167
-padding line 168
-padding line 169
-padding line 170
-padding line 171
-padding line 172
-padding line 173
-padding line 174
-padding line 175
-padding line 176
-padding line 177
-padding line 178
-padding line 179
-padding line 180
-padding line 181
-padding line 182
-padding line 183
-padding line 184
-padding line 185
-padding line 186
-padding line 187
-padding line 188
-padding line 189
-padding line 190
-padding line 191
-padding line 192
-padding line 193
-padding line 194
-padding line 195
-padding line 196
-padding line 197
-padding line 198
-padding line 199
-padding line 200
-padding line 201
-padding line 202
-padding line 203
-padding line 204
-padding line 205
-padding line 206
-padding line 207
-padding line 208
-padding line 209
-padding line 210
-padding line 211
-padding line 212
-padding line 213
-padding line 214
-padding line 215
-padding line 216
-padding line 217
-padding line 218
-padding line 219
-padding line 220
-padding line 221
-padding line 222
-padding line 223
-padding line 224
-padding line 225
-padding line 226
-padding line 227
-padding line 228
-padding line 229
-padding line 230
-padding line 231
-padding line 232
-padding line 233
-padding line 234
-padding line 235
-padding line 236
-padding line 237
-padding line 238
-padding line 239
-padding line 240
-padding line 241
-padding line 242
-padding line 243
-padding line 244
-padding line 245
-padding line 246
-padding line 247
-padding line 248
-padding line 249
-padding line 250
-padding line 251
-padding line 252
-padding line 253
-padding line 254
-padding line 255
-padding line 256
-padding line 257
-padding line 258
-padding line 259
-padding line 260
-padding line 261
-padding line 262
-padding line 263
-padding line 264
-padding line 265
-padding line 266
-padding line 267
-padding line 268
-padding line 269
-padding line 270
-padding line 271
-padding line 272
-padding line 273
-padding line 274
-padding line 275
-padding line 276
-padding line 277
-padding line 278
-padding line 279
-padding line 280
-padding line 281
-padding line 282
-padding line 283
-padding line 284
-padding line 285
-padding line 286
-padding line 287
-padding line 288
-padding line 289
-padding line 290
-padding line 291
-padding line 292
-padding line 293
-padding line 294
-padding line 295
-padding line 296
-padding line 297
-padding line 298
-padding line 299
-padding line 300
-padding line 301
-padding line 302
-padding line 303
-padding line 304
-padding line 305
-padding line 306
-padding line 307
-padding line 308
-padding line 309
-padding line 310
-padding line 311
-padding line 312
-padding line 313
-padding line 314
-padding line 315
-padding line 316
-padding line 317
-padding line 318
-padding line 319
-padding line 320
-padding line 321
-padding line 322
-padding line 323
-padding line 324
-padding line 325
-padding line 326
-padding line 327
-padding line 328
-padding line 329
-padding line 330
-padding line 331
-padding line 332
-padding line 333
-padding line 334
-padding line 335
-padding line 336
-padding line 337
-padding line 338
-padding line 339
-padding line 340
-padding line 341
-padding line 342
-padding line 343
-padding line 344
-padding line 345
-padding line 346
-padding line 347
-padding line 348
-padding line 349
-padding line 350
-padding line 351
-padding line 352
-padding line 353
-padding line 354
-padding line 355
-padding line 356
-padding line 357
-padding line 358
-padding line 359
-padding line 360
-padding line 361
-padding line 362
-padding line 363
-padding line 364
-padding line 365
-padding line 366
-padding line 367
-padding line 368
-padding line 369
-padding line 370
-padding line 371
-padding line 372
-padding line 373
-padding line 374
-padding line 375
-padding line 376
-padding line 377
-padding line 378
-padding line 379
-padding line 380
-padding line 381
-padding line 382
-padding line 383
-padding line 384
-padding line 385
-padding line 386
-padding line 387
-padding line 388
-padding line 389
-padding line 390
-padding line 391
-padding line 392
-padding line 393
-padding line 394
-padding line 395
-padding line 396
-padding line 397
-padding line 398
-padding line 399
-padding line 400
-padding line 401
-padding line 402
-padding line 403
-padding line 404
-padding line 405
-padding line 406
-padding line 407
-padding line 408
-padding line 409
-padding line 410
-padding line 411
-padding line 412
-padding line 413
-padding line 414
-padding line 415
-padding line 416
-padding line 417
-padding line 418
-padding line 419
-padding line 420
-padding line 421
-padding line 422
-padding line 423
-padding line 424
-padding line 425
-padding line 426
-padding line 427
-padding line 428
-padding line 429
-padding line 430
-padding line 431
-padding line 432
-padding line 433
-padding line 434
-padding line 435
-padding line 436
-padding line 437
-padding line 438
-padding line 439
-padding line 440
-padding line 441
-padding line 442
-padding line 443
-padding line 444
-padding line 445
-padding line 446
-padding line 447
-padding line 448
-padding line 449
-padding line 450
-padding line 451
-padding line 452
-padding line 453
-padding line 454
-padding line 455
-padding line 456
-padding line 457
-padding line 458
-padding line 459
-padding line 460
-padding line 461
-padding line 462
-padding line 463
-padding line 464
-padding line 465
-padding line 466
-padding line 467
-padding line 468
-padding line 469
-padding line 470
-padding line 471
-padding line 472
-padding line 473
-padding line 474
-padding line 475
-padding line 476
-padding line 477
-padding line 478
-padding line 479
-padding line 480
-padding line 481
-padding line 482
-padding line 483
-padding line 484
-padding line 485
-padding line 486
-padding line 487
-padding line 488
-padding line 489
-padding line 490
-padding line 491
-padding line 492
-padding line 493
-padding line 494
-padding line 495
-padding line 496
-padding line 497
-padding line 498
-padding line 499
-padding line 500
-padding line 501
-padding line 502
-padding line 503
-padding line 504
-padding line 505
-padding line 506
-padding line 507
-padding line 508
-padding line 509
-padding line 510
-padding line 511
-padding line 512
-padding line 513
-padding line 514
-padding line 515
-padding line 516
-padding line 517
-padding line 518
-padding line 519
-padding line 520
-padding line 521
-padding line 522
-padding line 523
-padding line 524
-padding line 525
-padding line 526
-padding line 527
-padding line 528
-padding line 529
-padding line 530
-padding line 531
-padding line 532
-padding line 533
-padding line 534
-padding line 535
-padding line 536
-padding line 537
-padding line 538
-padding line 539
-padding line 540
-padding line 541
-padding line 542
-padding line 543
-padding line 544
-padding line 545
-padding line 546
-padding line 547
-padding line 548
-padding line 549
-padding line 550
-padding line 551
-padding line 552
-padding line 553
-padding line 554
-padding line 555
-padding line 556
-padding line 557
-padding line 558
-padding line 559
-padding line 560
-padding line 561
-padding line 562
-padding line 563
-padding line 564
-padding line 565
-padding line 566
-padding line 567
-padding line 568
-padding line 569
-padding line 570
-padding line 571
-padding line 572
-padding line 573
-padding line 574
-padding line 575
-padding line 576
-padding line 577
-padding line 578
-padding line 579
-padding line 580
-padding line 581
-padding line 582
-padding line 583
-padding line 584
-padding line 585
-padding line 586
-padding line 587
-padding line 588
-padding line 589
-padding line 590
-padding line 591
-padding line 592
-padding line 593
-padding line 594
-padding line 595
-padding line 596
-padding line 597
-padding line 598
-padding line 599
-padding line 600
-padding line 601
-padding line 602
-padding line 603
-padding line 604
-padding line 605
-padding line 606
-padding line 607
-padding line 608
-padding line 609
-padding line 610
-padding line 611
-padding line 612
-padding line 613
-padding line 614
-padding line 615
-padding line 616
-padding line 617
-padding line 618
-padding line 619
-padding line 620
-padding line 621
-padding line 622
-padding line 623
-padding line 624
-padding line 625
-padding line 626
-padding line 627
-padding line 628
-padding line 629
-padding line 630
-padding line 631
-padding line 632
-padding line 633
-padding line 634
-padding line 635
-padding line 636
-padding line 637
-padding line 638
-padding line 639
-padding line 640
-padding line 641
-padding line 642
-padding line 643
-padding line 644
-padding line 645
-padding line 646
-padding line 647
-padding line 648
-padding line 649
-padding line 650
-padding line 651
-padding line 652
-padding line 653
-padding line 654
-padding line 655
-padding line 656
-padding line 657
-padding line 658
-padding line 659
-padding line 660
-padding line 661
-padding line 662
-padding line 663
-padding line 664
-padding line 665
-padding line 666
-padding line 667
-padding line 668
-padding line 669
-padding line 670
-padding line 671
-padding line 672
-padding line 673
-padding line 674
-padding line 675
-padding line 676
-padding line 677
-padding line 678
-padding line 679
-padding line 680
-padding line 681
-padding line 682
-padding line 683
-padding line 684
-padding line 685
-padding line 686
-padding line 687
-padding line 688
-padding line 689
-padding line 690
-padding line 691
-padding line 692
-padding line 693
-padding line 694
-padding line 695
-padding line 696
-padding line 697
-padding line 698
-padding line 699
-padding line 700
-padding line 701
-padding line 702
-padding line 703
-padding line 704
-padding line 705
-padding line 706
-padding line 707
-padding line 708
-padding line 709
-padding line 710
-padding line 711
-padding line 712
-padding line 713
-padding line 714
-padding line 715
-padding line 716
-padding line 717
-padding line 718
-padding line 719
-padding line 720
-padding line 721
-padding line 722
-padding line 723
-padding line 724
-padding line 725
-padding line 726
-padding line 727
-padding line 728
-padding line 729
-padding line 730
-padding line 731
-padding line 732
-padding line 733
-padding line 734
-padding line 735
-padding line 736
-padding line 737
-padding line 738
-padding line 739
-padding line 740
-padding line 741
-padding line 742
-padding line 743
-padding line 744
-padding line 745
-padding line 746
-padding line 747
-padding line 748
-padding line 749
-padding line 750
-padding line 751
-padding line 752
-padding line 753
-padding line 754
-padding line 755
-padding line 756
-padding line 757
-padding line 758
-padding line 759
-padding line 760
-padding line 761
-padding line 762
-padding line 763
-padding line 764
-padding line 765
-padding line 766
-padding line 767
-padding line 768
-padding line 769
-padding line 770
-padding line 771
-padding line 772
-padding line 773
-padding line 774
-padding line 775
-padding line 776
-padding line 777
-padding line 778
-padding line 779
-padding line 780
-padding line 781
-padding line 782
-padding line 783
-padding line 784
-padding line 785
-padding line 786
-padding line 787
-padding line 788
-padding line 789
-padding line 790
-padding line 791
-padding line 792
-padding line 793
-padding line 794
-padding line 795
-padding line 796
-padding line 797
-padding line 798
-padding line 799
-padding line 800
-padding line 801
-padding line 802
-padding line 803
-padding line 804
-padding line 805
-padding line 806
-padding line 807
-padding line 808
-padding line 809
-padding line 810
-padding line 811
-padding line 812
-padding line 813
-padding line 814
-padding line 815
-padding line 816
-padding line 817
-padding line 818
-padding line 819
-padding line 820
-padding line 821
-padding line 822
-padding line 823
-padding line 824
-padding line 825
-padding line 826
-padding line 827
-padding line 828
-padding line 829
-padding line 830
-padding line 831
-padding line 832
-padding line 833
-padding line 834
-padding line 835
-padding line 836
-padding line 837
-padding line 838
-padding line 839
-padding line 840
-padding line 841
-padding line 842
-padding line 843
-padding line 844
-padding line 845
-padding line 846
-padding line 847
-padding line 848
-padding line 849
-padding line 850
-padding line 851
-padding line 852
-padding line 853
-padding line 854
-padding line 855
-padding line 856
-padding line 857
-padding line 858
-padding line 859
-padding line 860
-padding line 861
-padding line 862
-padding line 863
-padding line 864
-padding line 865
-padding line 866
-padding line 867
-padding line 868
-padding line 869
-padding line 870
-padding line 871
-padding line 872
-padding line 873
-padding line 874
-padding line 875
-padding line 876
-padding line 877
-padding line 878
-padding line 879
-padding line 880
-padding line 881
-padding line 882
-padding line 883
-padding line 884
-padding line 885
-padding line 886
-padding line 887
-padding line 888
-padding line 889
-padding line 890
-padding line 891
-padding line 892
-padding line 893
-padding line 894
-padding line 895
-padding line 896
-padding line 897
-padding line 898
-padding line 899
-padding line 900
-padding line 901
-padding line 902
-padding line 903
-padding line 904
-padding line 905
-padding line 906
-padding line 907
-padding line 908
-padding line 909
-padding line 910
-padding line 911
-padding line 912
-padding line 913
-padding line 914
-padding line 915
-padding line 916
-padding line 917
-padding line 918
-padding line 919
-padding line 920
-padding line 921
-padding line 922
-padding line 923
-padding line 924
-padding line 925
-padding line 926
-padding line 927
-padding line 928
-padding line 929
-padding line 930
-padding line 931
-padding line 932
-padding line 933
-padding line 934
-padding line 935
-padding line 936
-padding line 937
-padding line 938
-padding line 939
-padding line 940
-padding line 941
-padding line 942
-padding line 943
-padding line 944
-padding line 945
-padding line 946
-padding line 947
-padding line 948
-padding line 949
-padding line 950
-padding line 951
-padding line 952
-padding line 953
-padding line 954
-padding line 955
-padding line 956
-padding line 957
-padding line 958
-padding line 959
-padding line 960
-padding line 961
-padding line 962
-padding line 963
-padding line 964
-padding line 965
-padding line 966
-padding line 967
-padding line 968
-padding line 969
-padding line 970
-padding line 971
-padding line 972
-padding line 973
-padding line 974
-padding line 975
-padding line 976
-padding line 977
-padding line 978
-padding line 979
-padding line 980
-padding line 981
-padding line 982
-padding line 983
-padding line 984
-padding line 985
-padding line 986
-padding line 987
-padding line 988
-padding line 989
-padding line 990
-padding line 991
-padding line 992
-padding line 993
-padding line 994
-padding line 995
-padding line 996
-padding line 997
-padding line 998
-padding line 999
-padding line 1000
-padding line 1001
-padding line 1002
-padding line 1003
-padding line 1004
-padding line 1005
-padding line 1006
-padding line 1007
-padding line 1008
-padding line 1009
-padding line 1010
-padding line 1011
-padding line 1012
-padding line 1013
-padding line 1014
-padding line 1015
-padding line 1016
-padding line 1017
-padding line 1018
-padding line 1019
-padding line 1020
-padding line 1021
-padding line 1022
-padding line 1023
-padding line 1024
-padding line 1025
-padding line 1026
-padding line 1027
-padding line 1028
-padding line 1029
-padding line 1030
-padding line 1031
-padding line 1032
-padding line 1033
-padding line 1034
-padding line 1035
-padding line 1036
-padding line 1037
-padding line 1038
-padding line 1039
-padding line 1040
-padding line 1041
-padding line 1042
-padding line 1043
-padding line 1044
-padding line 1045
-padding line 1046
-padding line 1047
-padding line 1048
-padding line 1049
-padding line 1050
-padding line 1051
-padding line 1052
-padding line 1053
-padding line 1054
-padding line 1055
-padding line 1056
-padding line 1057
-padding line 1058
-padding line 1059
-padding line 1060
-padding line 1061
-padding line 1062
-padding line 1063
-padding line 1064
-padding line 1065
-padding line 1066
-padding line 1067
-padding line 1068
-padding line 1069
-padding line 1070
-padding line 1071
-padding line 1072
-padding line 1073
-padding line 1074
-padding line 1075
-padding line 1076
-padding line 1077
-padding line 1078
-padding line 1079
-padding line 1080
-padding line 1081
-padding line 1082
-padding line 1083
-padding line 1084
-padding line 1085
-padding line 1086
-padding line 1087
-padding line 1088
-padding line 1089
-padding line 1090
-padding line 1091
-padding line 1092
-padding line 1093
-padding line 1094
-padding line 1095
-padding line 1096
-padding line 1097
-padding line 1098
-padding line 1099
-padding line 1100
-padding line 1101
-padding line 1102
-padding line 1103
-padding line 1104
-padding line 1105
-padding line 1106
-padding line 1107
-padding line 1108
-padding line 1109
-padding line 1110
-padding line 1111
-padding line 1112
-padding line 1113
-padding line 1114
-padding line 1115
-padding line 1116
-padding line 1117
-padding line 1118
-padding line 1119
-padding line 1120
-padding line 1121
-padding line 1122
-padding line 1123
-padding line 1124
-padding line 1125
-padding line 1126
-padding line 1127
-padding line 1128
-padding line 1129
-padding line 1130
-padding line 1131
-padding line 1132
-padding line 1133
-padding line 1134
-padding line 1135
-padding line 1136
-padding line 1137
-padding line 1138
-padding line 1139
-padding line 1140
-padding line 1141
-padding line 1142
-padding line 1143
-padding line 1144
-padding line 1145
-padding line 1146
-padding line 1147
-padding line 1148
-padding line 1149
-padding line 1150
-padding line 1151
-padding line 1152
-padding line 1153
-padding line 1154
-padding line 1155
-padding line 1156
-padding line 1157
-padding line 1158
-padding line 1159
-padding line 1160
-padding line 1161
-padding line 1162
-padding line 1163
-padding line 1164
-padding line 1165
-padding line 1166
-padding line 1167
-padding line 1168
-padding line 1169
-padding line 1170
-padding line 1171
-padding line 1172
-padding line 1173
-padding line 1174
-padding line 1175
-padding line 1176
-padding line 1177
-padding line 1178
-padding line 1179
-padding line 1180
-padding line 1181
-padding line 1182
-padding line 1183
-padding line 1184
-padding line 1185
-padding line 1186
-padding line 1187
-padding line 1188
-padding line 1189
-padding line 1190
-padding line 1191
-padding line 1192
-padding line 1193
-padding line 1194
-padding line 1195
-padding line 1196
-padding line 1197
-padding line 1198
-padding line 1199
-padding line 1200
-padding line 1201
-padding line 1202
-padding line 1203
-padding line 1204
-padding line 1205
-padding line 1206
-padding line 1207
-padding line 1208
-padding line 1209
-padding line 1210
-padding line 1211
-padding line 1212
-padding line 1213
-padding line 1214
-padding line 1215
-padding line 1216
-padding line 1217
-padding line 1218
-padding line 1219
-padding line 1220
-padding line 1221
-padding line 1222
-padding line 1223
-padding line 1224
-padding line 1225
-padding line 1226
-padding line 1227
-padding line 1228
-padding line 1229
-padding line 1230
-padding line 1231
-padding line 1232
-padding line 1233
-padding line 1234
-padding line 1235
-padding line 1236
-padding line 1237
-padding line 1238
-padding line 1239
-padding line 1240
-padding line 1241
-padding line 1242
-padding line 1243
-padding line 1244
-padding line 1245
-padding line 1246
-padding line 1247
-padding line 1248
-padding line 1249
-padding line 1250
-padding line 1251
-padding line 1252
-padding line 1253
-padding line 1254
-padding line 1255
-padding line 1256
-padding line 1257
-padding line 1258
-padding line 1259
-padding line 1260
-padding line 1261
-padding line 1262
-padding line 1263
-padding line 1264
-padding line 1265
-padding line 1266
-padding line 1267
-padding line 1268
-padding line 1269
-padding line 1270
-padding line 1271
-padding line 1272
-padding line 1273
-padding line 1274
-padding line 1275
-padding line 1276
-padding line 1277
-padding line 1278
-padding line 1279
-padding line 1280
-padding line 1281
-padding line 1282
-padding line 1283
-padding line 1284
-padding line 1285
-padding line 1286
-padding line 1287
-padding line 1288
-padding line 1289
-padding line 1290
-padding line 1291
-padding line 1292
-padding line 1293
-padding line 1294
-padding line 1295
-padding line 1296
-padding line 1297
-padding line 1298
-padding line 1299
-padding line 1300
-padding line 1301
-padding line 1302
-padding line 1303
-padding line 1304
-padding line 1305
-padding line 1306
-padding line 1307
-padding line 1308
-padding line 1309
-padding line 1310
-padding line 1311
-padding line 1312
-padding line 1313
-padding line 1314
-padding line 1315
-padding line 1316
-padding line 1317
-padding line 1318
-padding line 1319
-padding line 1320
-padding line 1321
-padding line 1322
-padding line 1323
-padding line 1324
-padding line 1325
-padding line 1326
-padding line 1327
-padding line 1328
-padding line 1329
-padding line 1330
-padding line 1331
-padding line 1332
-padding line 1333
-padding line 1334
-padding line 1335
-padding line 1336
-padding line 1337
-padding line 1338
-padding line 1339
-padding line 1340
-padding line 1341
-padding line 1342
-padding line 1343
-padding line 1344
-padding line 1345
-padding line 1346
-padding line 1347
-padding line 1348
-padding line 1349
-padding line 1350
-padding line 1351
-padding line 1352
-padding line 1353
-padding line 1354
-padding line 1355
-padding line 1356
-padding line 1357
-padding line 1358
-padding line 1359
-padding line 1360
-padding line 1361
-padding line 1362
-padding line 1363
-padding line 1364
-padding line 1365
-padding line 1366
-padding line 1367
-padding line 1368
-padding line 1369
-padding line 1370
-padding line 1371
-padding line 1372
-padding line 1373
-padding line 1374
-padding line 1375
-padding line 1376
-padding line 1377
-padding line 1378
-padding line 1379
-padding line 1380
-padding line 1381
-padding line 1382
-padding line 1383
-padding line 1384
-padding line 1385
-padding line 1386
-padding line 1387
-padding line 1388
-padding line 1389
-padding line 1390
-padding line 1391
-padding line 1392
-padding line 1393
-padding line 1394
-padding line 1395
-padding line 1396
-padding line 1397
-padding line 1398
-padding line 1399
-padding line 1400
-padding line 1401
-padding line 1402
-padding line 1403
-padding line 1404
-padding line 1405
-padding line 1406
-padding line 1407
-padding line 1408
-padding line 1409
-padding line 1410
-padding line 1411
-padding line 1412
-padding line 1413
-padding line 1414
-padding line 1415
-padding line 1416
-padding line 1417
-padding line 1418
-padding line 1419
-padding line 1420
-padding line 1421
-padding line 1422
-padding line 1423
-padding line 1424
-padding line 1425
-padding line 1426
-padding line 1427
-padding line 1428
-padding line 1429
-padding line 1430
-padding line 1431
-padding line 1432
-padding line 1433
-padding line 1434
-padding line 1435
-padding line 1436
-padding line 1437
-padding line 1438
-padding line 1439
-padding line 1440
-padding line 1441
-padding line 1442
-padding line 1443
-padding line 1444
-padding line 1445
-padding line 1446
-padding line 1447
-padding line 1448
-padding line 1449
-padding line 1450
-padding line 1451
-padding line 1452
-padding line 1453
-padding line 1454
-padding line 1455
-padding line 1456
-padding line 1457
-padding line 1458
-padding line 1459
-padding line 1460
-padding line 1461
-padding line 1462
-padding line 1463
-padding line 1464
-padding line 1465
-padding line 1466
-padding line 1467
-padding line 1468
-padding line 1469
-padding line 1470
-padding line 1471
-padding line 1472
-padding line 1473
-padding line 1474
-padding line 1475
-padding line 1476
-padding line 1477
-padding line 1478
-padding line 1479
-padding line 1480
-padding line 1481
-padding line 1482
-padding line 1483
-padding line 1484
-padding line 1485
-padding line 1486
-padding line 1487
-padding line 1488
-padding line 1489
-padding line 1490
-padding line 1491
-padding line 1492
-padding line 1493
-padding line 1494
-padding line 1495
-padding line 1496
-padding line 1497
-padding line 1498
-padding line 1499
-padding line 1500
-padding line 1501
-padding line 1502
-padding line 1503
-padding line 1504
-padding line 1505
-padding line 1506
-padding line 1507
-padding line 1508
-padding line 1509
-padding line 1510
-padding line 1511
-padding line 1512
-padding line 1513
-padding line 1514
-padding line 1515
-padding line 1516
-padding line 1517
-padding line 1518
-padding line 1519
-padding line 1520
-padding line 1521
-padding line 1522
-padding line 1523
-padding line 1524
-padding line 1525
-padding line 1526
-padding line 1527
-padding line 1528
-padding line 1529
-padding line 1530
-padding line 1531
-padding line 1532
-padding line 1533
-padding line 1534
-padding line 1535
-padding line 1536
-padding line 1537
-padding line 1538
-padding line 1539
-padding line 1540
-padding line 1541
-padding line 1542
-padding line 1543
-padding line 1544
-padding line 1545
-padding line 1546
-padding line 1547
-padding line 1548
-padding line 1549
-padding line 1550
-padding line 1551
-padding line 1552
-padding line 1553
-padding line 1554
-padding line 1555
-padding line 1556
-padding line 1557
-padding line 1558
-padding line 1559
-padding line 1560
-padding line 1561
-padding line 1562
-padding line 1563
-padding line 1564
-padding line 1565
-padding line 1566
-padding line 1567
-padding line 1568
-padding line 1569
-padding line 1570
-padding line 1571
-padding line 1572
-padding line 1573
-padding line 1574
-padding line 1575
-padding line 1576
-padding line 1577
-padding line 1578
-padding line 1579
-padding line 1580
-padding line 1581
-padding line 1582
-padding line 1583
-padding line 1584
-padding line 1585
-padding line 1586
-padding line 1587
-padding line 1588
-padding line 1589
-padding line 1590
-padding line 1591
-padding line 1592
-padding line 1593
-padding line 1594
-padding line 1595
-padding line 1596
-padding line 1597
-padding line 1598
-padding line 1599
-padding line 1600
-padding line 1601
-padding line 1602
-padding line 1603
-padding line 1604
-padding line 1605
-padding line 1606
-padding line 1607
-padding line 1608
-padding line 1609
-padding line 1610
-padding line 1611
-padding line 1612
-padding line 1613
-padding line 1614
-padding line 1615
-padding line 1616
-padding line 1617
-padding line 1618
-padding line 1619
-padding line 1620
-padding line 1621
-padding line 1622
-padding line 1623
-padding line 1624
-padding line 1625
-padding line 1626
-padding line 1627
-padding line 1628
-padding line 1629
-padding line 1630
-padding line 1631
-padding line 1632
-padding line 1633
-padding line 1634
-padding line 1635
-padding line 1636
-padding line 1637
-padding line 1638
-padding line 1639
-padding line 1640
-padding line 1641
-padding line 1642
-padding line 1643
-padding line 1644
-padding line 1645
-padding line 1646
-padding line 1647
-padding line 1648
-padding line 1649
-padding line 1650
-padding line 1651
-padding line 1652
-padding line 1653
-padding line 1654
-padding line 1655
-padding line 1656
-padding line 1657
-padding line 1658
-padding line 1659
-padding line 1660
-padding line 1661
-padding line 1662
-padding line 1663
-padding line 1664
-padding line 1665
-padding line 1666
-padding line 1667
-padding line 1668
-padding line 1669
-padding line 1670
-padding line 1671
-padding line 1672
-padding line 1673
-padding line 1674
-padding line 1675
-padding line 1676
-padding line 1677
-padding line 1678
-padding line 1679
-padding line 1680
-padding line 1681
-padding line 1682
-padding line 1683
-padding line 1684
-padding line 1685
-padding line 1686
-padding line 1687
-padding line 1688
-padding line 1689
-padding line 1690
-padding line 1691
-padding line 1692
-padding line 1693
-padding line 1694
-padding line 1695
-padding line 1696
-padding line 1697
-padding line 1698
-padding line 1699
-padding line 1700
-padding line 1701
-padding line 1702
-padding line 1703
-padding line 1704
-padding line 1705
-padding line 1706
-padding line 1707
-padding line 1708
-padding line 1709
-padding line 1710
-padding line 1711
-padding line 1712
-padding line 1713
-padding line 1714
-padding line 1715
-padding line 1716
-padding line 1717
-padding line 1718
-padding line 1719
-padding line 1720
-padding line 1721
-padding line 1722
-padding line 1723
-padding line 1724
-padding line 1725
-padding line 1726
-padding line 1727
-padding line 1728
-padding line 1729
-padding line 1730
-padding line 1731
-padding line 1732
-padding line 1733
-padding line 1734
-padding line 1735
-padding line 1736
-padding line 1737
-padding line 1738
-padding line 1739
-padding line 1740
-padding line 1741
-padding line 1742
-padding line 1743
-padding line 1744
-padding line 1745
-padding line 1746
-padding line 1747
-padding line 1748
-padding line 1749
-padding line 1750
-padding line 1751
-padding line 1752
-padding line 1753
-padding line 1754
-padding line 1755
-padding line 1756
-padding line 1757
-padding line 1758
-padding line 1759
-padding line 1760
-padding line 1761
-padding line 1762
-padding line 1763
-padding line 1764
-padding line 1765
-padding line 1766
-padding line 1767
-padding line 1768
-padding line 1769
-padding line 1770
-padding line 1771
-padding line 1772
-padding line 1773
-padding line 1774
-padding line 1775
-padding line 1776
-padding line 1777
-padding line 1778
-padding line 1779
-padding line 1780
-padding line 1781
-padding line 1782
-padding line 1783
-padding line 1784
-padding line 1785
-padding line 1786
-padding line 1787
-padding line 1788
-padding line 1789
-padding line 1790
-padding line 1791
-padding line 1792
-padding line 1793
-padding line 1794
-padding line 1795
-padding line 1796
-padding line 1797
-padding line 1798
-padding line 1799
-padding line 1800
-padding line 1801
-padding line 1802
-padding line 1803
-padding line 1804
-padding line 1805
-padding line 1806
-padding line 1807
-padding line 1808
-padding line 1809
-padding line 1810
-padding line 1811
-padding line 1812
-padding line 1813
-padding line 1814
-padding line 1815
-padding line 1816
-padding line 1817
-padding line 1818
-padding line 1819
-padding line 1820
-padding line 1821
-padding line 1822
-padding line 1823
-padding line 1824
-padding line 1825
-padding line 1826
-padding line 1827
-padding line 1828
-padding line 1829
-padding line 1830
-padding line 1831
-padding line 1832
-padding line 1833
-padding line 1834
-padding line 1835
-padding line 1836
-padding line 1837
-padding line 1838
-padding line 1839
-padding line 1840
-padding line 1841
-padding line 1842
-padding line 1843
-padding line 1844
-padding line 1845
-padding line 1846
-padding line 1847
-padding line 1848
-padding line 1849
-padding line 1850
-padding line 1851
-padding line 1852
-padding line 1853
-padding line 1854
-padding line 1855
-padding line 1856
-padding line 1857
-padding line 1858
-padding line 1859
-padding line 1860
-padding line 1861
-padding line 1862
-padding line 1863
-padding line 1864
-padding line 1865
-padding line 1866
-padding line 1867
-padding line 1868
-padding line 1869
-padding line 1870
-padding line 1871
-padding line 1872
-padding line 1873
-padding line 1874
-padding line 1875
-padding line 1876
-padding line 1877
-padding line 1878
-padding line 1879
-padding line 1880
-padding line 1881
-padding line 1882
-padding line 1883
-padding line 1884
-padding line 1885
-padding line 1886
-padding line 1887
-padding line 1888
-padding line 1889
-padding line 1890
-padding line 1891
-padding line 1892
-padding line 1893
-padding line 1894
-padding line 1895
-padding line 1896
-padding line 1897
-padding line 1898
-padding line 1899
-padding line 1900
-padding line 1901
-padding line 1902
-padding line 1903
-padding line 1904
-padding line 1905
-padding line 1906
-padding line 1907
-padding line 1908
-padding line 1909
-padding line 1910
-padding line 1911
-padding line 1912
-padding line 1913
-padding line 1914
-padding line 1915
-padding line 1916
-padding line 1917
-padding line 1918
-padding line 1919
-padding line 1920
-padding line 1921
-padding line 1922
-padding line 1923
-padding line 1924
-padding line 1925
-padding line 1926
-padding line 1927
-padding line 1928
-padding line 1929
-padding line 1930
-padding line 1931
-padding line 1932
-padding line 1933
-padding line 1934
-padding line 1935
-padding line 1936
-padding line 1937
-padding line 1938
-padding line 1939
-padding line 1940
-padding line 1941
-padding line 1942
-padding line 1943
-padding line 1944
-padding line 1945
-padding line 1946
-padding line 1947
-padding line 1948
-padding line 1949
-padding line 1950
-padding line 1951
-padding line 1952
-padding line 1953
-padding line 1954
-padding line 1955
-padding line 1956
-padding line 1957
-padding line 1958
-padding line 1959
-padding line 1960
-padding line 1961
-padding line 1962
-padding line 1963
-padding line 1964
-padding line 1965
-padding line 1966
-padding line 1967
-padding line 1968
-padding line 1969
-padding line 1970
-padding line 1971
-padding line 1972
-padding line 1973
-padding line 1974
-padding line 1975
-padding line 1976
-padding line 1977
-padding line 1978
-padding line 1979
-padding line 1980
-padding line 1981
-padding line 1982
-padding line 1983
-padding line 1984
-padding line 1985
-padding line 1986
-padding line 1987
-padding line 1988
-padding line 1989
-padding line 1990
-padding line 1991
-padding line 1992
-padding line 1993
-padding line 1994
-padding line 1995
-padding line 1996
-padding line 1997
-padding line 1998
-padding line 1999
-padding line 2000
-padding line 2001
-padding line 2002
-padding line 2003
-padding line 2004
-padding line 2005
-padding line 2006
-padding line 2007
-padding line 2008
-padding line 2009
-padding line 2010
-padding line 2011
-padding line 2012
-padding line 2013
-padding line 2014
-padding line 2015
-padding line 2016
-padding line 2017
-padding line 2018
-padding line 2019
-padding line 2020
-padding line 2021
-padding line 2022
-padding line 2023
-padding line 2024
-padding line 2025
-padding line 2026
-padding line 2027
-padding line 2028
-padding line 2029
-padding line 2030
-padding line 2031
-padding line 2032
-padding line 2033
-padding line 2034
-padding line 2035
-padding line 2036
-padding line 2037
-padding line 2038
-padding line 2039
-padding line 2040
-padding line 2041
-padding line 2042
-padding line 2043
-padding line 2044
-padding line 2045
-padding line 2046
-padding line 2047
-padding line 2048
-padding line 2049
-padding line 2050
-padding line 2051
-padding line 2052
-padding line 2053
-padding line 2054
-padding line 2055
-padding line 2056
-padding line 2057
-padding line 2058
-padding line 2059
-padding line 2060
-padding line 2061
-padding line 2062
-padding line 2063
-padding line 2064
-padding line 2065
-padding line 2066
-padding line 2067
-padding line 2068
-padding line 2069
-padding line 2070
-padding line 2071
-padding line 2072
-padding line 2073
-padding line 2074
-padding line 2075
-padding line 2076
-padding line 2077
-padding line 2078
-padding line 2079
-padding line 2080
-padding line 2081
-padding line 2082
-padding line 2083
-padding line 2084
-padding line 2085
-padding line 2086
-padding line 2087
-padding line 2088
-padding line 2089
-padding line 2090
-padding line 2091
-padding line 2092
-padding line 2093
-padding line 2094
-padding line 2095
-padding line 2096
-padding line 2097
-padding line 2098
-padding line 2099
-padding line 2100
-padding line 2101
-padding line 2102
-padding line 2103
-padding line 2104
-padding line 2105
-padding line 2106
-padding line 2107
-padding line 2108
-padding line 2109
-padding line 2110
-padding line 2111
-padding line 2112
-padding line 2113
-padding line 2114
-padding line 2115
-padding line 2116
-padding line 2117
-padding line 2118
-padding line 2119
-padding line 2120
-padding line 2121
-padding line 2122
-padding line 2123
-padding line 2124
-padding line 2125
-padding line 2126
-padding line 2127
-padding line 2128
-padding line 2129
-padding line 2130
-padding line 2131
-padding line 2132
-padding line 2133
-padding line 2134
-padding line 2135
-padding line 2136
-padding line 2137
-padding line 2138
-padding line 2139
-padding line 2140
-padding line 2141
-padding line 2142
-padding line 2143
-padding line 2144
-padding line 2145
-padding line 2146
-padding line 2147
-padding line 2148
-padding line 2149
-padding line 2150
-padding line 2151
-padding line 2152
-padding line 2153
-padding line 2154
-padding line 2155
-padding line 2156
-padding line 2157
-padding line 2158
-padding line 2159
-padding line 2160
-padding line 2161
-padding line 2162
-padding line 2163
-padding line 2164
-padding line 2165
-padding line 2166
-padding line 2167
-padding line 2168
-padding line 2169
-padding line 2170
-padding line 2171
-padding line 2172
-padding line 2173
-padding line 2174
-padding line 2175
-padding line 2176
-padding line 2177
-padding line 2178
-padding line 2179
-padding line 2180
-padding line 2181
-padding line 2182
-padding line 2183
-padding line 2184
-padding line 2185
-padding line 2186
-padding line 2187
-padding line 2188
-padding line 2189
-padding line 2190
-padding line 2191
-padding line 2192
-padding line 2193
-padding line 2194
-padding line 2195
-padding line 2196
-padding line 2197
-padding line 2198
-padding line 2199
-padding line 2200
-padding line 2201
-padding line 2202
-padding line 2203
-padding line 2204
-padding line 2205
-padding line 2206
-padding line 2207
-padding line 2208
-padding line 2209
-padding line 2210
-padding line 2211
-padding line 2212
-padding line 2213
-padding line 2214
-padding line 2215
-padding line 2216
-padding line 2217
-padding line 2218
-padding line 2219
-padding line 2220
-padding line 2221
-padding line 2222
-padding line 2223
-padding line 2224
-padding line 2225
-padding line 2226
-padding line 2227
-padding line 2228
-padding line 2229
-padding line 2230
-padding line 2231
-padding line 2232
-padding line 2233
-padding line 2234
-padding line 2235
-padding line 2236
-padding line 2237
-padding line 2238
-padding line 2239
-padding line 2240
-padding line 2241
-padding line 2242
-padding line 2243
-padding line 2244
-padding line 2245
-padding line 2246
-padding line 2247
-padding line 2248
-padding line 2249
-padding line 2250
-padding line 2251
-padding line 2252
-padding line 2253
-padding line 2254
-padding line 2255
-padding line 2256
-padding line 2257
-padding line 2258
-padding line 2259
-padding line 2260
-padding line 2261
-padding line 2262
-padding line 2263
-padding line 2264
-padding line 2265
-padding line 2266
-padding line 2267
-padding line 2268
-padding line 2269
-padding line 2270
-padding line 2271
-padding line 2272
-padding line 2273
-padding line 2274
-padding line 2275
-padding line 2276
-padding line 2277
-padding line 2278
-padding line 2279
-padding line 2280
-padding line 2281
-padding line 2282
-padding line 2283
-padding line 2284
-padding line 2285
-padding line 2286
-padding line 2287
-padding line 2288
-padding line 2289
-padding line 2290
-padding line 2291
-padding line 2292
-padding line 2293
-padding line 2294
-padding line 2295
-padding line 2296
-padding line 2297
-padding line 2298
-padding line 2299
-padding line 2300
-padding line 2301
-padding line 2302
-padding line 2303
-padding line 2304
-padding line 2305
-padding line 2306
-padding line 2307
-padding line 2308
-padding line 2309
-padding line 2310
-padding line 2311
-padding line 2312
-padding line 2313
-padding line 2314
-padding line 2315
-padding line 2316
-padding line 2317
-padding line 2318
-padding line 2319
-padding line 2320
-padding line 2321
-padding line 2322
-padding line 2323
-padding line 2324
-padding line 2325
-padding line 2326
-padding line 2327
-padding line 2328
-padding line 2329
-padding line 2330
-padding line 2331
-padding line 2332
-padding line 2333
-padding line 2334
-padding line 2335
-padding line 2336
-padding line 2337
-padding line 2338
-padding line 2339
-padding line 2340
-padding line 2341
-padding line 2342
-padding line 2343
-padding line 2344
-padding line 2345
-padding line 2346
-padding line 2347
-padding line 2348
-padding line 2349
-padding line 2350
-padding line 2351
-padding line 2352
-padding line 2353
-padding line 2354
-padding line 2355
-padding line 2356
-padding line 2357
-padding line 2358
-padding line 2359
-padding line 2360
-padding line 2361
-padding line 2362
-padding line 2363
-padding line 2364
-padding line 2365
-padding line 2366
-padding line 2367
-padding line 2368
-padding line 2369
-padding line 2370
-padding line 2371
-padding line 2372
-padding line 2373
-padding line 2374
-padding line 2375
-padding line 2376
-padding line 2377
-padding line 2378
-padding line 2379
-padding line 2380
-padding line 2381
-padding line 2382
-padding line 2383
-padding line 2384
-padding line 2385
-padding line 2386
-padding line 2387
-padding line 2388
-padding line 2389
-padding line 2390
-padding line 2391
-padding line 2392
-padding line 2393
-padding line 2394
-padding line 2395
-padding line 2396
-padding line 2397
-padding line 2398
-padding line 2399
-padding line 2400
-padding line 2401
-padding line 2402
-padding line 2403
-padding line 2404
-padding line 2405
-padding line 2406
-padding line 2407
-padding line 2408
-padding line 2409
-padding line 2410
-padding line 2411
-padding line 2412
-padding line 2413
-padding line 2414
-padding line 2415
-padding line 2416
-padding line 2417
-padding line 2418
-padding line 2419
-padding line 2420
-padding line 2421
-padding line 2422
-padding line 2423
-padding line 2424
-padding line 2425
-padding line 2426
-padding line 2427
-padding line 2428
-padding line 2429
-padding line 2430
-padding line 2431
-padding line 2432
-padding line 2433
-padding line 2434
-padding line 2435
-padding line 2436
-padding line 2437
-padding line 2438
-padding line 2439
-padding line 2440
-padding line 2441
-padding line 2442
-padding line 2443
-padding line 2444
-padding line 2445
-padding line 2446
-padding line 2447
-padding line 2448
-padding line 2449
-padding line 2450
-padding line 2451
-padding line 2452
-padding line 2453
-padding line 2454
-padding line 2455
-padding line 2456
-padding line 2457
-padding line 2458
-padding line 2459
-padding line 2460
-padding line 2461
-padding line 2462
-padding line 2463
-padding line 2464
-padding line 2465
-padding line 2466
-padding line 2467
-padding line 2468
-padding line 2469
-padding line 2470
-padding line 2471
-padding line 2472
-padding line 2473
-padding line 2474
-padding line 2475
-padding line 2476
-padding line 2477
-padding line 2478
-padding line 2479
-padding line 2480
-padding line 2481
-padding line 2482
-padding line 2483
-padding line 2484
-padding line 2485
-padding line 2486
-padding line 2487
-padding line 2488
-padding line 2489
-padding line 2490
-padding line 2491
-padding line 2492
-padding line 2493
-padding line 2494
-padding line 2495
-padding line 2496
-padding line 2497
-padding line 2498
-padding line 2499
-padding line 2500
-padding line 2501
-padding line 2502
-padding line 2503
-padding line 2504
-padding line 2505
-padding line 2506
-padding line 2507
-padding line 2508
-padding line 2509
-padding line 2510
-padding line 2511
-padding line 2512
-padding line 2513
-padding line 2514
-padding line 2515
-padding line 2516
-padding line 2517
-padding line 2518
-padding line 2519
-padding line 2520
-padding line 2521
-padding line 2522
-padding line 2523
-padding line 2524
-padding line 2525
-padding line 2526
-padding line 2527
-padding line 2528
-padding line 2529
-padding line 2530
-padding line 2531
-padding line 2532
-padding line 2533
-padding line 2534
-padding line 2535
-padding line 2536
-padding line 2537
-padding line 2538
-padding line 2539
-padding line 2540
-padding line 2541
-padding line 2542
-padding line 2543
-padding line 2544
-padding line 2545
-padding line 2546
-padding line 2547
-padding line 2548
-padding line 2549
-padding line 2550
-padding line 2551
-padding line 2552
-padding line 2553
-padding line 2554
-padding line 2555
-padding line 2556
-padding line 2557
-padding line 2558
-padding line 2559
-padding line 2560
-padding line 2561
-padding line 2562
-padding line 2563
-padding line 2564
-padding line 2565
-padding line 2566
-padding line 2567
-padding line 2568
-padding line 2569
-padding line 2570
-padding line 2571
-padding line 2572
-padding line 2573
-padding line 2574
-padding line 2575
-padding line 2576
-padding line 2577
-padding line 2578
-padding line 2579
-padding line 2580
-padding line 2581
-padding line 2582
-padding line 2583
-padding line 2584
-padding line 2585
-padding line 2586
-padding line 2587
-padding line 2588
-padding line 2589
-padding line 2590
-padding line 2591
-padding line 2592
-padding line 2593
-padding line 2594
-padding line 2595
-padding line 2596
-padding line 2597
-padding line 2598
-padding line 2599
-padding line 2600
-padding line 2601
-padding line 2602
-padding line 2603
-padding line 2604
-padding line 2605
-padding line 2606
-padding line 2607
-padding line 2608
-padding line 2609
-padding line 2610
-padding line 2611
-padding line 2612
-padding line 2613
-padding line 2614
-padding line 2615
-padding line 2616
-padding line 2617
-padding line 2618
-padding line 2619
-padding line 2620
-padding line 2621
-padding line 2622
-padding line 2623
-padding line 2624
-padding line 2625
-padding line 2626
-padding line 2627
-padding line 2628
-padding line 2629
-padding line 2630
-padding line 2631
-padding line 2632
-padding line 2633
-padding line 2634
-padding line 2635
-padding line 2636
-padding line 2637
-padding line 2638
-padding line 2639
-padding line 2640
-padding line 2641
-padding line 2642
-padding line 2643
-padding line 2644
-padding line 2645
-padding line 2646
-padding line 2647
-padding line 2648
-padding line 2649
-padding line 2650
-padding line 2651
-padding line 2652
-padding line 2653
-padding line 2654
-padding line 2655
-padding line 2656
-padding line 2657
-padding line 2658
-padding line 2659
-padding line 2660
-padding line 2661
-padding line 2662
-padding line 2663
-padding line 2664
-padding line 2665
-padding line 2666
-padding line 2667
-padding line 2668
-padding line 2669
-padding line 2670
-padding line 2671
-padding line 2672
-padding line 2673
-padding line 2674
-padding line 2675
-padding line 2676
-padding line 2677
-padding line 2678
-padding line 2679
-padding line 2680
-padding line 2681
-padding line 2682
-padding line 2683
-padding line 2684
-padding line 2685
-padding line 2686
-padding line 2687
-padding line 2688
-padding line 2689
-padding line 2690
-padding line 2691
-padding line 2692
-padding line 2693
-padding line 2694
-padding line 2695
-padding line 2696
-padding line 2697
-padding line 2698
-padding line 2699
-padding line 2700
-padding line 2701
-padding line 2702
-padding line 2703
-padding line 2704
-padding line 2705
-padding line 2706
-padding line 2707
-padding line 2708
-padding line 2709
-padding line 2710
-padding line 2711
-padding line 2712
-padding line 2713
-padding line 2714
-padding line 2715
-padding line 2716
-padding line 2717
-padding line 2718
-padding line 2719
-padding line 2720
-padding line 2721
-padding line 2722
-padding line 2723
-padding line 2724
-padding line 2725
-padding line 2726
-padding line 2727
-padding line 2728
-padding line 2729
-padding line 2730
-padding line 2731
-padding line 2732
-padding line 2733
-padding line 2734
-padding line 2735
-padding line 2736
-padding line 2737
-padding line 2738
-padding line 2739
-padding line 2740
-padding line 2741
-padding line 2742
-padding line 2743
-padding line 2744
-padding line 2745
-padding line 2746
-padding line 2747
-padding line 2748
-padding line 2749
-padding line 2750
-padding line 2751
-padding line 2752
-padding line 2753
-padding line 2754
-padding line 2755
-padding line 2756
-padding line 2757
-padding line 2758
-padding line 2759
-padding line 2760
-"""
