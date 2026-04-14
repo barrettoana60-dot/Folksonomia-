@@ -2682,6 +2682,7 @@ def tab_users_quest():
     tdf = all_tags()
     udf = all_users()
     obs = load_obras()
+    events_df = all_events()
     od  = {o['id']:o['titulo'] for o in obs}
 
     if udf.empty:
