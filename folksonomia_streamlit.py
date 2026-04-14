@@ -17,7 +17,53 @@ from difflib import get_close_matches
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-import networkx as nx
+try:
+    import networkx as nx
+    HAS_NETWORKX = True
+except ModuleNotFoundError:
+    HAS_NETWORKX = False
+
+    class SimpleGraph:
+        def __init__(self):
+            self._nodes = {}
+            self._edges = []
+
+        def add_node(self, node, **attrs):
+            self._nodes[node] = {**self._nodes.get(node, {}), **attrs}
+
+        def add_edge(self, source, target, **attrs):
+            if not self.has_node(source):
+                self.add_node(source)
+            if not self.has_node(target):
+                self.add_node(target)
+            if not self.has_edge(source, target):
+                self._edges.append((source, target, attrs))
+
+        def has_edge(self, source, target):
+            return any(
+                (a == source and b == target) or (a == target and b == source)
+                for a, b, _ in self._edges
+            )
+
+        def has_node(self, node):
+            return node in self._nodes
+
+        def number_of_nodes(self):
+            return len(self._nodes)
+
+        def edges(self):
+            return [(a, b) for a, b, _ in self._edges]
+
+        def nodes(self, data=False):
+            if data:
+                return list(self._nodes.items())
+            return list(self._nodes.keys())
+
+    class _NXFallback:
+        Graph = SimpleGraph
+
+    nx = _NXFallback()
+
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -1096,10 +1142,25 @@ def build_graph(familiaridade_filter: str = "Todas") -> Tuple[nx.Graph, pd.DataF
     return graph, pd.DataFrame(edges_meta)
 
 
+def compute_graph_positions(graph: nx.Graph) -> Dict[str, Tuple[float, float]]:
+    nodes = [node for node in graph.nodes()]
+    if not nodes:
+        return {}
+    if HAS_NETWORKX:
+        return nx.spring_layout(graph, seed=42, k=0.9)
+    total = max(len(nodes), 1)
+    radius = 1.0
+    positions: Dict[str, Tuple[float, float]] = {}
+    for idx, node in enumerate(nodes):
+        angle = (2 * np.pi * idx) / total
+        positions[node] = (float(radius * np.cos(angle)), float(radius * np.sin(angle)))
+    return positions
+
+
 def plot_network(graph: nx.Graph) -> Optional[go.Figure]:
     if graph.number_of_nodes() == 0:
         return None
-    pos = nx.spring_layout(graph, seed=42, k=0.9)
+    pos = compute_graph_positions(graph)
     edge_x, edge_y = [], []
     for source, target in graph.edges():
         x0, y0 = pos[source]
