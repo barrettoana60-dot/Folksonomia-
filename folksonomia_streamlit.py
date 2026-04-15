@@ -41,12 +41,12 @@ ADMIN_PASSWORD = "nugep123"
 
 ANIMAIS = [
     "Águia","Boto","Capivara","Doninha","Ema","Falcão","Gavião","Harpia","Irara","Jaguar",
-    "Lontra","Mico","Onça","Paca","Quati","Raposa","Tamanduá","Urubu","Veado","Zorrilho",
-    "Arara","Bugio","Caititu","Jaguatirica","Lobo","Mutum","Pirarucu","Tucano","Sucuri","Tatu"
+    "Lontra","Onça","Paca","Quati","Raposa","Tamanduá","Urubu","Zorrilho",
+    "Arara","Bugio","Caititu","Jaguatirica","Lobo","Mutum","Tucano","Tatu"
 ]
 ADJETIVOS = [
     "Azul","Bravo","Calmo","Dourado","Esperto","Feroz","Gracioso","Intenso","Jovial","Lento",
-    "Mágico","Nobre","Ousado","Preciso","Rápido","Sábio","Tímido","Único","Valente","Zeloso",
+    "Mágico","Nobre","Rápido","Sábio",
     "Curioso","Furtivo","Altivo","Sereno","Vibrante","Audaz","Brilhante","Corajoso","Distinto","Elegante"
 ]
 
