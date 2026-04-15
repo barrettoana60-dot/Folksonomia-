@@ -211,6 +211,8 @@ def normalize_events_dataframe(df):
         'redundancy_mesh': {},
         'linked_records': [],
         'integrity_status': 'ok',
+        'capsule_registry': [],
+        'route_index': [],
     }
     for col, default in expected_defaults.items():
         if col not in norm.columns:
@@ -261,6 +263,10 @@ def normalize_events_dataframe(df):
             }
         if not isinstance(row.get('linked_records', []), list):
             norm.at[idx, 'linked_records'] = []
+        if not isinstance(row.get('capsule_registry', []), list):
+            norm.at[idx, 'capsule_registry'] = []
+        if not isinstance(row.get('route_index', []), list):
+            norm.at[idx, 'route_index'] = []
     return norm
 
 
@@ -299,6 +305,7 @@ def build_interleaved_shards(cipher_text, parts=4):
     return shards
 
 
+
 def tokenize_searchable_text(*values):
     chunks = []
     for value in values:
@@ -318,17 +325,98 @@ def tokenize_searchable_text(*values):
     tokens = set()
     for word in words:
         tokens.add(word)
-        for size in range(1, min(len(word), 8) + 1):
+        for size in range(1, min(len(word), 10) + 1):
             tokens.add(word[:size])
+        for size in range(1, min(len(word), 6) + 1):
+            tokens.add(word[-size:])
         if len(word) > 3:
-            for i in range(len(word) - 2):
-                tokens.add(word[i:i+3])
+            for n in range(2, min(5, len(word)) + 1):
+                for i in range(len(word) - n + 1):
+                    tokens.add(word[i:i+n])
+    for i in range(len(words)):
+        if i + 1 < len(words):
+            tokens.add(f"{words[i]} {words[i+1]}")
+        if i + 2 < len(words):
+            tokens.add(f"{words[i]} {words[i+1]} {words[i+2]}")
     compact = norm.replace(' ', '')
     for char in compact:
         tokens.add(char)
-    return sorted(t for t in tokens if t)
+    ordered = []
+    seen = set()
+    for token in sorted(tokens, key=lambda t: (len(t), t)):
+        if token and token not in seen:
+            ordered.append(token)
+            seen.add(token)
+    return ordered[:600]
 
 
+def build_lookup_routes(search_index, chain_anchor, entity_key, interoperability_refs=None, limit=180):
+    refs = [str(r) for r in (interoperability_refs or []) if r]
+    routes = []
+    seen = set()
+    for term in search_index[:limit]:
+        term = str(term or '').strip()
+        if not term or term in seen:
+            continue
+        seen.add(term)
+        routes.append({
+            'term': term,
+            'gate': term[:1],
+            'prefixes': sorted(set(filter(None, [term[:1], term[:2], term[:3], term[:4], term[:5]]))),
+            'suffixes': sorted(set(filter(None, [term[-1:], term[-2:], term[-3:]]))),
+            'entity_key': entity_key,
+            'route_anchor': hash_record({'term': term, 'anchor': chain_anchor, 'entity_key': entity_key})[:24],
+            'refs': refs[:6],
+        })
+    return routes
+
+
+def build_capsule_registry(record, key_material, payload_txt, snapshot_txt, search_index, linked_records, chain_anchor):
+    capsule_specs = [
+        ('payload', 'metadados_e_evento', payload_txt, 6),
+        ('snapshot', 'estado_semantico', snapshot_txt, 5),
+        ('keywords', 'indice_semantico', '|'.join(search_index), 4),
+        ('links', 'conectividade_e_redundancia', json.dumps(linked_records, ensure_ascii=False, default=str), 4),
+        ('provenance', 'proveniencia_e_interoperabilidade', json.dumps({
+            'origin': record.get('origin', 'sistema'),
+            'actor': record.get('actor', 'sistema'),
+            'entity_type': record.get('entity_type', '—'),
+            'entity_id': record.get('entity_id', '—'),
+            'interoperability_refs': record.get('interoperability_refs', []),
+            'provenance_source': record.get('provenance_source', 'sistema'),
+        }, ensure_ascii=False, sort_keys=True, default=str), 4),
+    ]
+    capsules = []
+    all_shards = []
+    for capsule_id, label, plain_text, parts in capsule_specs:
+        cipher_text = xor_cipher_text(plain_text, key_material + f'|capsule|{capsule_id}')
+        capsule_hash = hashlib.sha256(cipher_text.encode('utf-8')).hexdigest()
+        capsule_anchor = hash_record({'capsule_id': capsule_id, 'anchor': chain_anchor, 'capsule_hash': capsule_hash})
+        capsule_shards = []
+        for shard in build_interleaved_shards(cipher_text, parts=parts):
+            shard_meta = {
+                'capsule_id': capsule_id,
+                'capsule_label': label,
+                'capsule_anchor': capsule_anchor[:24],
+                'ordem': safe_int(shard.get('ordem'), len(capsule_shards) + 1),
+                'fragmento': str(shard.get('fragmento', '')),
+                'hash_fragmento': str(shard.get('hash_fragmento', '')),
+                'tamanho': safe_int(shard.get('tamanho'), len(str(shard.get('fragmento', '')))),
+                'mirror_key': hash_record({'capsule_id': capsule_id, 'capsule_anchor': capsule_anchor, 'fragmento': shard.get('fragmento', '')})[:24],
+            }
+            capsule_shards.append(shard_meta)
+            all_shards.append(shard_meta)
+        capsules.append({
+            'capsule_id': capsule_id,
+            'label': label,
+            'capsule_hash': capsule_hash,
+            'capsule_anchor': capsule_anchor,
+            'cipher_len': len(cipher_text),
+            'fragment_count': len(capsule_shards),
+            'checksum': hash_record({'capsule_id': capsule_id, 'cipher': cipher_text, 'chain_anchor': chain_anchor}),
+            'shards': capsule_shards,
+        })
+    return capsules, all_shards
 def extract_related_identifiers(payload, semantic_snapshot=None, interoperability_refs=None):
     refs = set()
     for source in [payload or {}, semantic_snapshot or {}, interoperability_refs or []]:
@@ -358,6 +446,7 @@ def find_related_hashes(events, actor, entity_type, entity_id, origin, interoper
     return [h for h in dict.fromkeys(related) if h]
 
 
+
 def build_redundancy_mesh(record, events):
     payload_blob = {
         'event_type': record.get('event_type'),
@@ -381,6 +470,7 @@ def build_redundancy_mesh(record, events):
         record.get('payload', {}),
         record.get('semantic_snapshot', {}),
         record.get('interoperability_refs', []),
+        record.get('provenance_source', ''),
     )
     key_material = '|'.join([
         str(record.get('previous_hash', 'GENESIS')),
@@ -423,56 +513,57 @@ def build_redundancy_mesh(record, events):
         'keyword_cipher': keyword_cipher,
         'search_index': search_index,
     })
-    shards = build_interleaved_shards(payload_cipher + snapshot_cipher + keyword_cipher, parts=6)
+    entity_key = f"{record.get('entity_type', '—')}::{record.get('entity_id', '—')}"
+    route_index = build_lookup_routes(search_index, chain_anchor, entity_key, record.get('interoperability_refs', []))
+    capsule_registry, shards = build_capsule_registry(record, key_material, payload_txt, snapshot_txt, search_index, linked_records, chain_anchor)
     semantic_coordinates = [{
         'term': term,
         'coord': hash_record({'term': term, 'anchor': chain_anchor})[:16],
-        'entity': f"{record.get('entity_type', '—')}::{record.get('entity_id', '—')}"
+        'entity': entity_key,
     } for term in search_index[:24]]
     replica_map = []
     mirror_index = []
     for i, shard in enumerate(shards):
-        fragment = ''
-        shard_hash = ''
-        fragment_len = 0
-        if isinstance(shard, dict):
-            fragment = str(shard.get('fragmento', ''))
-            shard_hash = str(shard.get('hash_fragmento', '')) or hashlib.sha256(fragment.encode('utf-8')).hexdigest()
-            fragment_len = safe_int(shard.get('tamanho'), len(fragment))
-        else:
-            fragment = str(shard or '')
-            shard_hash = hashlib.sha256(fragment.encode('utf-8')).hexdigest()
-            fragment_len = len(fragment)
-            shards[i] = {
-                'ordem': i + 1,
-                'fragmento': fragment,
-                'hash_fragmento': shard_hash,
-                'tamanho': fragment_len,
-            }
+        fragment = str(shard.get('fragmento', ''))
+        shard_hash = str(shard.get('hash_fragmento', '')) or hashlib.sha256(fragment.encode('utf-8')).hexdigest()
+        fragment_len = safe_int(shard.get('tamanho'), len(fragment))
         replica_map.append({
             'slot': i + 1,
-            'ordem': safe_int(shards[i].get('ordem'), i + 1),
+            'capsule_id': shard.get('capsule_id', 'capsule'),
+            'ordem': safe_int(shard.get('ordem'), i + 1),
             'shard_hash': shard_hash[:20],
             'anchor': chain_anchor[:20],
             'checksum': recovery_checksum[:20],
             'fragment_len': fragment_len,
-            'mirror_key': hash_record({'slot': i + 1, 'anchor': chain_anchor, 'fragmento': fragment})[:20],
+            'mirror_key': str(shard.get('mirror_key', ''))[:20],
         })
         mirror_index.append({
             'slot': i + 1,
+            'capsule_id': shard.get('capsule_id', 'capsule'),
             'prefixos': sorted(set([fragment[:1], fragment[:2], fragment[:3]]) - {''}),
+            'sufixos': sorted(set([fragment[-1:], fragment[-2:], fragment[-3:]]) - {''}),
             'hash': shard_hash[:20],
+        })
+    distributed_memory_map = []
+    for cap in capsule_registry:
+        distributed_memory_map.append({
+            'capsule_id': cap.get('capsule_id'),
+            'capsule_anchor': str(cap.get('capsule_anchor', ''))[:24],
+            'fragment_count': safe_int(cap.get('fragment_count'), 0),
+            'checksum': str(cap.get('checksum', ''))[:24],
+            'recovery_level': 'alto' if safe_int(cap.get('fragment_count'), 0) >= 4 else 'medio',
         })
     redundancy_mesh = {
         'global_chain_anchor': record.get('previous_hash', 'GENESIS'),
         'entity_chain_anchor': record.get('entity_previous_hash', 'GENESIS_ENTITY'),
-        'linked_records': linked_records[:16],
+        'linked_records': linked_records[:20],
         'keyword_index_size': len(search_index),
         'cipher_algorithm': 'xor_sha256_stream',
-        'recovery_strategy': 'fragmentacao_intercalada+hashes+espelho_semantico+indice_prefixado+replicas_cruzadas+malha_de_recuperacao',
+        'mesh_model': 'blockchain_documental_em_malha_criptografica',
+        'recovery_strategy': 'capsulas_fragmentadas+espelhos_semanticos+rotas_prefixadas+replicas_cruzadas+pontes_open_data+checksum_multinivel',
         'mirror_points': [
             record.get('semantic_archive_ref', '—'),
-            f"{record.get('entity_type', '—')}::{record.get('entity_id', '—')}",
+            entity_key,
             f"origin::{record.get('origin', 'sistema')}",
             f"actor::{record.get('actor', 'sistema')}",
         ],
@@ -482,26 +573,34 @@ def build_redundancy_mesh(record, events):
         'replica_map': replica_map,
         'mirror_index': mirror_index,
         'semantic_coordinates': semantic_coordinates,
-        'cross_entity_echoes': linked_records[:10],
+        'route_index': route_index,
+        'capsule_registry': distributed_memory_map,
+        'cross_entity_echoes': linked_records[:12],
         'puzzle_density': len(shards),
+        'capsule_count': len(capsule_registry),
+        'route_count': len(route_index),
         'search_windows': sorted(set(term[:1] for term in search_index if term))[:64],
-        'search_prefixes': sorted(set(term[:3] for term in search_index if len(term) >= 3))[:128],
-        'redundant_references': sorted(set(linked_records[:16] + [r.get('hash') for r in mirror_index if isinstance(r, dict)])),
+        'search_prefixes': sorted(set(term[:4] for term in search_index if len(term) >= 4))[:160],
+        'fallback_terms': sorted(set(term[-4:] for term in search_index if len(term) >= 4))[:160],
+        'redundant_references': sorted(set(linked_records[:20] + [r.get('hash') for r in mirror_index if isinstance(r, dict)])),
+        'distributed_memory_map': distributed_memory_map,
     }
     return {
         'payload_cipher': payload_cipher,
         'snapshot_cipher': snapshot_cipher,
         'keyword_cipher': keyword_cipher,
         'puzzle_shards': shards,
+        'capsule_registry': capsule_registry,
+        'route_index': route_index,
         'search_index': search_index,
         'chain_anchor': chain_anchor,
         'recovery_checksum': recovery_checksum,
         'redundancy_mesh': redundancy_mesh,
-        'linked_records': linked_records[:16],
+        'linked_records': linked_records[:20],
         'integrity_status': 'ok',
+        'capsule_registry': [],
+        'route_index': [],
     }
-
-
 def default_ontologies():
     return [
         {"id": 1, "nome": "Religioso", "categoria": "tema", "descricao": "Vocabulário para referências religiosas e sacras.", "termos": ["religioso","igreja","santo","santa","cruz","anjo","sagrado","altar"], "criado_em": now_str()},
@@ -790,10 +889,14 @@ def get_entity_event_count(events, entity_type, entity_id):
     return sum(1 for event in events if event.get('entity_type') == entity_type and str(event.get('entity_id')) == str(entity_id))
 
 
+
 def verify_blockchain_mesh(events_df):
     df = normalize_events_dataframe(events_df)
     if df.empty:
-        return {'total': 0, 'global_breaks': 0, 'entity_breaks': 0, 'integrity_pct': 100.0, 'search_terms': 0, 'shards': 0}
+        return {
+            'total': 0, 'global_breaks': 0, 'entity_breaks': 0, 'integrity_pct': 100.0,
+            'search_terms': 0, 'shards': 0, 'capsules': 0, 'routes': 0, 'mirrors': 0, 'redundancy_links': 0
+        }
     df = df.sort_values('ledger_no').reset_index(drop=True)
     global_breaks = 0
     entity_breaks = 0
@@ -811,6 +914,15 @@ def verify_blockchain_mesh(events_df):
     total = len(df)
     search_terms = int(sum(len(v) if isinstance(v, list) else 0 for v in df.get('search_index', []))) if 'search_index' in df.columns else 0
     shards = int(sum(len(v) if isinstance(v, list) else 0 for v in df.get('puzzle_shards', []))) if 'puzzle_shards' in df.columns else 0
+    capsules = int(sum(len(v) if isinstance(v, list) else 0 for v in df.get('capsule_registry', []))) if 'capsule_registry' in df.columns else 0
+    routes = int(sum(len(v) if isinstance(v, list) else 0 for v in df.get('route_index', []))) if 'route_index' in df.columns else 0
+    mirrors = 0
+    redundancy_links = 0
+    if 'redundancy_mesh' in df.columns:
+        for mesh in df['redundancy_mesh'].tolist():
+            if isinstance(mesh, dict):
+                mirrors += len(mesh.get('mirror_points', []) or []) + len(mesh.get('mirror_index', []) or [])
+                redundancy_links += len(mesh.get('redundant_references', []) or [])
     broken = global_breaks + entity_breaks
     integrity_pct = round(max(0.0, 100.0 - (broken / max(1, total * 2)) * 100.0), 2)
     return {
@@ -820,8 +932,11 @@ def verify_blockchain_mesh(events_df):
         'integrity_pct': integrity_pct,
         'search_terms': search_terms,
         'shards': shards,
+        'capsules': capsules,
+        'routes': routes,
+        'mirrors': mirrors,
+        'redundancy_links': redundancy_links,
     }
-
 
 def search_blockchain_events(query, events_df):
     df = normalize_events_dataframe(events_df)
@@ -834,29 +949,46 @@ def search_blockchain_events(query, events_df):
     hits = []
     for _, row in df.iterrows():
         idx_terms = set(row.get('search_index', []) if isinstance(row.get('search_index', []), list) else [])
+        route_terms = set()
+        for route in row.get('route_index', []) if isinstance(row.get('route_index', []), list) else []:
+            if isinstance(route, dict):
+                route_terms.add(normalize_text(route.get('term', '')))
+                route_terms.update(normalize_text(v) for v in route.get('prefixes', []) if v)
+                route_terms.update(normalize_text(v) for v in route.get('suffixes', []) if v)
+        capsule_terms = set()
+        for capsule in row.get('capsule_registry', []) if isinstance(row.get('capsule_registry', []), list) else []:
+            if isinstance(capsule, dict):
+                capsule_terms.add(normalize_text(capsule.get('capsule_id', '')))
+                capsule_terms.add(normalize_text(capsule.get('label', '')))
         score = 0
         if q in idx_terms:
-            score += 10 if len(q) > 1 else 4
-        score += sum(2 for tok in q_tokens if tok in idx_terms and tok != q)
+            score += 14 if len(q) > 1 else 6
+        score += sum(3 for tok in q_tokens if tok in idx_terms and tok != q)
+        if q in route_terms:
+            score += 8
+        score += sum(2 for tok in q_tokens if tok in route_terms)
+        if q in capsule_terms:
+            score += 4
         payload_txt = normalize_text(json.dumps(row.get('payload', {}), ensure_ascii=False, default=str))
         snap_txt = normalize_text(json.dumps(row.get('semantic_snapshot', {}), ensure_ascii=False, default=str))
         refs_txt = normalize_text(' '.join(row.get('interoperability_refs', []) if isinstance(row.get('interoperability_refs', []), list) else []))
+        links_txt = normalize_text(' '.join(map(str, row.get('linked_records', []) if isinstance(row.get('linked_records', []), list) else [])))
         if q and q in payload_txt:
             score += 6
         if q and q in snap_txt:
             score += 5
         if q and q in refs_txt:
+            score += 5
+        if q and q in links_txt:
             score += 4
         if score > 0:
             hit = row.to_dict()
             hit['score_busca'] = score
+            hit['rotas_encontradas'] = len([tok for tok in q_tokens if tok in route_terms]) + int(q in route_terms)
             hits.append(hit)
     if not hits:
         return pd.DataFrame()
-    out = pd.DataFrame(hits).sort_values(['score_busca', 'ledger_no'], ascending=[False, False])
-    return out
-
-
+    return pd.DataFrame(hits).sort_values(['score_busca', 'ledger_no'], ascending=[False, False])
 def register_event(event_type, actor, actor_role, entity_type, entity_id, payload, origin="sistema", automatic=False, status="bruto", previous_state=None, circulation_action=None, interoperability_refs=None, semantic_snapshot=None, provenance_source=None):
     ensure_support_files()
     events = load_json_file(EVENTS_FILE, [])
@@ -2988,7 +3120,7 @@ def tab_validation_audit():
         else:
             preview = preview.copy().sort_values('ledger_no', ascending=False)
             health = verify_blockchain_mesh(preview)
-            c1, c2, c3, c4 = st.columns(4)
+            c1, c2, c3, c4, c5, c6 = st.columns(6)
             with c1:
                 st.markdown(kpi('Integridade global', f"{health['integrity_pct']:.1f}%", 'malha encadeada', '#a78bfa'), unsafe_allow_html=True)
             with c2:
@@ -2996,10 +3128,21 @@ def tab_validation_audit():
             with c3:
                 st.markdown(kpi('Fragmentos cifrados', health['shards'], 'quebra-cabeça protegido', '#34d399'), unsafe_allow_html=True)
             with c4:
+                st.markdown(kpi('Cápsulas', health['capsules'], 'payload, snapshot, links', '#f472b6'), unsafe_allow_html=True)
+            with c5:
+                st.markdown(kpi('Rotas de busca', health['routes'], 'letra, prefixo e sufixo', '#f59e0b'), unsafe_allow_html=True)
+            with c6:
                 st.markdown(kpi('Quebras detectadas', health['global_breaks'] + health['entity_breaks'], 'global + entidade', '#fcd34d'), unsafe_allow_html=True)
             st.markdown(insight(
-                '<strong>Modelo:</strong> cada evento vira uma cápsula cifrada, ligada ao hash global anterior, ao hash anterior da entidade, a espelhos semânticos, índices pesquisáveis e pontes de interoperabilidade. Mesmo que um pedaço falhe, a malha conserva checksum, fragmentos, âncoras e vínculos redundantes.'
+                '<strong>Modelo:</strong> cada evento vira uma cápsula cifrada e fragmentada. O registro fica ligado ao hash global anterior, ao hash anterior da entidade, a espelhos semânticos, rotas por letra e prefixo, fragmentos redundantes, checksum multinível e pontes de interoperabilidade. Mesmo com perda parcial, a malha conserva âncoras, cápsulas, espelhos e referências cruzadas para recuperação.'
             ), unsafe_allow_html=True)
+            c7, c8, c9 = st.columns(3)
+            with c7:
+                st.markdown(kpi('Espelhos', health['mirrors'], 'pontos de recuperação', '#38bdf8'), unsafe_allow_html=True)
+            with c8:
+                st.markdown(kpi('Referências redundantes', health['redundancy_links'], 'ecos entre registros', '#22c55e'), unsafe_allow_html=True)
+            with c9:
+                st.markdown(kpi('Eventos auditáveis', health['total'], 'total encadeado', '#c084fc'), unsafe_allow_html=True)
             query = st.text_input('Buscar no blockchain por letra, prefixo ou palavra', placeholder='Ex.: g, guer, guernica, picasso, wikidata, azul...', key='ledger_query_main')
             if query.strip():
                 hits = search_blockchain_events(query, preview)
@@ -3022,6 +3165,13 @@ def tab_validation_audit():
             preview['Conexões'] = preview['linked_records'].apply(lambda x: ', '.join(map(str, x[:4])) if isinstance(x, list) and x else '—')
             cols = [c for c in ['Registro', 'timestamp', 'event_type', 'actor', 'Entidade', 'entity_version', 'status', 'Hash Atual', 'Hash Anterior', 'Hash Entidade', 'Âncora', 'origin', 'Refs externas', 'Conexões'] if c in preview.columns]
             st.dataframe(preview[cols], use_container_width=True, hide_index=True)
+            with st.expander('Detalhar cápsulas, rotas e malha criptográfica'):
+                detail = preview[['Registro', 'event_type', 'entity_type', 'entity_id', 'capsule_registry', 'route_index', 'redundancy_mesh']].copy()
+                detail['Cápsulas'] = detail['capsule_registry'].apply(lambda x: len(x) if isinstance(x, list) else 0)
+                detail['Rotas'] = detail['route_index'].apply(lambda x: len(x) if isinstance(x, list) else 0)
+                detail['Malha'] = detail['redundancy_mesh'].apply(lambda x: (x or {}).get('mesh_model', '—') if isinstance(x, dict) else '—')
+                detail['Recuperação'] = detail['redundancy_mesh'].apply(lambda x: (x or {}).get('recovery_strategy', '—') if isinstance(x, dict) else '—')
+                st.dataframe(detail[['Registro', 'event_type', 'entity_type', 'entity_id', 'Cápsulas', 'Rotas', 'Malha', 'Recuperação']], use_container_width=True, hide_index=True)
 
     with t3:
         st.markdown('#### Interoperabilidade auditável e fontes externas')
